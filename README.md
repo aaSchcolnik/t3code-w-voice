@@ -30,6 +30,9 @@ Nothing. We built T3 Code because we wanted the best possible development experi
 
 We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
 
+-------------
+# All work of this fork is presented in the voice branch
+
 ## Installation
 
 > [!WARNING]
