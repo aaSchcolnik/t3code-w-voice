@@ -16,6 +16,10 @@ import { vi } from "vite-plus/test";
 
 vi.mock("electron", async (importOriginal) => ({
   ...(await importOriginal<typeof import("electron")>()),
+  systemPreferences: {
+    askForMediaAccess: vi.fn(async () => true),
+    getMediaAccessStatus: vi.fn(() => "granted"),
+  },
   session: {
     fromPartition: vi.fn(() => ({
       getUserAgent: vi.fn(() => "Mozilla/5.0 Electron/41.5.0 t3code/1.2.3"),
@@ -73,6 +77,10 @@ function makeFakeBrowserWindow() {
     reload: vi.fn(),
     replaceMisspelling: vi.fn(),
     send: vi.fn(),
+    session: {
+      setPermissionCheckHandler: vi.fn(),
+      setPermissionRequestHandler: vi.fn(),
+    },
     setWindowOpenHandler: vi.fn(),
   };
 
@@ -1096,6 +1104,63 @@ describe("DesktopWindow", () => {
         assert.equal(yield* Ref.get(scenario.createCalls), 3);
         assert.deepEqual(main.send.mock.calls, [[MENU_ACTION_CHANNEL, "open-settings"]]);
       }).pipe(Effect.provide(scenario.layer));
+    }),
+  );
+
+  it.effect("allows same-origin microphone media requests", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const session = (
+          fakeWindow.window.webContents as Electron.WebContents & {
+            session: {
+              setPermissionCheckHandler: ReturnType<typeof vi.fn>;
+              setPermissionRequestHandler: ReturnType<typeof vi.fn>;
+            };
+          }
+        ).session;
+        const checkHandler = session.setPermissionCheckHandler.mock.calls[0]?.[0];
+        const requestHandler = session.setPermissionRequestHandler.mock.calls[0]?.[0];
+        if (!checkHandler || !requestHandler) {
+          return yield* Effect.die("media permission handlers were not registered");
+        }
+
+        assert.isTrue(checkHandler(null, "media", "t3code-dev://app/", { mediaType: "audio" }));
+        assert.isFalse(checkHandler(null, "media", "https://example.com/", { mediaType: "audio" }));
+
+        const granted = yield* Effect.promise(
+          () =>
+            new Promise<boolean>((resolve) => {
+              requestHandler(fakeWindow.window.webContents, "media", resolve, {
+                mediaTypes: ["audio"],
+                securityOrigin: "t3code-dev://app/",
+              });
+            }),
+        );
+        assert.isTrue(granted);
+
+        const deniedVideo = yield* Effect.promise(
+          () =>
+            new Promise<boolean>((resolve) => {
+              requestHandler(fakeWindow.window.webContents, "media", resolve, {
+                mediaTypes: ["audio", "video"],
+                securityOrigin: "t3code-dev://app/",
+              });
+            }),
+        );
+        assert.isFalse(deniedVideo);
+      }).pipe(Effect.provide(layer));
     }),
   );
 });

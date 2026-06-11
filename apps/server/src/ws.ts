@@ -13,7 +13,6 @@ import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
   AuthAccessStreamError,
   type AuthAccessStreamEvent,
-  type AuthEnvironmentScope,
   AuthSessionId,
   CommandId,
   type DiscoveredLocalServerList,
@@ -51,6 +50,8 @@ import {
   type TerminalError,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
+  type TranscriptionError,
+  type TranscriptionUpdate,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -81,6 +82,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as TranscriptionService from "./transcription/TranscriptionService.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
@@ -352,6 +354,7 @@ const makeWsRpcLayer = (
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
+      const transcription = yield* TranscriptionService.TranscriptionService;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
@@ -1807,6 +1810,29 @@ const makeWsRpcLayer = (
         [WS_METHODS.terminalClose]: (input) =>
           observeRpcEffect(WS_METHODS.terminalClose, terminalManager.close(input), {
             "rpc.aggregate": "terminal",
+          }),
+        [WS_METHODS.transcriptionStart]: (input) =>
+          observeRpcStream(
+            WS_METHODS.transcriptionStart,
+            Stream.callback<TranscriptionUpdate, TranscriptionError>((queue) =>
+              Effect.acquireRelease(
+                transcription.start(input, {
+                  publish: (update) => Queue.offer(queue, update).pipe(Effect.asVoid),
+                  fail: (error) => Queue.fail(queue, error).pipe(Effect.asVoid),
+                  end: Queue.end(queue).pipe(Effect.asVoid),
+                }),
+                (cleanup) => cleanup,
+              ),
+            ),
+            { "rpc.aggregate": "transcription" },
+          ),
+        [WS_METHODS.transcriptionSendAudio]: (input) =>
+          observeRpcEffect(WS_METHODS.transcriptionSendAudio, transcription.sendAudio(input), {
+            "rpc.aggregate": "transcription",
+          }),
+        [WS_METHODS.transcriptionStop]: (input) =>
+          observeRpcEffect(WS_METHODS.transcriptionStop, transcription.stop(input), {
+            "rpc.aggregate": "transcription",
           }),
         [WS_METHODS.subscribeTerminalEvents]: (_input) =>
           observeRpcStream(

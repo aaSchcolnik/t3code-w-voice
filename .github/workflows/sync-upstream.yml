@@ -1,0 +1,95 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: "0 9 */5 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync upstream into voice
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout voice branch
+        uses: actions/checkout@v6
+        with:
+          ref: voice
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+          git fetch upstream main
+
+      - name: Create sync branch
+        run: git switch -c automated/upstream-sync
+
+      - name: Merge upstream main
+        run: git merge upstream/main --no-edit
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Check
+        run: vp check
+
+      - name: Typecheck
+        run: vp run typecheck
+
+      - name: Detect upstream changes
+        id: changes
+        run: |
+          if git diff --quiet voice..HEAD; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push sync branch
+        if: steps.changes.outputs.has_changes == 'true'
+        run: git push --force-with-lease origin automated/upstream-sync
+
+      - name: Create or update sync pull request
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BODY: |
+            Automated upstream sync from `pingdotgg/t3code`.
+
+            Checks run before opening this PR:
+            - `vp check`
+            - `vp run typecheck`
+        run: |
+          if gh pr view automated/upstream-sync --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh pr edit automated/upstream-sync \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "chore: sync upstream" \
+              --body "$PR_BODY"
+          else
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base voice \
+              --head automated/upstream-sync \
+              --title "chore: sync upstream" \
+              --body "$PR_BODY"
+          fi
