@@ -8,6 +8,13 @@ import * as Ref from "effect/Ref";
 import type * as Electron from "electron";
 import { vi } from "vite-plus/test";
 
+vi.mock("electron", () => ({
+  systemPreferences: {
+    askForMediaAccess: vi.fn(async () => true),
+    getMediaAccessStatus: vi.fn(() => "granted"),
+  },
+}));
+
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -35,6 +42,7 @@ function makeFakeBrowserWindow() {
   const webContentsListeners = new Map<string, (...args: readonly unknown[]) => void>();
   const webContents = {
     copyImageAt: vi.fn(),
+    getURL: vi.fn(() => "http://127.0.0.1:5733/"),
     isLoadingMainFrame: vi.fn(() => false),
     on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
       webContentsListeners.set(eventName, listener);
@@ -43,6 +51,10 @@ function makeFakeBrowserWindow() {
     openDevTools: vi.fn(),
     replaceMisspelling: vi.fn(),
     send: vi.fn(),
+    session: {
+      setPermissionCheckHandler: vi.fn(),
+      setPermissionRequestHandler: vi.fn(),
+    },
     setWindowOpenHandler: vi.fn(),
   };
 
@@ -240,6 +252,65 @@ describe("DesktopWindow", () => {
 
         assert.isTrue(prevented);
         assert.deepEqual(openedExternalUrls, ["https://accounts.microsoft.com/oauth"]);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("allows same-origin microphone media requests", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady;
+
+        const session = (
+          fakeWindow.window.webContents as Electron.WebContents & {
+            session: {
+              setPermissionCheckHandler: ReturnType<typeof vi.fn>;
+              setPermissionRequestHandler: ReturnType<typeof vi.fn>;
+            };
+          }
+        ).session;
+        const checkHandler = session.setPermissionCheckHandler.mock.calls[0]?.[0];
+        const requestHandler = session.setPermissionRequestHandler.mock.calls[0]?.[0];
+        if (!checkHandler || !requestHandler) {
+          return yield* Effect.die("media permission handlers were not registered");
+        }
+
+        assert.isTrue(
+          checkHandler(null, "media", "http://127.0.0.1:5733/", { mediaType: "audio" }),
+        );
+        assert.isFalse(checkHandler(null, "media", "https://example.com/", { mediaType: "audio" }));
+
+        const granted = yield* Effect.promise(
+          () =>
+            new Promise<boolean>((resolve) => {
+              requestHandler(fakeWindow.window.webContents, "media", resolve, {
+                mediaTypes: ["audio"],
+                securityOrigin: "http://127.0.0.1:5733/",
+              });
+            }),
+        );
+        assert.isTrue(granted);
+
+        const deniedVideo = yield* Effect.promise(
+          () =>
+            new Promise<boolean>((resolve) => {
+              requestHandler(fakeWindow.window.webContents, "media", resolve, {
+                mediaTypes: ["audio", "video"],
+                securityOrigin: "http://127.0.0.1:5733/",
+              });
+            }),
+        );
+        assert.isFalse(deniedVideo);
       }).pipe(Effect.provide(layer));
     }),
   );

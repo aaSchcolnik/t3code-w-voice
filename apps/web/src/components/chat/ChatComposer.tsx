@@ -63,6 +63,9 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { MicButton } from "./MicButton";
+import { useVoiceDictationSession } from "./useVoiceDictationSession";
+import { VoiceRecordingOverlay } from "./VoiceRecordingOverlay";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -113,6 +116,8 @@ import {
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindings";
+import { isTerminalFocused } from "../../lib/terminalFocus";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
 
@@ -1487,6 +1492,102 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ],
   );
 
+  // ------------------------------------------------------------------
+  // Voice dictation
+  // ------------------------------------------------------------------
+  const voiceStartDisabled =
+    isConnecting ||
+    isComposerApprovalState ||
+    (environmentUnavailable !== null && activePendingProgress === null);
+
+  const commitDictationTranscript = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (trimmed.length === 0) return;
+      const base = promptRef.current;
+      const prefix = base.length > 0 && !/\s$/.test(base) ? " " : "";
+      void applyPromptReplacement(base.length, base.length, `${prefix}${trimmed}`, {
+        focusEditorAfterReplace: false,
+      });
+    },
+    [applyPromptReplacement, promptRef],
+  );
+
+  const voiceDictation = useVoiceDictationSession({
+    environmentId,
+    onCommit: commitDictationTranscript,
+  });
+  const {
+    state: voiceState,
+    isActive: voiceIsActive,
+    waveform: voiceWaveform,
+    start: startVoiceDictation,
+    stopAndCommit: stopAndCommitVoiceDictation,
+    cancel: cancelVoiceDictation,
+    toggle: toggleVoiceDictation,
+  } = voiceDictation;
+
+  useEffect(() => {
+    if (!settings.voice.enabled && voiceIsActive) {
+      cancelVoiceDictation();
+    }
+  }, [cancelVoiceDictation, settings.voice.enabled, voiceIsActive]);
+
+  useEffect(() => {
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+      if (voiceIsActive && event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        cancelVoiceDictation();
+        return;
+      }
+
+      if (event.defaultPrevented || !settings.voice.enabled) return;
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: {
+          terminalFocus: isTerminalFocused(),
+          terminalOpen,
+        },
+      });
+      if (command !== "voice.toggleRecording") return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      if (voiceIsActive) {
+        stopAndCommitVoiceDictation();
+        return;
+      }
+      if (!voiceStartDisabled) {
+        void startVoiceDictation();
+      }
+    };
+
+    window.addEventListener("keydown", onWindowKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onWindowKeyDown, true);
+    };
+  }, [
+    keybindings,
+    cancelVoiceDictation,
+    settings.voice.enabled,
+    startVoiceDictation,
+    stopAndCommitVoiceDictation,
+    terminalOpen,
+    voiceIsActive,
+    voiceStartDisabled,
+  ]);
+
+  const voiceStopShortcutLabel = useMemo(
+    () =>
+      shortcutLabelForCommand(keybindings, "voice.toggleRecording", {
+        context: {
+          terminalFocus: false,
+          terminalOpen,
+        },
+      }) ?? "Alt+Shift+R",
+    [keybindings, terminalOpen],
+  );
+
   const readComposerSnapshot = useCallback((): {
     value: string;
     cursor: number;
@@ -2154,7 +2255,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             </div>
           ) : null}
 
-          {showCollapsedMobilePromptRow ? (
+          {showCollapsedMobilePromptRow && !voiceIsActive ? (
             <div className="flex items-center justify-between gap-2 px-3 py-2">
               <button
                 type="button"
@@ -2201,10 +2302,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             className={cn(
               "relative px-3 pb-2 sm:px-4",
               hasComposerHeader ? "pt-2.5 sm:pt-3" : "pt-3.5 sm:pt-4",
-              isComposerCollapsedMobile && "hidden",
+              isComposerCollapsedMobile && !voiceIsActive && "hidden",
             )}
           >
-            {composerMenuOpen && !isComposerApprovalState && (
+            {composerMenuOpen && !voiceIsActive && !isComposerApprovalState && (
               <div className="absolute inset-x-0 bottom-full z-20 mb-2">
                 <ComposerCommandMenu
                   items={composerMenuItems}
@@ -2225,6 +2326,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
             {!isComposerCollapsedMobile &&
               !isComposerApprovalState &&
+              !voiceIsActive &&
               pendingUserInputs.length === 0 &&
               composerImages.length > 0 && (
                 <div className="mb-3 flex flex-wrap gap-2">
@@ -2291,79 +2393,89 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 </div>
               )}
 
-            <div className="relative">
-              <ComposerPromptEditor
-                editorRef={composerEditorRef}
-                value={
-                  isComposerApprovalState
-                    ? ""
-                    : activePendingProgress
-                      ? activePendingProgress.customAnswer
-                      : prompt
-                }
-                cursor={composerCursor}
-                terminalContexts={
-                  !isComposerApprovalState && pendingUserInputs.length === 0
-                    ? composerTerminalContexts
-                    : []
-                }
-                skills={selectedProviderStatus?.skills ?? []}
-                {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
-                onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
-                onChange={onPromptChange}
-                onCommandKeyDown={onComposerCommandKey}
-                onPaste={onComposerPaste}
-                placeholder={
-                  isComposerApprovalState
-                    ? (activePendingApproval?.detail ?? "Resolve this approval request to continue")
-                    : activePendingProgress
-                      ? "Type your own answer, or leave this blank to use the selected option"
-                      : showPlanFollowUpPrompt && activeProposedPlan
-                        ? "Add feedback to refine the plan, or leave this blank to implement it"
-                        : environmentUnavailable
-                          ? `${environmentUnavailable.label} is ${
-                              environmentUnavailable.connectionState === "connecting"
-                                ? "connecting"
-                                : "disconnected"
-                            }`
-                          : phase === "disconnected"
-                            ? "Ask for follow-up changes or attach images"
-                            : "Ask anything, @tag files/folders, $use skills, or / for commands"
-                }
-                disabled={
-                  isConnecting ||
-                  isComposerApprovalState ||
-                  (environmentUnavailable !== null && activePendingProgress === null)
-                }
+            {voiceIsActive ? (
+              <VoiceRecordingOverlay
+                waveform={voiceWaveform}
+                stopShortcutLabel={voiceStopShortcutLabel}
+                onStop={stopAndCommitVoiceDictation}
+                onCancel={cancelVoiceDictation}
               />
-              {showMobilePendingAnswerActions ? (
-                <div
-                  data-chat-composer-mobile-pending-actions="true"
-                  className="absolute bottom-0 right-0 flex justify-end"
-                >
-                  <ComposerPrimaryActions
-                    compact
-                    pendingAction={pendingPrimaryAction}
-                    isRunning={false}
-                    showPlanFollowUpPrompt={false}
-                    promptHasText={false}
-                    isSendBusy={isSendBusy}
-                    isConnecting={isConnecting}
-                    isEnvironmentUnavailable={environmentUnavailable !== null}
-                    isPreparingWorktree={false}
-                    hasSendableContent={false}
-                    preserveComposerFocusOnPointerDown
-                    onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
-                    onInterrupt={handleInterruptPrimaryAction}
-                    onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
-                  />
-                </div>
-              ) : null}
-            </div>
+            ) : (
+              <div className="relative">
+                <ComposerPromptEditor
+                  editorRef={composerEditorRef}
+                  value={
+                    isComposerApprovalState
+                      ? ""
+                      : activePendingProgress
+                        ? activePendingProgress.customAnswer
+                        : prompt
+                  }
+                  cursor={composerCursor}
+                  terminalContexts={
+                    !isComposerApprovalState && pendingUserInputs.length === 0
+                      ? composerTerminalContexts
+                      : []
+                  }
+                  skills={selectedProviderStatus?.skills ?? []}
+                  {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
+                  onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
+                  onChange={onPromptChange}
+                  onCommandKeyDown={onComposerCommandKey}
+                  onPaste={onComposerPaste}
+                  placeholder={
+                    isComposerApprovalState
+                      ? (activePendingApproval?.detail ??
+                        "Resolve this approval request to continue")
+                      : activePendingProgress
+                        ? "Type your own answer, or leave this blank to use the selected option"
+                        : showPlanFollowUpPrompt && activeProposedPlan
+                          ? "Add feedback to refine the plan, or leave this blank to implement it"
+                          : environmentUnavailable
+                            ? `${environmentUnavailable.label} is ${
+                                environmentUnavailable.connectionState === "connecting"
+                                  ? "connecting"
+                                  : "disconnected"
+                              }`
+                            : phase === "disconnected"
+                              ? "Ask for follow-up changes or attach images"
+                              : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                  }
+                  disabled={
+                    isConnecting ||
+                    isComposerApprovalState ||
+                    (environmentUnavailable !== null && activePendingProgress === null)
+                  }
+                />
+                {showMobilePendingAnswerActions ? (
+                  <div
+                    data-chat-composer-mobile-pending-actions="true"
+                    className="absolute bottom-0 right-0 flex justify-end"
+                  >
+                    <ComposerPrimaryActions
+                      compact
+                      pendingAction={pendingPrimaryAction}
+                      isRunning={false}
+                      showPlanFollowUpPrompt={false}
+                      promptHasText={false}
+                      isSendBusy={isSendBusy}
+                      isConnecting={isConnecting}
+                      isEnvironmentUnavailable={environmentUnavailable !== null}
+                      isPreparingWorktree={false}
+                      hasSendableContent={false}
+                      preserveComposerFocusOnPointerDown
+                      onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
+                      onInterrupt={handleInterruptPrimaryAction}
+                      onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
 
           {/* Bottom toolbar */}
-          {isComposerCollapsedMobile ? null : activePendingApproval ? (
+          {voiceIsActive || isComposerCollapsedMobile ? null : activePendingApproval ? (
             <div className="flex items-center justify-end gap-2 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
               <ComposerPendingApprovalActions
                 requestId={activePendingApproval.requestId}
@@ -2450,6 +2562,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }
                 className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
               >
+                <MicButton
+                  state={voiceState}
+                  voiceEnabled={settings.voice.enabled}
+                  disabled={voiceStartDisabled}
+                  onToggle={toggleVoiceDictation}
+                />
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={activeContextWindow}

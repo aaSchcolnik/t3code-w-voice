@@ -45,6 +45,8 @@ import {
   type TerminalError,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
+  type TranscriptionError,
+  type TranscriptionUpdate,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -70,6 +72,7 @@ import { ServerLifecycleEvents } from "./serverLifecycleEvents.ts";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
 import { redactServerSettingsForClient, ServerSettingsService } from "./serverSettings.ts";
 import { TerminalManager } from "./terminal/Services/Manager.ts";
+import { TranscriptionService } from "./transcription/TranscriptionService.ts";
 import { WorkspaceEntries } from "./workspace/Services/WorkspaceEntries.ts";
 import { WorkspaceFileSystem } from "./workspace/Services/WorkspaceFileSystem.ts";
 import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePaths.ts";
@@ -178,6 +181,9 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.terminalClear, AuthTerminalOperateScope],
   [WS_METHODS.terminalRestart, AuthTerminalOperateScope],
   [WS_METHODS.terminalClose, AuthTerminalOperateScope],
+  [WS_METHODS.transcriptionStart, AuthOrchestrationOperateScope],
+  [WS_METHODS.transcriptionSendAudio, AuthOrchestrationOperateScope],
+  [WS_METHODS.transcriptionStop, AuthOrchestrationOperateScope],
   [WS_METHODS.subscribeTerminalEvents, AuthTerminalOperateScope],
   [WS_METHODS.subscribeTerminalMetadata, AuthTerminalOperateScope],
   [WS_METHODS.subscribeServerConfig, AuthOrchestrationReadScope],
@@ -240,6 +246,7 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
       const vcsProvisioning = yield* VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
+      const transcription = yield* TranscriptionService;
       const providerRegistry = yield* ProviderRegistry;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const config = yield* ServerConfig;
@@ -1327,6 +1334,29 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
         [WS_METHODS.terminalClose]: (input) =>
           observeRpcEffect(WS_METHODS.terminalClose, terminalManager.close(input), {
             "rpc.aggregate": "terminal",
+          }),
+        [WS_METHODS.transcriptionStart]: (input) =>
+          observeRpcStream(
+            WS_METHODS.transcriptionStart,
+            Stream.callback<TranscriptionUpdate, TranscriptionError>((queue) =>
+              Effect.acquireRelease(
+                transcription.start(input, {
+                  publish: (update) => Queue.offer(queue, update).pipe(Effect.asVoid),
+                  fail: (error) => Queue.fail(queue, error).pipe(Effect.asVoid),
+                  end: Queue.end(queue).pipe(Effect.asVoid),
+                }),
+                (cleanup) => cleanup,
+              ),
+            ),
+            { "rpc.aggregate": "transcription" },
+          ),
+        [WS_METHODS.transcriptionSendAudio]: (input) =>
+          observeRpcEffect(WS_METHODS.transcriptionSendAudio, transcription.sendAudio(input), {
+            "rpc.aggregate": "transcription",
+          }),
+        [WS_METHODS.transcriptionStop]: (input) =>
+          observeRpcEffect(WS_METHODS.transcriptionStop, transcription.stop(input), {
+            "rpc.aggregate": "transcription",
           }),
         [WS_METHODS.subscribeTerminalEvents]: (_input) =>
           observeRpcStream(

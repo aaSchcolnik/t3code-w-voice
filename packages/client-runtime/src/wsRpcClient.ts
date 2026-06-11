@@ -158,6 +158,11 @@ export interface WsRpcClient {
       onProgress?: (event: RelayClientInstallProgressEvent) => void,
     ) => Promise<RelayClientStatus>;
   };
+  readonly transcription: {
+    readonly start: RpcInputStreamMethod<typeof WS_METHODS.transcriptionStart>;
+    readonly sendAudio: RpcUnaryMethod<typeof WS_METHODS.transcriptionSendAudio>;
+    readonly stop: RpcUnaryMethod<typeof WS_METHODS.transcriptionStop>;
+  };
   readonly orchestration: {
     readonly dispatchCommand: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.dispatchCommand>;
     readonly getTurnDiff: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.getTurnDiff>;
@@ -347,6 +352,17 @@ export function createWsRpcClient(
         }
         throw new Error("Relay client install stream completed without a final status.");
       },
+    },
+    transcription: {
+      start: (input, listener, options) =>
+        transport.subscribe(
+          (client) => client[WS_METHODS.transcriptionStart](input),
+          listener,
+          subscriptionOptions(options, WS_METHODS.transcriptionStart),
+        ),
+      sendAudio: (input) =>
+        transport.request((client) => client[WS_METHODS.transcriptionSendAudio](input)),
+      stop: (input) => transport.request((client) => client[WS_METHODS.transcriptionStop](input)),
     },
     orchestration: {
       dispatchCommand: (input) =>

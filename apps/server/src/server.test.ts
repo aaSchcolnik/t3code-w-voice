@@ -97,6 +97,7 @@ import { ServerLifecycleEvents, type ServerLifecycleEventsShape } from "./server
 import { ServerRuntimeStartup, type ServerRuntimeStartupShape } from "./serverRuntimeStartup.ts";
 import { ServerSettingsService, type ServerSettingsShape } from "./serverSettings.ts";
 import { TerminalManager, type TerminalManagerShape } from "./terminal/Services/Manager.ts";
+import { TranscriptionService } from "./transcription/TranscriptionService.ts";
 import {
   BrowserTraceCollector,
   type BrowserTraceCollectorShape,
@@ -663,6 +664,7 @@ const buildAppUnderTest = (options?: {
           ...options?.layers?.terminalManager,
         }),
       ),
+      Layer.provide(Layer.mock(TranscriptionService)({})),
       Layer.provide(
         Layer.mock(OrchestrationEngineService)({
           readEvents: () => Stream.empty,

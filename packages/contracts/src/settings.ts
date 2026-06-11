@@ -361,6 +361,19 @@ export const ObservabilitySettings = Schema.Struct({
 });
 export type ObservabilitySettings = typeof ObservabilitySettings.Type;
 
+export const VoiceSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Default language hint passed to the ASR sidecar (e.g. "es", "en"). Empty = auto. */
+  language: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** Path to the ASR sidecar binary. Empty = bundled default lookup. */
+  sidecarPath: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** Minutes of no audio before the sidecar process is killed to free memory. */
+  idleTimeoutMinutes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(5)),
+  ),
+});
+export type VoiceSettings = typeof VoiceSettings.Type;
+
 export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(30);
 
 export const ServerSettings = Schema.Struct({
@@ -405,6 +418,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  voice: VoiceSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -503,6 +517,14 @@ export const ServerSettingsPatch = Schema.Struct({
   // patches risk leaving driver-specific config in a half-merged state.
   // The web UI sends a fully-formed map every time it edits this field.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  voice: Schema.optionalKey(
+    Schema.Struct({
+      enabled: Schema.optionalKey(Schema.Boolean),
+      language: Schema.optionalKey(TrimmedString),
+      sidecarPath: Schema.optionalKey(TrimmedString),
+      idleTimeoutMinutes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+    }),
+  ),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

@@ -53,6 +53,12 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedLocal.command, "chat.newLocal");
 
+    const parsedVoiceToggle = yield* decode(KeybindingRule, {
+      key: "alt+shift+r",
+      command: "voice.toggleRecording",
+    });
+    assert.strictEqual(parsedVoiceToggle.command, "voice.toggleRecording");
+
     const parsedModelPickerToggle = yield* decode(KeybindingRule, {
       key: "mod+shift+m",
       command: "modelPicker.toggle",

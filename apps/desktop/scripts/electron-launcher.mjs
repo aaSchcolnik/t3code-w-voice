@@ -95,10 +95,9 @@ function shellSingleQuote(value) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function writeDevelopmentLauncherScript(targetBinaryPath, electronBinaryPath) {
-  const mainEntryPath = join(desktopDir, "dist-electron", "main.cjs");
+function resolveDevelopmentLauncherEnvEntries() {
   const protocolCallbackUrl = `http://127.0.0.1:${resolveDevelopmentProtocolCallbackPort()}/auth/callback`;
-  const envEntries = [
+  return [
     ["VITE_DEV_SERVER_URL", process.env.VITE_DEV_SERVER_URL],
     ["T3CODE_PORT", process.env.T3CODE_PORT],
     ["T3CODE_HOME", process.env.T3CODE_HOME],
@@ -109,6 +108,10 @@ function writeDevelopmentLauncherScript(targetBinaryPath, electronBinaryPath) {
     ["T3CODE_DESKTOP_PROTOCOL_REGISTRATION_MANAGED", "1"],
     ["T3CODE_DESKTOP_PROTOCOL_CALLBACK_URL", protocolCallbackUrl],
   ].filter((entry) => typeof entry[1] === "string" && entry[1].trim().length > 0);
+}
+
+function writeDevelopmentLauncherScript(targetBinaryPath, electronBinaryPath, envEntries) {
+  const mainEntryPath = join(desktopDir, "dist-electron", "main.cjs");
   writeFileSync(
     targetBinaryPath,
     [
@@ -272,6 +275,7 @@ function buildMacLauncher(electronBinaryPath) {
   const targetBinaryPath = join(targetAppBundlePath, "Contents", "MacOS", "Electron");
   const iconPath = isDevelopment ? ensureDevelopmentIconIcns(runtimeDir) : defaultIconPath;
   const metadataPath = join(runtimeDir, "metadata.json");
+  const developmentLauncherEnvEntries = isDevelopment ? resolveDevelopmentLauncherEnvEntries() : [];
 
   mkdirSync(runtimeDir, { recursive: true });
 
@@ -282,6 +286,7 @@ function buildMacLauncher(electronBinaryPath) {
     iconMtimeMs: statSync(iconPath).mtimeMs,
     appBundleId: APP_BUNDLE_ID,
     appProtocolSchemes: APP_PROTOCOL_SCHEMES,
+    developmentLauncherEnvEntries,
   };
 
   const currentMetadata = readJson(metadataPath);
@@ -299,7 +304,11 @@ function buildMacLauncher(electronBinaryPath) {
   patchMainBundleInfoPlist(targetAppBundlePath, iconPath);
   patchHelperBundleInfoPlists(targetAppBundlePath);
   if (isDevelopment) {
-    writeDevelopmentLauncherScript(targetBinaryPath, electronBinaryPath);
+    writeDevelopmentLauncherScript(
+      targetBinaryPath,
+      electronBinaryPath,
+      developmentLauncherEnvEntries,
+    );
   }
   writeFileSync(metadataPath, `${JSON.stringify(expectedMetadata, null, 2)}\n`);
   registerMacLauncherBundle(targetAppBundlePath);

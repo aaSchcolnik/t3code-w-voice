@@ -114,6 +114,13 @@ import {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
+import {
+  TranscriptionAudioChunkInput,
+  TranscriptionError,
+  TranscriptionStartInput,
+  TranscriptionStopInput,
+  TranscriptionUpdate,
+} from "./transcription.ts";
 import { VcsError } from "./vcs.ts";
 
 export const WS_METHODS = {
@@ -179,6 +186,11 @@ export const WS_METHODS = {
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
+
+  // Transcription methods
+  transcriptionStart: "transcription.start",
+  transcriptionSendAudio: "transcription.sendAudio",
+  transcriptionStop: "transcription.stop",
 
   // Streaming subscriptions
   subscribeVcsStatus: "subscribeVcsStatus",
@@ -545,6 +557,23 @@ export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess,
   stream: true,
 });
 
+export const WsTranscriptionStartRpc = Rpc.make(WS_METHODS.transcriptionStart, {
+  payload: TranscriptionStartInput,
+  success: TranscriptionUpdate,
+  error: Schema.Union([TranscriptionError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsTranscriptionSendAudioRpc = Rpc.make(WS_METHODS.transcriptionSendAudio, {
+  payload: TranscriptionAudioChunkInput,
+  error: Schema.Union([TranscriptionError, EnvironmentAuthorizationError]),
+});
+
+export const WsTranscriptionStopRpc = Rpc.make(WS_METHODS.transcriptionStop, {
+  payload: TranscriptionStopInput,
+  error: Schema.Union([TranscriptionError, EnvironmentAuthorizationError]),
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
@@ -587,6 +616,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsTerminalClearRpc,
   WsTerminalRestartRpc,
   WsTerminalCloseRpc,
+  WsTranscriptionStartRpc,
+  WsTranscriptionSendAudioRpc,
+  WsTranscriptionStopRpc,
   WsSubscribeTerminalEventsRpc,
   WsSubscribeTerminalMetadataRpc,
   WsSubscribeServerConfigRpc,

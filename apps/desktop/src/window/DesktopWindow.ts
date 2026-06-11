@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
-import type * as Electron from "electron";
+import * as Electron from "electron";
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -103,6 +103,41 @@ export function isSameOriginRendererNavigation(input: {
   }
 }
 
+function mediaRequestIncludesAudio(details: Electron.PermissionRequest): boolean {
+  const mediaDetails = details as Electron.MediaAccessPermissionRequest;
+  return (
+    mediaDetails.mediaTypes !== undefined &&
+    mediaDetails.mediaTypes.length > 0 &&
+    mediaDetails.mediaTypes.every((mediaType) => mediaType === "audio")
+  );
+}
+
+function mediaCheckIncludesAudio(details: Electron.PermissionCheckHandlerHandlerDetails): boolean {
+  return details.mediaType === "audio";
+}
+
+function isAllowedRendererOrigin(input: {
+  readonly applicationUrl: string;
+  readonly requestOrigin: string;
+}): boolean {
+  if (input.requestOrigin.length === 0) return false;
+  return isSameOriginRendererNavigation({
+    applicationUrl: input.applicationUrl,
+    navigationUrl: input.requestOrigin,
+  });
+}
+
+async function requestMicrophonePermission(): Promise<boolean> {
+  if (process.platform !== "darwin") return true;
+
+  const status = Electron.systemPreferences.getMediaAccessStatus("microphone");
+  if (status === "granted") return true;
+  if (status === "not-determined") {
+    return Electron.systemPreferences.askForMediaAccess("microphone");
+  }
+  return false;
+}
+
 function getWindowTitleBarOptions(shouldUseDarkColors: boolean): WindowTitleBarOptions {
   if (process.platform === "darwin") {
     return {
@@ -194,6 +229,46 @@ const make = Effect.gen(function* () {
         sandbox: true,
       },
     });
+
+    window.webContents.session.setPermissionCheckHandler(
+      (_webContents, permission, origin, details) => {
+        if (permission !== "media") return false;
+        if (!mediaCheckIncludesAudio(details)) return false;
+        if (!isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin })) return false;
+        return (
+          process.platform !== "darwin" ||
+          Electron.systemPreferences.getMediaAccessStatus("microphone") === "granted"
+        );
+      },
+    );
+    window.webContents.session.setPermissionRequestHandler(
+      (_webContents, permission, callback, details) => {
+        if (permission !== "media" || !mediaRequestIncludesAudio(details)) {
+          callback(false);
+          return;
+        }
+        const requestOrigin =
+          (details as Electron.MediaAccessPermissionRequest).securityOrigin ??
+          window.webContents.getURL();
+        if (!isAllowedRendererOrigin({ applicationUrl, requestOrigin })) {
+          callback(false);
+          return;
+        }
+
+        void requestMicrophonePermission()
+          .then((granted) => {
+            callback(granted);
+          })
+          .catch((cause: unknown) => {
+            callback(false);
+            void runPromise(
+              logWindowWarning("microphone permission request failed", {
+                cause: cause instanceof Error ? cause.message : String(cause),
+              }),
+            );
+          });
+      },
+    );
 
     window.webContents.on("context-menu", (event, params) => {
       event.preventDefault();
