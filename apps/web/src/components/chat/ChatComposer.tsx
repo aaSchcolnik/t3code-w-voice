@@ -987,6 +987,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const isMobileViewport = useMediaQuery("max-sm");
   const isComposerCollapsedMobile =
     isMobileViewport && !forceExpandedOnMobile && !isComposerFocused;
+  // On mobile, surface the model selector above the composer for a fresh thread so
+  // it stays visible without focusing the input. Once the thread has messages we
+  // keep it inside the footer (as on desktop) to preserve readability.
+  const isNewThread = !activeThread || activeThread.messages.length === 0;
+  const showTopModelPicker = isMobileViewport && isNewThread;
 
   // ------------------------------------------------------------------
   // Refs
@@ -2704,6 +2709,44 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   // Render
   // ------------------------------------------------------------------
+  const renderProviderModelPicker = (compact: boolean) =>
+    noProviderAvailable ? (
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        disabled
+        data-chat-provider-unavailable="true"
+        className="shrink-0 gap-2 px-2 text-muted-foreground/70 sm:px-3"
+      >
+        <CircleAlertIcon className="size-4" />
+        No provider available
+      </Button>
+    ) : (
+      <ProviderModelPicker
+        compact={compact}
+        activeInstanceId={selectedInstanceId}
+        model={selectedModelForPickerWithCustomFallback}
+        lockedProvider={lockedProvider}
+        lockedContinuationGroupKey={lockedContinuationGroupKey}
+        instanceEntries={providerInstanceEntries}
+        keybindings={keybindings}
+        modelOptionsByInstance={modelOptionsByInstance}
+        terminalOpen={terminalOpen}
+        open={isComposerModelPickerOpen}
+        {...(composerProviderState.modelPickerIconClassName
+          ? {
+              activeProviderIconClassName: composerProviderState.modelPickerIconClassName,
+            }
+          : {})}
+        onOpenChange={(open) => {
+          setIsComposerModelPickerOpen(open);
+        }}
+        getModelDisabledReason={getModelDisabledReason}
+        onInstanceModelChange={onProviderModelSelect}
+      />
+    );
+
   return (
     <form
       ref={composerFormRef}
@@ -2711,6 +2754,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       className="mx-auto w-full min-w-0 max-w-3xl"
       data-chat-composer-form="true"
     >
+      {showTopModelPicker ? (
+        <div
+          data-chat-composer-top-model-picker="true"
+          className="mb-2 flex min-w-0 items-center px-1"
+        >
+          {renderProviderModelPicker(false)}
+        </div>
+      ) : null}
       <div
         className={cn(
           "group rounded-[22px] p-px transition-colors duration-200",
@@ -2882,27 +2933,38 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   : prompt.trim() ||
                     (noProviderAvailable ? "Enable a provider in Settings" : "Ask anything...")}
               </button>
-              <button
-                type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/90 text-primary-foreground disabled:opacity-30"
-                disabled={collapsedComposerPrimaryActionDisabled}
-                aria-label={collapsedComposerPrimaryActionLabel}
-                onPointerDown={(event) => event.preventDefault()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  submitComposer();
-                }}
+              <div
+                data-chat-composer-collapsed-controls="true"
+                className="flex shrink-0 items-center gap-2"
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path
-                    d="M8 3L8 13M8 3L4 7M8 3L12 7"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
+                <MicButton
+                  state={voiceState}
+                  voiceEnabled={settings.voice.enabled}
+                  disabled={voiceStartDisabled}
+                  onToggle={toggleVoiceDictation}
+                />
+                <button
+                  type="button"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/90 text-primary-foreground disabled:opacity-30"
+                  disabled={collapsedComposerPrimaryActionDisabled}
+                  aria-label={collapsedComposerPrimaryActionLabel}
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    submitComposer();
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M8 3L8 13M8 3L4 7M8 3L12 7"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -3179,43 +3241,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
             >
               <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {noProviderAvailable ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled
-                    data-chat-provider-unavailable="true"
-                    className="shrink-0 gap-2 px-2 text-muted-foreground/70 sm:px-3"
-                  >
-                    <CircleAlertIcon className="size-4" />
-                    No provider available
-                  </Button>
-                ) : (
-                  <ProviderModelPicker
-                    compact={isComposerFooterCompact}
-                    activeInstanceId={selectedInstanceId}
-                    model={selectedModelForPickerWithCustomFallback}
-                    lockedProvider={lockedProvider}
-                    lockedContinuationGroupKey={lockedContinuationGroupKey}
-                    instanceEntries={providerInstanceEntries}
-                    keybindings={keybindings}
-                    modelOptionsByInstance={modelOptionsByInstance}
-                    terminalOpen={terminalOpen}
-                    open={isComposerModelPickerOpen}
-                    {...(composerProviderState.modelPickerIconClassName
-                      ? {
-                          activeProviderIconClassName:
-                            composerProviderState.modelPickerIconClassName,
-                        }
-                      : {})}
-                    onOpenChange={(open) => {
-                      setIsComposerModelPickerOpen(open);
-                    }}
-                    getModelDisabledReason={getModelDisabledReason}
-                    onInstanceModelChange={onProviderModelSelect}
-                  />
-                )}
+                {showTopModelPicker ? null : renderProviderModelPicker(isComposerFooterCompact)}
 
                 {isComposerFooterCompact ? (
                   <CompactComposerControlsMenu

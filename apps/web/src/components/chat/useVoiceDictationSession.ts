@@ -188,7 +188,8 @@ export function useVoiceDictationSession(props: {
           noiseSuppression: true,
         },
       });
-    } catch {
+    } catch (cause) {
+      console.error("voice dictation: getUserMedia failed", cause);
       toastManager.add({
         type: "error",
         title: "Microphone unavailable",
