@@ -269,6 +269,9 @@ export function buildKeybindingCommandOptions(
 
 export function commandLabel(command: KeybindingCommand): string {
   const raw = String(command);
+  if (raw === "sidebar.toggle") {
+    return "Toggle sidebar";
+  }
   if (raw === "voice.toggleRecording") {
     return "Start/stop voice recording";
   }

@@ -9,13 +9,15 @@ import { scopeThreadRef } from "@t3tools/client-runtime";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
-import { DiffIcon, TerminalSquareIcon } from "lucide-react";
+import { DiffIcon, PlusIcon, TerminalSquareIcon } from "lucide-react";
+import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
 import { Toggle } from "../ui/toggle";
-import { SidebarTrigger } from "../ui/sidebar";
+import { SidebarTrigger, useSidebar } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
 import { usePrimaryEnvironmentId } from "../../environments/primary";
+import { ProjectFavicon } from "../ProjectFavicon";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -23,6 +25,7 @@ interface ChatHeaderProps {
   draftId?: DraftId;
   activeThreadTitle: string;
   activeProjectName: string | undefined;
+  activeProjectCwd: string | null;
   isGitRepo: boolean;
   openInCwd: string | null;
   activeProjectScripts: ProjectScript[] | undefined;
@@ -41,6 +44,7 @@ interface ChatHeaderProps {
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
   onToggleTerminal: () => void;
   onToggleDiff: () => void;
+  onNewThread: () => void;
 }
 
 export function shouldShowOpenInPicker(input: {
@@ -61,6 +65,7 @@ export const ChatHeader = memo(function ChatHeader({
   draftId,
   activeThreadTitle,
   activeProjectName,
+  activeProjectCwd,
   isGitRepo,
   openInCwd,
   activeProjectScripts,
@@ -79,7 +84,9 @@ export const ChatHeader = memo(function ChatHeader({
   onDeleteProjectScript,
   onToggleTerminal,
   onToggleDiff,
+  onNewThread,
 }: ChatHeaderProps) {
+  const { state: sidebarState } = useSidebar();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const showOpenInPicker = shouldShowOpenInPicker({
     activeProjectName,
@@ -90,7 +97,16 @@ export const ChatHeader = memo(function ChatHeader({
   return (
     <div className="@container/header-actions flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-wrap items-center gap-2 overflow-hidden sm:flex-1 sm:flex-nowrap sm:gap-3">
-        <SidebarTrigger className="size-7 shrink-0 md:hidden" />
+        <SidebarTrigger className="size-7 shrink-0" />
+        {sidebarState === "collapsed" && activeProjectName ? (
+          <div className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+            {activeProjectCwd ? (
+              <ProjectFavicon environmentId={activeThreadEnvironmentId} cwd={activeProjectCwd} />
+            ) : null}
+            <span className="truncate">{activeProjectName}</span>
+            <span className="text-muted-foreground/50">-</span>
+          </div>
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -106,6 +122,16 @@ export const ChatHeader = memo(function ChatHeader({
         </Tooltip>
       </div>
       <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 sm:shrink-0 sm:justify-end @3xl/header-actions:gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          className="shrink-0 sm:hidden"
+          onClick={onNewThread}
+        >
+          <PlusIcon />
+          New Thread
+        </Button>
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}

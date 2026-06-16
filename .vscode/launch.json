@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:t3code}/packages/asr-sidecar",
+      "name": "Debug t3-asr-sidecar (packages/asr-sidecar)",
+      "target": "t3-asr-sidecar",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug t3-asr-sidecar (packages/asr-sidecar)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:t3code}/packages/asr-sidecar",
+      "name": "Release t3-asr-sidecar (packages/asr-sidecar)",
+      "target": "t3-asr-sidecar",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release t3-asr-sidecar (packages/asr-sidecar)"
+    }
+  ]
+}

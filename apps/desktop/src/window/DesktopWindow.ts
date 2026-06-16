@@ -116,6 +116,14 @@ function mediaCheckIncludesAudio(details: Electron.PermissionCheckHandlerHandler
   return details.mediaType === "audio";
 }
 
+// `navigator.clipboard` read/write is gated behind these permissions in Electron.
+// Because we install permission handlers (for microphone access), we become
+// responsible for every permission decision, so we must explicitly re-allow
+// clipboard access for the renderer or copy-to-clipboard silently fails app-wide.
+function isClipboardPermission(permission: string): boolean {
+  return permission === "clipboard-read" || permission === "clipboard-sanitized-write";
+}
+
 function isAllowedRendererOrigin(input: {
   readonly applicationUrl: string;
   readonly requestOrigin: string;
@@ -232,17 +240,27 @@ const make = Effect.gen(function* () {
 
     window.webContents.session.setPermissionCheckHandler(
       (_webContents, permission, origin, details) => {
+        if (isClipboardPermission(permission)) {
+          return isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin });
+        }
         if (permission !== "media") return false;
         if (!mediaCheckIncludesAudio(details)) return false;
         if (!isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin })) return false;
-        return (
-          process.platform !== "darwin" ||
-          Electron.systemPreferences.getMediaAccessStatus("microphone") === "granted"
-        );
+        if (process.platform !== "darwin") return true;
+        // `not-determined` must pass the check so getUserMedia can reach the
+        // request handler, which calls `askForMediaAccess` to show the macOS
+        // prompt. Returning false here for `not-determined` rejects the request
+        // before it can ever prompt, leaving the status stuck forever.
+        const microphoneStatus = Electron.systemPreferences.getMediaAccessStatus("microphone");
+        return microphoneStatus === "granted" || microphoneStatus === "not-determined";
       },
     );
     window.webContents.session.setPermissionRequestHandler(
       (_webContents, permission, callback, details) => {
+        if (isClipboardPermission(permission)) {
+          callback(isAllowedRendererOrigin({ applicationUrl, requestOrigin: window.webContents.getURL() }));
+          return;
+        }
         if (permission !== "media" || !mediaRequestIncludesAudio(details)) {
           callback(false);
           return;

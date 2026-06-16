@@ -115,6 +115,9 @@ import {
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { useSettings } from "../hooks/useSettings";
+import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import { resolveSidebarNewThreadEnvMode } from "./Sidebar.logic";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
@@ -839,6 +842,12 @@ export default function ChatView(props: ChatViewProps) {
     routeKind === "server" ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
   );
   const settings = useSettings();
+  const {
+    activeDraftThread: newThreadActiveDraft,
+    activeThread: newThreadActiveThread,
+    defaultProjectRef: newThreadDefaultProjectRef,
+    handleNewThread,
+  } = useHandleNewThread();
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
   );
@@ -3495,6 +3504,24 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
+  const onNewThread = useCallback(() => {
+    void startNewThreadFromContext({
+      activeDraftThread: newThreadActiveDraft,
+      activeThread: newThreadActiveThread,
+      defaultProjectRef: newThreadDefaultProjectRef,
+      defaultThreadEnvMode: resolveSidebarNewThreadEnvMode({
+        defaultEnvMode: settings.defaultThreadEnvMode,
+      }),
+      handleNewThread,
+    });
+  }, [
+    handleNewThread,
+    newThreadActiveDraft,
+    newThreadActiveThread,
+    newThreadDefaultProjectRef,
+    settings.defaultThreadEnvMode,
+  ]);
+
   const onImplementPlanInNewThread = useCallback(async () => {
     const api = readEnvironmentApi(environmentId);
     if (
@@ -3816,6 +3843,7 @@ export default function ChatView(props: ChatViewProps) {
           {...(routeKind === "draft" && draftId ? { draftId } : {})}
           activeThreadTitle={activeThread.title}
           activeProjectName={activeProject?.name}
+          activeProjectCwd={activeProjectCwd}
           isGitRepo={isGitRepo}
           openInCwd={gitCwd}
           activeProjectScripts={activeProject?.scripts}
@@ -3836,6 +3864,7 @@ export default function ChatView(props: ChatViewProps) {
           onDeleteProjectScript={deleteProjectScript}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
+          onNewThread={onNewThread}
         />
       </header>
 
