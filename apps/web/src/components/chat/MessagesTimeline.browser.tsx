@@ -7,8 +7,6 @@ import { page } from "vite-plus/test/browser";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { render } from "vitest-browser-react";
 
-import { getVscodeIconUrlForEntry } from "../../vscode-icons";
-
 const scrollToEndSpy = vi.fn();
 const getStateSpy = vi.fn(() => ({ isAtEnd: true }));
 
@@ -149,7 +147,7 @@ describe("MessagesTimeline", () => {
     }
   });
 
-  it("uses accessible tooltips instead of native titles for work entry details", async () => {
+  it("uses accessible expansion instead of native titles or preview tooltips for work entry details", async () => {
     const screen = await render(
       <MessagesTimeline
         {...buildProps()}
@@ -181,21 +179,12 @@ describe("MessagesTimeline", () => {
         "Command - git diff -- apps/web/src/components/ChatMarkdown.tsx",
       );
       await commandTrigger.hover();
-      await vi.waitFor(() => {
-        const tooltip = document.querySelector<HTMLElement>('[data-slot="tooltip-popup"]');
-        expect(tooltip?.textContent).toContain(
-          "git diff -- apps/web/src/components/ChatMarkdown.tsx --stat",
-        );
-      });
+      expect(document.querySelector('[data-slot="tooltip-popup"]')).toBeNull();
 
-      const fileTrigger = page.getByLabelText("repo/apps/web/src/components/ChatMarkdown.tsx", {
-        exact: true,
-      });
-      await fileTrigger.hover();
-      await vi.waitFor(() => {
-        const tooltip = document.querySelector<HTMLElement>('[data-slot="tooltip-popup"]');
-        expect(tooltip?.textContent).toContain("apps/web/src/components/ChatMarkdown.tsx");
-      });
+      await commandTrigger.click();
+      await expect
+        .element(page.getByText("git diff -- apps/web/src/components/ChatMarkdown.tsx --stat"))
+        .toBeVisible();
     } finally {
       await screen.unmount();
     }
@@ -401,14 +390,12 @@ describe("MessagesTimeline", () => {
       const assistantFileLink = document.querySelector(
         '[data-message-role="assistant"] .chat-markdown-file-link',
       );
-      const icon = assistantFileLink?.querySelector("img");
+      const icon = assistantFileLink?.querySelector("svg[data-pierre-icon]");
 
       expect(assistantFileLink?.textContent).toContain("package.json");
       expect(assistantFileLink?.textContent).toContain("L25");
       expect(assistantFileLink?.getAttribute("href")).toBe("/repo/project/path/to/package.json:25");
-      expect(icon?.getAttribute("src")).toBe(
-        getVscodeIconUrlForEntry("/repo/project/path/to/package.json", "file", "dark"),
-      );
+      expect(icon?.getAttribute("data-pierre-icon")).toBe("t3-file-icon-package-json");
     } finally {
       await screen.unmount();
     }

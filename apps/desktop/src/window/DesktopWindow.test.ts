@@ -8,10 +8,18 @@ import * as Ref from "effect/Ref";
 import type * as Electron from "electron";
 import { vi } from "vite-plus/test";
 
-vi.mock("electron", () => ({
+vi.mock("electron", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("electron")>()),
   systemPreferences: {
     askForMediaAccess: vi.fn(async () => true),
     getMediaAccessStatus: vi.fn(() => "granted"),
+  },
+  session: {
+    fromPartition: vi.fn(() => ({
+      getUserAgent: vi.fn(() => "Mozilla/5.0 Electron/41.5.0 t3code/1.2.3"),
+      setPermissionRequestHandler: vi.fn(),
+      setUserAgent: vi.fn(),
+    })),
   },
 }));
 
@@ -25,6 +33,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
+import * as PreviewManager from "../preview/Manager.ts";
 
 const environmentInput = {
   dirname: "/repo/apps/desktop/dist-electron",
@@ -68,6 +77,7 @@ function makeFakeBrowserWindow() {
     once: vi.fn(),
     restore: vi.fn(),
     setBackgroundColor: vi.fn(),
+    setAutoHideCursor: vi.fn(),
     setTitle: vi.fn(),
     setTitleBarOverlay: vi.fn(),
     show: vi.fn(),
@@ -78,6 +88,7 @@ function makeFakeBrowserWindow() {
     window: window as unknown as Electron.BrowserWindow,
     loadURL: window.loadURL,
     openDevTools: webContents.openDevTools,
+    setAutoHideCursor: window.setAutoHideCursor,
     webContentsListeners,
   };
 }
@@ -134,10 +145,17 @@ function makeTestLayer(input: {
   readonly window: Electron.BrowserWindow;
   readonly createCount: Ref.Ref<number>;
   readonly mainWindow: Ref.Ref<Option.Option<Electron.BrowserWindow>>;
+  readonly createdWindowOptions?: Electron.BrowserWindowConstructorOptions[];
   readonly openedExternalUrls?: unknown[];
 }) {
   const electronWindowLayer = Layer.succeed(ElectronWindow.ElectronWindow, {
-    create: () => Ref.update(input.createCount, (count) => count + 1).pipe(Effect.as(input.window)),
+    create: (options) =>
+      Effect.sync(() => {
+        input.createdWindowOptions?.push(options);
+      }).pipe(
+        Effect.andThen(Ref.update(input.createCount, (count) => count + 1)),
+        Effect.as(input.window),
+      ),
     main: Ref.get(input.mainWindow),
     currentMainOrFirst: Ref.get(input.mainWindow),
     focusedMainOrFirst: Ref.get(input.mainWindow),
@@ -167,6 +185,12 @@ function makeTestLayer(input: {
         } satisfies ElectronShell.ElectronShellShape),
         electronThemeLayer,
         electronWindowLayer,
+        Layer.mock(PreviewManager.PreviewManager)({
+          getBrowserSession: () => Effect.succeed({} as Electron.Session),
+          setMainWindow: () => Effect.void,
+          isBrowserPartition: (partition) => partition.startsWith("persist:t3code-preview-"),
+          getBrowserPartition: () => Effect.succeed("persist:t3code-preview-test"),
+        }),
       ),
     ),
   );
@@ -199,10 +223,12 @@ describe("DesktopWindow", () => {
       const fakeWindow = makeFakeBrowserWindow();
       const createCount = yield* Ref.make(0);
       const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const createdWindowOptions: Electron.BrowserWindowConstructorOptions[] = [];
       const layer = makeTestLayer({
         window: fakeWindow.window,
         createCount,
         mainWindow,
+        createdWindowOptions,
       });
 
       yield* Effect.gen(function* () {
@@ -212,6 +238,8 @@ describe("DesktopWindow", () => {
 
         yield* desktopWindow.handleBackendReady;
         assert.equal(yield* Ref.get(createCount), 1);
+        assert.isTrue(createdWindowOptions[0]?.disableAutoHideCursor);
+        assert.deepEqual(fakeWindow.setAutoHideCursor.mock.calls, [[false]]);
         assert.deepEqual(fakeWindow.loadURL.mock.calls[0], ["http://127.0.0.1:5733/"]);
         assert.equal(fakeWindow.openDevTools.mock.calls.length, 1);
       }).pipe(Effect.provide(layer));

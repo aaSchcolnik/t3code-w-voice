@@ -11,6 +11,7 @@ import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import * as PreviewManager from "../preview/Manager.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
@@ -36,7 +37,8 @@ type DesktopWindowRuntimeServices =
   | ElectronMenu.ElectronMenu
   | ElectronShell.ElectronShell
   | ElectronTheme.ElectronTheme
-  | ElectronWindow.ElectronWindow;
+  | ElectronWindow.ElectronWindow
+  | PreviewManager.PreviewManager;
 
 export class DesktopWindowDevServerUrlMissingError extends Data.TaggedError(
   "DesktopWindowDevServerUrlMissingError",
@@ -48,7 +50,8 @@ export class DesktopWindowDevServerUrlMissingError extends Data.TaggedError(
 
 export type DesktopWindowError =
   | DesktopWindowDevServerUrlMissingError
-  | ElectronWindow.ElectronWindowCreateError;
+  | ElectronWindow.ElectronWindowCreateError
+  | PreviewManager.PreviewManagerError;
 
 export interface DesktopWindowShape {
   readonly createMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
@@ -79,9 +82,10 @@ function resolveDesktopDevServerUrl(
 
 function getIconOption(
   iconPaths: DesktopAssets.DesktopIconPaths,
+  platform: NodeJS.Platform,
 ): { icon: string } | Record<string, never> {
-  if (process.platform === "darwin") return {}; // macOS uses .icns from app bundle
-  const ext = process.platform === "win32" ? "ico" : "png";
+  if (platform === "darwin") return {}; // macOS uses .icns from app bundle
+  const ext = platform === "win32" ? "ico" : "png";
   return Option.match(iconPaths[ext], {
     onNone: () => ({}),
     onSome: (icon) => ({ icon }),
@@ -135,8 +139,8 @@ function isAllowedRendererOrigin(input: {
   });
 }
 
-async function requestMicrophonePermission(): Promise<boolean> {
-  if (process.platform !== "darwin") return true;
+async function requestMicrophonePermission(platform: NodeJS.Platform): Promise<boolean> {
+  if (platform !== "darwin") return true;
 
   const status = Electron.systemPreferences.getMediaAccessStatus("microphone");
   if (status === "granted") return true;
@@ -146,8 +150,11 @@ async function requestMicrophonePermission(): Promise<boolean> {
   return false;
 }
 
-function getWindowTitleBarOptions(shouldUseDarkColors: boolean): WindowTitleBarOptions {
-  if (process.platform === "darwin") {
+function getWindowTitleBarOptions(
+  shouldUseDarkColors: boolean,
+  platform: NodeJS.Platform,
+): WindowTitleBarOptions {
+  if (platform === "darwin") {
     return {
       titleBarStyle: "hiddenInset",
       trafficLightPosition: { x: 16, y: 18 },
@@ -167,6 +174,7 @@ function getWindowTitleBarOptions(shouldUseDarkColors: boolean): WindowTitleBarO
 function syncWindowAppearance(
   window: Electron.BrowserWindow,
   shouldUseDarkColors: boolean,
+  platform: NodeJS.Platform,
 ): Effect.Effect<void> {
   return Effect.sync(() => {
     if (window.isDestroyed()) {
@@ -174,7 +182,7 @@ function syncWindowAppearance(
     }
 
     window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors));
-    const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors);
+    const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform);
     if (typeof titleBarOverlay === "object") {
       window.setTitleBarOverlay(titleBarOverlay);
     }
@@ -205,6 +213,7 @@ const make = Effect.gen(function* () {
   const electronShell = yield* ElectronShell.ElectronShell;
   const electronTheme = yield* ElectronTheme.ElectronTheme;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const previewManager = yield* PreviewManager.PreviewManager;
   const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
   const state = yield* DesktopState.DesktopState;
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
@@ -213,11 +222,12 @@ const make = Effect.gen(function* () {
   const createWindow = Effect.fn("desktop.window.createWindow")(function* (
     backendHttpUrl: URL,
   ): Effect.fn.Return<Electron.BrowserWindow, DesktopWindowError> {
+    yield* previewManager.getBrowserSession();
     const applicationUrl = environment.isDevelopment
       ? yield* resolveDesktopDevServerUrl(environment)
       : backendHttpUrl.href;
     const iconPaths = yield* assets.iconPaths;
-    const iconOption = getIconOption(iconPaths);
+    const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
     const window = yield* electronWindow.create({
       width: 1100,
@@ -226,15 +236,17 @@ const make = Effect.gen(function* () {
       minHeight: 620,
       show: false,
       autoHideMenuBar: true,
+      ...(environment.platform === "darwin" ? { disableAutoHideCursor: true } : {}),
       backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
       ...iconOption,
       title: environment.displayName,
-      ...getWindowTitleBarOptions(shouldUseDarkColors),
+      ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
       webPreferences: {
         preload: environment.preloadPath,
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        webviewTag: true,
       },
     });
 
@@ -246,7 +258,7 @@ const make = Effect.gen(function* () {
         if (permission !== "media") return false;
         if (!mediaCheckIncludesAudio(details)) return false;
         if (!isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin })) return false;
-        if (process.platform !== "darwin") return true;
+        if (environment.platform !== "darwin") return true;
         // `not-determined` must pass the check so getUserMedia can reach the
         // request handler, which calls `askForMediaAccess` to show the macOS
         // prompt. Returning false here for `not-determined` rejects the request
@@ -258,7 +270,9 @@ const make = Effect.gen(function* () {
     window.webContents.session.setPermissionRequestHandler(
       (_webContents, permission, callback, details) => {
         if (isClipboardPermission(permission)) {
-          callback(isAllowedRendererOrigin({ applicationUrl, requestOrigin: window.webContents.getURL() }));
+          callback(
+            isAllowedRendererOrigin({ applicationUrl, requestOrigin: window.webContents.getURL() }),
+          );
           return;
         }
         if (permission !== "media" || !mediaRequestIncludesAudio(details)) {
@@ -273,7 +287,7 @@ const make = Effect.gen(function* () {
           return;
         }
 
-        void requestMicrophonePermission()
+        void requestMicrophonePermission(environment.platform)
           .then((granted) => {
             callback(granted);
           })
@@ -287,6 +301,25 @@ const make = Effect.gen(function* () {
           });
       },
     );
+
+    if (environment.platform === "darwin") {
+      window.setAutoHideCursor(false);
+    }
+
+    yield* previewManager.setMainWindow(window);
+    window.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+      if (
+        typeof params.partition !== "string" ||
+        !previewManager.isBrowserPartition(params.partition)
+      ) {
+        event.preventDefault();
+        return;
+      }
+      webPreferences.sandbox = true;
+      webPreferences.nodeIntegration = false;
+      webPreferences.nodeIntegrationInSubFrames = false;
+      webPreferences.contextIsolation = false;
+    });
 
     window.webContents.on("context-menu", (event, params) => {
       event.preventDefault();
@@ -390,7 +423,7 @@ const make = Effect.gen(function* () {
     });
 
     const revealSubscribers: RevealSubscription[] = [(fire) => window.once("ready-to-show", fire)];
-    if (process.platform === "linux") {
+    if (environment.platform === "linux") {
       revealSubscribers.push((fire) => window.webContents.once("did-finish-load", fire));
     }
     bindFirstRevealTrigger(revealSubscribers, () => {
@@ -480,7 +513,7 @@ const make = Effect.gen(function* () {
     syncAppearance: Effect.gen(function* () {
       const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
       yield* electronWindow.syncAllAppearance((window) =>
-        syncWindowAppearance(window, shouldUseDarkColors),
+        syncWindowAppearance(window, shouldUseDarkColors, environment.platform),
       );
     }).pipe(Effect.withSpan("desktop.window.syncAppearance")),
   });

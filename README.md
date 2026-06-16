@@ -1,26 +1,31 @@
 # T3 Code - with voice on Macos
 
 ## Why the fork?
+
 I wanted the ability for t3 code to have voice to text translation performed locally, this is currently only working on macOS and i don't really plan on making it work on other platforms, it uses the Nvidia Parakeet multilanguage model so it suppors up to 23 different languages.
 Maybe i'll add more stuff in the future but not sure about it.
 
 ### Image of this voice to text usage
+
 <img width="4324" height="2482" alt="CleanShot 2026-06-11 at 11 36 27@2x" src="https://github.com/user-attachments/assets/66f117ca-a481-40b3-a302-25d980fc3791" />
 
 ### Videos of it working
+
 #### English
+
 https://github.com/user-attachments/assets/11f2b2a0-1b03-493d-9dfd-03fd7986a685
+
 #### Spanish
+
 https://github.com/user-attachments/assets/daaf2895-efe6-4672-8832-804abd6d2bba
 
-
-
-
-
-
-----------------------------
+---
 
 T3 Code is a minimal web GUI for coding agents (currently Codex, Claude, Cursor, and OpenCode, more coming soon).
+
+---
+
+# All work of this fork is presented in the voice branch
 
 ## Installation
 
