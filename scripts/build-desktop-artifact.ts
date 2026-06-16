@@ -713,6 +713,12 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      // The hardened runtime denies microphone access (voice dictation) unless
+      // the audio-input entitlement is embedded. electron-builder's default
+      // entitlements omit it, so we supply our own `entitlements.mac.plist` in
+      // buildResources (apps/desktop/resources), which electron-builder
+      // auto-detects and resolves to an absolute path for codesign.
+      hardenedRuntime: true,
       protocols: [
         {
           name: "T3 Code",
