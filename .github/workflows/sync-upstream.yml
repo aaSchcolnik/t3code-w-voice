@@ -15,15 +15,15 @@ concurrency:
 
 jobs:
   sync:
-    name: Sync upstream into voice
+    name: Sync upstream into main, open PR to voice
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
-      - name: Checkout voice branch
+      - name: Checkout main branch
         uses: actions/checkout@v6
         with:
-          ref: voice
+          ref: main
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -37,10 +37,10 @@ jobs:
           git remote add upstream https://github.com/pingdotgg/t3code.git
           git fetch upstream main
 
-      - name: Create sync branch
-        run: git switch -c automated/upstream-sync
-
-      - name: Merge upstream main
+      # main only carries our README + CI tweaks on top of upstream, so this
+      # merge is expected to be clean. If upstream ever touches those exact
+      # lines the job fails loudly here, which is the signal to resolve by hand.
+      - name: Merge upstream into main
         run: git merge upstream/main --no-edit
 
       - name: Setup Vite+
@@ -56,40 +56,40 @@ jobs:
       - name: Typecheck
         run: vp run typecheck
 
-      - name: Detect upstream changes
-        id: changes
-        run: |
-          if git diff --quiet voice..HEAD; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Push main
+        run: git push origin main
 
-      - name: Push sync branch
-        if: steps.changes.outputs.has_changes == 'true'
-        run: git push --force-with-lease origin automated/upstream-sync
-
-      - name: Create or update sync pull request
-        if: steps.changes.outputs.has_changes == 'true'
+      # Feature work lives on `voice` and edits the same files upstream changes,
+      # so a voice merge needs human conflict resolution. Instead of merging in
+      # CI (which would hard-fail), open/keep a PR that brings the freshly synced
+      # `main` into `voice`; conflicts are resolved in that PR, preferring the
+      # voice features (voice dictation, sidebar hide, mobile new-thread button).
+      - name: Open or update PR to bring main into voice
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_BODY: |
             Automated upstream sync from `pingdotgg/t3code`.
 
-            Checks run before opening this PR:
+            `main` has been updated from upstream and validated:
             - `vp check`
             - `vp run typecheck`
+
+            This PR merges the updated `main` into `voice`. Resolve any conflicts
+            here, preferring the voice feature changes (voice dictation, sidebar
+            hide toggle, mobile new-thread button).
         run: |
-          if gh pr view automated/upstream-sync --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh pr edit automated/upstream-sync \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "chore: sync upstream" \
-              --body "$PR_BODY"
+          if [ -z "$(git rev-list origin/voice..main)" ]; then
+            echo "voice already contains everything in main; nothing to sync."
+            exit 0
+          fi
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --base voice --head main --state open --json number -q '.[0].number')
+          if [ -n "$existing" ]; then
+            echo "Sync PR #$existing already open; main push above updated it."
           else
             gh pr create \
               --repo "$GITHUB_REPOSITORY" \
               --base voice \
-              --head automated/upstream-sync \
-              --title "chore: sync upstream" \
+              --head main \
+              --title "chore: sync upstream into voice" \
               --body "$PR_BODY"
           fi
