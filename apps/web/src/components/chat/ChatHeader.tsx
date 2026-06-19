@@ -9,6 +9,8 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
+import { PlusIcon } from "lucide-react";
+import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, {
   type NewProjectScriptInput,
@@ -42,6 +44,7 @@ interface ChatHeaderProps {
     input: NewProjectScriptInput,
   ) => Promise<ProjectScriptActionResult>;
   onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
+  onNewThread: () => void;
 }
 
 export function shouldShowOpenInPicker(input: {
@@ -75,6 +78,7 @@ export const ChatHeader = memo(function ChatHeader({
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
+  onNewThread,
 }: ChatHeaderProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const fileScripts = useT3ProjectFileScripts(
@@ -140,6 +144,16 @@ export const ChatHeader = memo(function ChatHeader({
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          className="shrink-0 sm:hidden"
+          onClick={onNewThread}
+        >
+          <PlusIcon />
+          New Thread
+        </Button>
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}
