@@ -139,9 +139,14 @@ import {
 import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { useSettings } from "../hooks/useSettings";
+import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
-import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
+import {
+  resolveNewDraftStartFromOrigin,
+  startNewThreadFromContext,
+} from "../lib/chatThreadActions";
+import { resolveSidebarNewThreadEnvMode } from "./Sidebar.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
@@ -1028,6 +1033,12 @@ function ChatViewContent(props: ChatViewProps) {
     routeKind === "server" ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
   );
   const settings = useSettings();
+  const {
+    activeDraftThread: newThreadActiveDraft,
+    activeThread: newThreadActiveThread,
+    defaultProjectRef: newThreadDefaultProjectRef,
+    handleNewThread,
+  } = useHandleNewThread();
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
   );
@@ -4326,6 +4337,24 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
+  const onNewThread = useCallback(() => {
+    void startNewThreadFromContext({
+      activeDraftThread: newThreadActiveDraft,
+      activeThread: newThreadActiveThread ?? undefined,
+      defaultProjectRef: newThreadDefaultProjectRef,
+      defaultThreadEnvMode: resolveSidebarNewThreadEnvMode({
+        defaultEnvMode: settings.defaultThreadEnvMode,
+      }),
+      handleNewThread,
+    });
+  }, [
+    handleNewThread,
+    newThreadActiveDraft,
+    newThreadActiveThread,
+    newThreadDefaultProjectRef,
+    settings.defaultThreadEnvMode,
+  ]);
+
   const onImplementPlanInNewThread = useCallback(async () => {
     if (
       !activeThread ||
@@ -4811,6 +4840,7 @@ function ChatViewContent(props: ChatViewProps) {
             onAddProjectScript={saveProjectScript}
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
+            onNewThread={onNewThread}
           />
         </header>
 
