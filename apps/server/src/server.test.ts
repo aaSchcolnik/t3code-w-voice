@@ -5920,6 +5920,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     () =>
       Effect.gen(function* () {
         const dispatchedCommands: Array<OrchestrationCommand> = [];
+        const bootstrapGitOperations: string[] = [];
         const refreshStatus = vi.fn((_: string) =>
           Effect.succeed({
             isRepo: true,
@@ -5938,13 +5939,33 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             pr: null,
           }),
         );
+        const fetchRemote = vi.fn(
+          (_: Parameters<GitVcsDriver.GitVcsDriverShape["fetchRemote"]>[0]) =>
+            Effect.sync(() => {
+              bootstrapGitOperations.push("fetch");
+            }),
+        );
+        const fetchedOriginCommit = "0123456789abcdef0123456789abcdef01234567";
+        const resolveRemoteTrackingCommit = vi.fn(
+          (_: Parameters<GitVcsDriver.GitVcsDriverShape["resolveRemoteTrackingCommit"]>[0]) =>
+            Effect.sync(() => {
+              bootstrapGitOperations.push("resolve-remote-commit");
+              return {
+                commitSha: fetchedOriginCommit,
+                remoteRefName: "origin/main",
+              };
+            }),
+        );
         const createWorktree = vi.fn(
           (_: Parameters<GitVcsDriver.GitVcsDriverShape["createWorktree"]>[0]) =>
-            Effect.succeed({
-              worktree: {
-                refName: "t3code/bootstrap-refName",
-                path: "/tmp/bootstrap-worktree",
-              },
+            Effect.sync(() => {
+              bootstrapGitOperations.push("create-worktree");
+              return {
+                worktree: {
+                  refName: "t3code/bootstrap-refName",
+                  path: "/tmp/bootstrap-worktree",
+                },
+              };
             }),
         );
         const runForThread = vi.fn(
@@ -5961,6 +5982,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         yield* buildAppUnderTest({
           layers: {
             gitVcsDriver: {
+              fetchRemote,
+              resolveRemoteTrackingCommit,
               createWorktree,
             },
             vcsStatusBroadcaster: {
@@ -6012,6 +6035,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   projectCwd: "/tmp/project",
                   baseBranch: "main",
                   branch: "t3code/bootstrap-refName",
+                  startFromOrigin: true,
                 },
                 runSetupScript: true,
               },
@@ -6033,10 +6057,24 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         );
         assert.deepEqual(createWorktree.mock.calls[0]?.[0], {
           cwd: "/tmp/project",
-          refName: "main",
+          refName: fetchedOriginCommit,
           newRefName: "t3code/bootstrap-refName",
           path: null,
         });
+        assert.deepEqual(fetchRemote.mock.calls[0]?.[0], {
+          cwd: "/tmp/project",
+          remoteName: "origin",
+        });
+        assert.deepEqual(resolveRemoteTrackingCommit.mock.calls[0]?.[0], {
+          cwd: "/tmp/project",
+          refName: "main",
+          fallbackRemoteName: "origin",
+        });
+        assert.deepEqual(bootstrapGitOperations, [
+          "fetch",
+          "resolve-remote-commit",
+          "create-worktree",
+        ]);
         assert.deepEqual(runForThread.mock.calls[0]?.[0], {
           threadId: ThreadId.make("thread-bootstrap"),
           projectId: defaultProjectId,
