@@ -11,6 +11,7 @@ export interface MicButtonProps {
   voiceEnabled: boolean;
   disabled: boolean;
   onToggle: () => void;
+  preserveFocusOnPointerDown?: boolean;
 }
 
 export const MicButton = memo(function MicButton({
@@ -18,6 +19,7 @@ export const MicButton = memo(function MicButton({
   voiceEnabled,
   disabled,
   onToggle,
+  preserveFocusOnPointerDown = false,
 }: MicButtonProps) {
   if (!voiceEnabled) return null;
 
@@ -42,6 +44,11 @@ export const MicButton = memo(function MicButton({
             aria-pressed={isActive}
             disabled={disabled && !isActive}
             className={cn(isActive && "text-red-500 hover:text-red-600")}
+            onPointerDown={(event) => {
+              if (preserveFocusOnPointerDown) {
+                event.preventDefault();
+              }
+            }}
             onClick={onToggle}
           >
             {state === "starting" || state === "stopping" ? (
