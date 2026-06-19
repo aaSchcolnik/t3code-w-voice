@@ -31,6 +31,7 @@ import {
   useState,
 } from "react";
 import {
+  buildDictationReplacement,
   clampCollapsedComposerCursor,
   type ComposerTrigger,
   collapseExpandedComposerCursor,
@@ -895,6 +896,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const mobileComposerExpandFrameRef = useRef<number | null>(null);
   const mobileComposerExpandReleaseFrameRef = useRef<number | null>(null);
   const mobileComposerExpandInFlightRef = useRef(false);
+  const voiceDictationInsertionRef = useRef<{ value: string; cursor: number } | null>(null);
+  const shouldRestoreComposerFocusAfterVoiceRef = useRef(false);
   const dragDepthRef = useRef(0);
 
   // ------------------------------------------------------------------
@@ -1534,15 +1537,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const commitDictationTranscript = useCallback(
     (text: string) => {
-      const trimmed = text.trim();
-      if (trimmed.length === 0) return;
       const base = promptRef.current;
-      const prefix = base.length > 0 && !/\s$/.test(base) ? " " : "";
-      void applyPromptReplacement(base.length, base.length, `${prefix}${trimmed}`, {
+      const insertionSnapshot = voiceDictationInsertionRef.current;
+      const insertionCursor = insertionSnapshot
+        ? clampCollapsedComposerCursor(base, insertionSnapshot.cursor)
+        : composerCursor;
+      const insertion = buildDictationReplacement(base, insertionCursor, text);
+      if (!insertion) return;
+      void applyPromptReplacement(insertion.rangeStart, insertion.rangeEnd, insertion.replacement, {
         focusEditorAfterReplace: false,
       });
     },
-    [applyPromptReplacement, promptRef],
+    [applyPromptReplacement, composerCursor, promptRef],
   );
 
   const voiceDictation = useVoiceDictationSession({
@@ -1556,21 +1562,70 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     start: startVoiceDictation,
     stopAndCommit: stopAndCommitVoiceDictation,
     cancel: cancelVoiceDictation,
-    toggle: toggleVoiceDictation,
   } = voiceDictation;
+
+  const prepareVoiceDictationInsertion = useCallback(() => {
+    const snapshot = composerEditorRef.current?.readSnapshot() ?? {
+      value: promptRef.current,
+      cursor: composerCursor,
+    };
+    voiceDictationInsertionRef.current = {
+      value: snapshot.value,
+      cursor: snapshot.cursor,
+    };
+  }, [composerCursor, promptRef]);
+
+  const handleStartVoiceDictation = useCallback(() => {
+    prepareVoiceDictationInsertion();
+    void startVoiceDictation();
+  }, [prepareVoiceDictationInsertion, startVoiceDictation]);
+
+  const handleStopAndCommitVoiceDictation = useCallback(() => {
+    shouldRestoreComposerFocusAfterVoiceRef.current = true;
+    stopAndCommitVoiceDictation();
+  }, [stopAndCommitVoiceDictation]);
+
+  const handleCancelVoiceDictation = useCallback(() => {
+    shouldRestoreComposerFocusAfterVoiceRef.current = true;
+    cancelVoiceDictation();
+  }, [cancelVoiceDictation]);
+
+  const handleToggleVoiceDictation = useCallback(() => {
+    if (voiceIsActive) {
+      handleStopAndCommitVoiceDictation();
+      return;
+    }
+    if (!voiceStartDisabled) {
+      handleStartVoiceDictation();
+    }
+  }, [
+    handleStartVoiceDictation,
+    handleStopAndCommitVoiceDictation,
+    voiceIsActive,
+    voiceStartDisabled,
+  ]);
+
+  useEffect(() => {
+    if (voiceIsActive || !shouldRestoreComposerFocusAfterVoiceRef.current) return;
+    shouldRestoreComposerFocusAfterVoiceRef.current = false;
+    voiceDictationInsertionRef.current = null;
+    window.requestAnimationFrame(() => {
+      composerEditorRef.current?.focusAt(composerCursor);
+    });
+  }, [composerCursor, voiceIsActive]);
 
   useEffect(() => {
     if (!settings.voice.enabled && voiceIsActive) {
-      cancelVoiceDictation();
+      handleCancelVoiceDictation();
     }
-  }, [cancelVoiceDictation, settings.voice.enabled, voiceIsActive]);
+  }, [handleCancelVoiceDictation, settings.voice.enabled, voiceIsActive]);
 
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (voiceIsActive && event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        cancelVoiceDictation();
+        handleCancelVoiceDictation();
         return;
       }
 
@@ -1586,11 +1641,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event.preventDefault();
       event.stopPropagation();
       if (voiceIsActive) {
-        stopAndCommitVoiceDictation();
+        handleStopAndCommitVoiceDictation();
         return;
       }
       if (!voiceStartDisabled) {
-        void startVoiceDictation();
+        handleStartVoiceDictation();
       }
     };
 
@@ -1600,10 +1655,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   }, [
     keybindings,
-    cancelVoiceDictation,
+    handleCancelVoiceDictation,
+    handleStartVoiceDictation,
+    handleStopAndCommitVoiceDictation,
     settings.voice.enabled,
-    startVoiceDictation,
-    stopAndCommitVoiceDictation,
     terminalOpen,
     voiceIsActive,
     voiceStartDisabled,
@@ -2351,7 +2406,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   state={voiceState}
                   voiceEnabled={settings.voice.enabled}
                   disabled={voiceStartDisabled}
-                  onToggle={toggleVoiceDictation}
+                  preserveFocusOnPointerDown
+                  onToggle={handleToggleVoiceDictation}
                 />
                 <button
                   type="button"
@@ -2518,8 +2574,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <VoiceRecordingOverlay
                 waveform={voiceWaveform}
                 stopShortcutLabel={voiceStopShortcutLabel}
-                onStop={stopAndCommitVoiceDictation}
-                onCancel={cancelVoiceDictation}
+                onStop={handleStopAndCommitVoiceDictation}
+                onCancel={handleCancelVoiceDictation}
               />
             ) : (
               <div className="relative">
@@ -2666,7 +2722,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   state={voiceState}
                   voiceEnabled={settings.voice.enabled}
                   disabled={voiceStartDisabled}
-                  onToggle={toggleVoiceDictation}
+                  preserveFocusOnPointerDown
+                  onToggle={handleToggleVoiceDictation}
                 />
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}

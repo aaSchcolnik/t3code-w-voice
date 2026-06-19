@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  buildDictationReplacement,
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
   detectComposerTrigger,
@@ -139,6 +140,36 @@ describe("replaceTextRange", () => {
       text: "hello ",
       cursor: 6,
     });
+  });
+});
+
+describe("buildDictationReplacement", () => {
+  it("inserts dictation at the saved cursor instead of the end", () => {
+    expect(buildDictationReplacement("first second", "first ".length, "inserted")).toEqual({
+      rangeStart: "first ".length,
+      rangeEnd: "first ".length,
+      replacement: "inserted ",
+    });
+  });
+
+  it("adds a leading space when inserting after a word", () => {
+    expect(buildDictationReplacement("hello", "hello".length, "world")).toEqual({
+      rangeStart: "hello".length,
+      rangeEnd: "hello".length,
+      replacement: " world",
+    });
+  });
+
+  it("adds boundary spaces when inserting between two words", () => {
+    expect(buildDictationReplacement("helloworld", "hello".length, "middle")).toEqual({
+      rangeStart: "hello".length,
+      rangeEnd: "hello".length,
+      replacement: " middle ",
+    });
+  });
+
+  it("ignores blank transcripts", () => {
+    expect(buildDictationReplacement("hello", 0, "   ")).toBeNull();
   });
 });
 

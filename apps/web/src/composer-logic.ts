@@ -278,3 +278,24 @@ export function replaceTextRange(
   const nextText = `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`;
   return { text: nextText, cursor: safeStart + replacement.length };
 }
+
+export function buildDictationReplacement(
+  text: string,
+  cursorInput: number,
+  transcript: string,
+): { rangeStart: number; rangeEnd: number; replacement: string } | null {
+  const trimmed = transcript.trim();
+  if (trimmed.length === 0) return null;
+
+  const cursor = clampCursor(text, cursorInput);
+  const previousChar = text[cursor - 1] ?? "";
+  const nextChar = text[cursor] ?? "";
+  const prefix = previousChar.length > 0 && !isWhitespace(previousChar) ? " " : "";
+  const suffix = nextChar.length > 0 && !isWhitespace(nextChar) ? " " : "";
+
+  return {
+    rangeStart: cursor,
+    rangeEnd: cursor,
+    replacement: `${prefix}${trimmed}${suffix}`,
+  };
+}
