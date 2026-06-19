@@ -1,15 +1,12 @@
 import { useEffect, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useAtomValue } from "@effect/atom-react";
 
 import { resolveShortcutCommand } from "../keybindings";
 import ThreadSidebar from "./Sidebar";
 import { Sidebar, SidebarProvider, SidebarRail, useSidebar } from "./ui/sidebar";
-import {
-  clearShortcutModifierState,
-  syncShortcutModifierStateFromKeyboardEvent,
-} from "../shortcutModifierState";
 import { isTerminalFocused } from "../lib/terminalFocus";
-import { useServerKeybindings } from "../rpc/serverState";
+import { primaryServerKeybindingsAtom } from "../state/server";
 
 const THREAD_SIDEBAR_WIDTH_STORAGE_KEY = "chat_thread_sidebar_width";
 const THREAD_SIDEBAR_MIN_WIDTH = 13 * 16;
@@ -24,7 +21,7 @@ function isEditableShortcutTarget(target: EventTarget | null): boolean {
 }
 
 function SidebarKeybindingHandler() {
-  const keybindings = useServerKeybindings();
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
 
   useEffect(() => {

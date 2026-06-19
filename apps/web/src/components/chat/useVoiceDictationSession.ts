@@ -1,7 +1,13 @@
 import type { EnvironmentId, TranscriptionUpdate } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { readEnvironmentConnection } from "../../environments/runtime";
+import { AsyncResult } from "effect/unstable/reactivity";
 import { randomUUID } from "~/lib/utils";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import {
+  transcriptionSendAudio,
+  transcriptionStop,
+  transcriptionUpdates,
+} from "~/state/transcription";
 import { toastManager } from "../ui/toast";
 
 export type VoiceDictationState = "idle" | "starting" | "recording" | "stopping" | "error";
@@ -132,9 +138,8 @@ export function useVoiceDictationSession(props: {
       setState("stopping");
 
       if (options.sendStop !== false) {
-        const connection = readEnvironmentConnection(environmentId);
-        void connection?.client.transcription
-          .stop({ sessionId: capture.sessionId })
+        void transcriptionStop
+          .run(appAtomRegistry, { environmentId, input: { sessionId: capture.sessionId } })
           .catch(() => undefined);
       }
 
@@ -166,12 +171,6 @@ export function useVoiceDictationSession(props: {
 
   const start = useCallback(async () => {
     if (captureRef.current) return;
-
-    const connection = readEnvironmentConnection(environmentId);
-    if (!connection) {
-      toastManager.add({ type: "error", title: "Not connected to the server." });
-      return;
-    }
 
     setState("starting");
     setTranscript("");
@@ -231,9 +230,23 @@ export function useVoiceDictationSession(props: {
       }
     };
 
-    capture.unsubscribe = connection.client.transcription.start(
-      { sessionId, sampleRate: TARGET_SAMPLE_RATE },
-      handleUpdate,
+    const updatesAtom = transcriptionUpdates({
+      environmentId,
+      input: { sessionId, sampleRate: TARGET_SAMPLE_RATE },
+    });
+    capture.unsubscribe = appAtomRegistry.subscribe(
+      updatesAtom,
+      (result) => {
+        if (captureRef.current !== capture || capture.stopped) return;
+        if (AsyncResult.isSuccess(result)) {
+          handleUpdate(result.value);
+        } else if (AsyncResult.isFailure(result)) {
+          toastManager.add({ type: "error", title: "Voice transcription disconnected." });
+          setState("error");
+          requestStop({ commit: false, sendStop: false });
+        }
+      },
+      { immediate: true },
     );
 
     try {
@@ -266,15 +279,23 @@ export function useVoiceDictationSession(props: {
         if (pending.length >= CHUNK_SAMPLES) {
           const chunk = Float32Array.from(pending);
           pending = [];
-          void connection.client.transcription
-            .sendAudio({ sessionId, audio: floatToPcm16Base64(chunk) })
-            .catch(() => {
-              if (captureRef.current === capture && !capture.stopped) {
+          void transcriptionSendAudio
+            .run(appAtomRegistry, {
+              environmentId,
+              input: { sessionId, audio: floatToPcm16Base64(chunk) },
+            })
+            .then((result) => {
+              if (
+                AsyncResult.isFailure(result) &&
+                captureRef.current === capture &&
+                !capture.stopped
+              ) {
                 toastManager.add({ type: "error", title: "Voice transcription disconnected." });
                 setState("error");
                 requestStop({ commit: false, sendStop: false });
               }
-            });
+            })
+            .catch(() => undefined);
         }
       };
       workletNode.port.addEventListener("message", handleWorkletMessage);
