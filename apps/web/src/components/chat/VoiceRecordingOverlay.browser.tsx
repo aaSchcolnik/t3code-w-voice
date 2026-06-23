@@ -2,7 +2,7 @@ import "../../index.css";
 
 import { page } from "vite-plus/test/browser";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { render } from "vitest-browser-react";
+import { createRoot } from "react-dom/client";
 
 import { VoiceRecordingOverlay } from "./VoiceRecordingOverlay";
 
@@ -14,18 +14,19 @@ async function mountOverlay(props?: {
 }) {
   const host = document.createElement("div");
   document.body.append(host);
-  const screen = await render(
+  const root = createRoot(host);
+  root.render(
     <VoiceRecordingOverlay
       waveform={props?.waveform ?? []}
       stopShortcutLabel={props?.stopShortcutLabel ?? "alt+shift+r"}
       onStop={props?.onStop ?? vi.fn()}
       onCancel={props?.onCancel ?? vi.fn()}
     />,
-    { container: host },
   );
+  await new Promise((resolve) => requestAnimationFrame(resolve));
 
   const cleanup = async () => {
-    await screen.unmount();
+    root.unmount();
     host.remove();
   };
 

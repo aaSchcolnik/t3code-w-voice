@@ -8,7 +8,6 @@ import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { compareSemverVersions } from "@t3tools/shared/semver";
@@ -32,16 +31,6 @@ const OPENCODE_PRESENTATION = {
   showInteractionModeToggle: false,
 } as const;
 const MINIMUM_OPENCODE_VERSION = "1.14.19";
-
-// Hard ceiling on the unbounded probe steps (`opencode --version` and the
-// provider/agent inventory load). Without this, a hung or unresponsive OpenCode
-// server freezes `checkOpenCodeProviderStatus` forever, which leaves the managed
-// snapshot stuck on its initial `makePendingOpenCodeProvider` placeholder ("…has
-// not been checked in this session yet") with zero models and no error the user
-// can act on. On timeout the probe fails into the normal `fallback(...)` path,
-// surfacing a retryable error instead, and the periodic refresh can recover.
-const OPENCODE_PROBE_TIMEOUT_SECONDS = 15;
-const OPENCODE_PROBE_TIMEOUT = `${OPENCODE_PROBE_TIMEOUT_SECONDS} seconds`;
 
 class OpenCodeProbeError extends Data.TaggedError("OpenCodeProbeError")<{
   readonly cause: unknown;
@@ -382,23 +371,12 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
           Effect.mapError(
             (cause) => new OpenCodeProbeError({ cause, detail: openCodeRuntimeErrorDetail(cause) }),
           ),
-          // `None` on timeout so a hung `opencode --version` becomes a retryable
-          // error rather than freezing the probe forever.
-          Effect.timeoutOption(OPENCODE_PROBE_TIMEOUT),
         ),
     );
     if (versionExit._tag === "Failure") {
       return fallback(Cause.squash(versionExit.cause));
     }
-    if (Option.isNone(versionExit.value)) {
-      return fallback(
-        new OpenCodeProbeError({
-          cause: undefined,
-          detail: `\`opencode --version\` did not respond within ${OPENCODE_PROBE_TIMEOUT_SECONDS}s.`,
-        }),
-      );
-    }
-    version = parseGenericCliVersion(versionExit.value.value.stdout) ?? null;
+    version = parseGenericCliVersion(versionExit.value.stdout) ?? null;
 
     if (!version) {
       return fallback(
@@ -451,34 +429,20 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
         Effect.mapError(
           (cause) => new OpenCodeProbeError({ cause, detail: openCodeRuntimeErrorDetail(cause) }),
         ),
-        // Inside `Effect.scoped` so a timeout interrupts the inner effect and
-        // closes the scope, killing the spawned `opencode serve` process.
-        // `None` on timeout — see `OPENCODE_PROBE_TIMEOUT` rationale above.
-        Effect.timeoutOption(OPENCODE_PROBE_TIMEOUT),
       ),
     ),
   );
   if (inventoryExit._tag === "Failure") {
     return fallback(Cause.squash(inventoryExit.cause), version);
   }
-  if (Option.isNone(inventoryExit.value)) {
-    return fallback(
-      new OpenCodeProbeError({
-        cause: undefined,
-        detail: `OpenCode did not respond within ${OPENCODE_PROBE_TIMEOUT_SECONDS}s. The server may be unresponsive — T3 Code will retry automatically.`,
-      }),
-      version,
-    );
-  }
-  const inventory = inventoryExit.value.value;
 
   const models = providerModelsFromSettings(
-    flattenOpenCodeModels(inventory),
+    flattenOpenCodeModels(inventoryExit.value),
     PROVIDER,
     customModels,
     DEFAULT_OPENCODE_MODEL_CAPABILITIES,
   );
-  const connectedCount = inventory.providerList.connected.length;
+  const connectedCount = inventoryExit.value.providerList.connected.length;
   return buildServerProvider({
     presentation: OPENCODE_PRESENTATION,
     enabled: true,
