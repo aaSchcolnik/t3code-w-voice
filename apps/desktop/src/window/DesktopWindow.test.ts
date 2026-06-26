@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as TestClock from "effect/testing/TestClock";
 
 import type * as Electron from "electron";
 import { vi } from "vite-plus/test";
@@ -51,13 +52,14 @@ function makeFakeBrowserWindow() {
   const webContentsListeners = new Map<string, (...args: readonly unknown[]) => void>();
   const webContents = {
     copyImageAt: vi.fn(),
-    getURL: vi.fn(() => "http://127.0.0.1:5733/"),
+    getURL: vi.fn(() => "t3code-dev://app/"),
     isLoadingMainFrame: vi.fn(() => false),
     on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
       webContentsListeners.set(eventName, listener);
     }),
     once: vi.fn(),
     openDevTools: vi.fn(),
+    reload: vi.fn(),
     replaceMisspelling: vi.fn(),
     send: vi.fn(),
     session: {
@@ -88,6 +90,7 @@ function makeFakeBrowserWindow() {
     window: window as unknown as Electron.BrowserWindow,
     loadURL: window.loadURL,
     openDevTools: webContents.openDevTools,
+    reload: webContents.reload,
     setAutoHideCursor: window.setAutoHideCursor,
     webContentsListeners,
   };
@@ -246,6 +249,73 @@ describe("DesktopWindow", () => {
     }),
   );
 
+  it.effect("recovers when the development renderer is temporarily unreachable", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady;
+
+        const didFailLoad = fakeWindow.webContentsListeners.get("did-fail-load");
+        const didFinishLoad = fakeWindow.webContentsListeners.get("did-finish-load");
+        if (!didFailLoad || !didFinishLoad) {
+          return yield* Effect.die("renderer load listeners were not registered");
+        }
+
+        didFailLoad({}, -9, "ERR_UNEXPECTED", "t3code-dev://app/", true);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 1);
+
+        yield* TestClock.adjust(100);
+        assert.deepEqual(fakeWindow.loadURL.mock.calls, [
+          ["t3code-dev://app/"],
+          ["t3code-dev://app/"],
+        ]);
+        assert.equal(fakeWindow.reload.mock.calls.length, 0);
+
+        didFailLoad({}, -9, "ERR_UNEXPECTED", "t3code-dev://app/", true);
+        didFinishLoad();
+        yield* TestClock.adjust(250);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 2);
+        assert.equal(fakeWindow.reload.mock.calls.length, 0);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it("retries only transient failures for the development renderer", () => {
+    assert.isTrue(
+      DesktopWindow.isRetryableDevelopmentRendererLoadFailure({
+        applicationUrl: "t3code-dev://app/",
+        errorCode: -102,
+        isMainFrame: true,
+        validatedUrl: "t3code-dev://app/",
+      }),
+    );
+    assert.isFalse(
+      DesktopWindow.isRetryableDevelopmentRendererLoadFailure({
+        applicationUrl: "t3code-dev://app/",
+        errorCode: -3,
+        isMainFrame: true,
+        validatedUrl: "t3code-dev://app/",
+      }),
+    );
+    assert.isFalse(
+      DesktopWindow.isRetryableDevelopmentRendererLoadFailure({
+        applicationUrl: "t3code-dev://app/",
+        errorCode: -102,
+        isMainFrame: true,
+        validatedUrl: "https://example.com/",
+      }),
+    );
+  });
+
   it.effect("opens safe off-origin renderer navigations in the system browser", () =>
     Effect.gen(function* () {
       const fakeWindow = makeFakeBrowserWindow();
@@ -313,9 +383,7 @@ describe("DesktopWindow", () => {
           return yield* Effect.die("media permission handlers were not registered");
         }
 
-        assert.isTrue(
-          checkHandler(null, "media", "http://127.0.0.1:5733/", { mediaType: "audio" }),
-        );
+        assert.isTrue(checkHandler(null, "media", "t3code-dev://app/", { mediaType: "audio" }));
         assert.isFalse(checkHandler(null, "media", "https://example.com/", { mediaType: "audio" }));
 
         const granted = yield* Effect.promise(
@@ -323,7 +391,7 @@ describe("DesktopWindow", () => {
             new Promise<boolean>((resolve) => {
               requestHandler(fakeWindow.window.webContents, "media", resolve, {
                 mediaTypes: ["audio"],
-                securityOrigin: "http://127.0.0.1:5733/",
+                securityOrigin: "t3code-dev://app/",
               });
             }),
         );
@@ -334,7 +402,7 @@ describe("DesktopWindow", () => {
             new Promise<boolean>((resolve) => {
               requestHandler(fakeWindow.window.webContents, "media", resolve, {
                 mediaTypes: ["audio", "video"],
-                securityOrigin: "http://127.0.0.1:5733/",
+                securityOrigin: "t3code-dev://app/",
               });
             }),
         );

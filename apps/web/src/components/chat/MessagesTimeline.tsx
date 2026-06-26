@@ -6,6 +6,7 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
   Fragment,
@@ -152,6 +153,7 @@ interface MessagesTimelineProps {
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
   latestTurn: TimelineLatestTurn | null;
+  runningTurnId: TurnId | null;
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
   routeThreadKey: string;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -165,6 +167,8 @@ interface MessagesTimelineProps {
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
   skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
+  anchorMessageId: MessageId | null;
+  contentInsetEndAdjustment: number;
   onIsAtEndChange: (isAtEnd: boolean) => void;
 }
 
@@ -179,6 +183,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   listRef,
   timelineEntries,
   latestTurn,
+  runningTurnId,
   turnDiffSummaryByAssistantMessageId,
   routeThreadKey,
   onOpenTurnDiff,
@@ -192,6 +197,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   timestampFormat,
   workspaceRoot,
   skills = EMPTY_TIMELINE_SKILLS,
+  anchorMessageId,
   onIsAtEndChange,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
@@ -267,6 +273,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       deriveMessagesTimelineRows({
         timelineEntries,
         latestTurn,
+        runningTurnId,
         expandedTurnIds,
         isWorking,
         activeTurnStartedAt,
@@ -276,6 +283,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [
       timelineEntries,
       latestTurn,
+      runningTurnId,
       expandedTurnIds,
       isWorking,
       activeTurnStartedAt,
@@ -284,6 +292,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ],
   );
   const rows = useStableRows(rawRows);
+  const anchoredEndSpace = useMemo(
+    () =>
+      resolveChatListAnchoredEndSpace(rows, anchorMessageId, (row) =>
+        row.kind === "message" ? row.message.id : null,
+      ),
+    [anchorMessageId, rows],
+  );
 
   const handleScroll = useCallback(() => {
     const state = listRef.current?.getState?.();
@@ -291,24 +306,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onIsAtEndChange(state.isAtEnd);
     }
   }, [listRef, onIsAtEndChange]);
-
-  const previousRowCountRef = useRef(rows.length);
-  useEffect(() => {
-    const previousRowCount = previousRowCountRef.current;
-    previousRowCountRef.current = rows.length;
-
-    if (previousRowCount > 0 || rows.length === 0) {
-      return;
-    }
-
-    onIsAtEndChange(true);
-    const frameId = window.requestAnimationFrame(() => {
-      void listRef.current?.scrollToEnd?.({ animated: false });
-    });
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [listRef, onIsAtEndChange, rows.length]);
 
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
@@ -376,14 +373,16 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           ref={listRef}
           data={rows}
           keyExtractor={keyExtractor}
+          getItemType={getItemType}
           renderItem={renderItem}
           estimatedItemSize={90}
           initialScrollAtEnd
+          {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
           maintainScrollAtEnd={!foldToggleSettling}
           maintainScrollAtEndThreshold={0.1}
           maintainVisibleContentPosition
           onScroll={handleScroll}
-          className="scrollbar-gutter-both h-full overflow-x-hidden overscroll-y-contain px-3 sm:px-5"
+          className="scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 sm:px-5"
           ListHeaderComponent={TIMELINE_LIST_HEADER}
           ListFooterComponent={TIMELINE_LIST_FOOTER}
         />
@@ -394,6 +393,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
 function keyExtractor(item: MessagesTimelineRow) {
   return item.id;
+}
+
+function getItemType(item: MessagesTimelineRow) {
+  return item.kind === "message" ? `message:${item.message.role}` : item.kind;
 }
 
 // ---------------------------------------------------------------------------
@@ -448,6 +451,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     visibleText = extracted.promptText;
   }
   const elementContextState = extractTrailingElementContexts(visibleText);
+  const elementContexts = [
+    ...displayedUserMessage.elementContexts,
+    ...elementContextState.contexts,
+  ];
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
@@ -495,9 +502,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             image={previewImages[index] ?? null}
           />
         ))}
-        {elementContextState.contexts.length > 0 ? (
+        {elementContexts.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-1.5">
-            {elementContextState.contexts.map((context) => (
+            {elementContexts.map((context) => (
               <UserMessageElementContextChip
                 key={`${context.header}:${context.body}`}
                 context={context}
