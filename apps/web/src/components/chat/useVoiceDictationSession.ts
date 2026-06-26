@@ -16,27 +16,7 @@ const TARGET_SAMPLE_RATE = 16_000;
 /** ~250 ms of 16 kHz audio per WS message. */
 const CHUNK_SAMPLES = 4_096;
 const STOP_FINALIZATION_DELAY_MS = 800;
-
-const WORKLET_SOURCE = `
-class T3MicCapture extends AudioWorkletProcessor {
-  process(inputs) {
-    const channel = inputs[0]?.[0];
-    if (channel) {
-      let sum = 0;
-      for (let i = 0; i < channel.length; i++) {
-        const sample = channel[i] || 0;
-        sum += sample * sample;
-      }
-      this.port.postMessage({
-        samples: channel.slice(0),
-        rms: Math.sqrt(sum / Math.max(1, channel.length))
-      });
-    }
-    return true;
-  }
-}
-registerProcessor("t3-mic-capture", T3MicCapture);
-`;
+const MIC_CAPTURE_WORKLET_URL = "/voice/t3MicCapture.worklet.js";
 
 function downsampleTo16k(input: Float32Array, inputRate: number): Float32Array {
   if (inputRate === TARGET_SAMPLE_RATE) return input;
@@ -252,14 +232,7 @@ export function useVoiceDictationSession(props: {
     try {
       const audioContext = new AudioContext();
       capture.audioContext = audioContext;
-      const workletUrl = URL.createObjectURL(
-        new Blob([WORKLET_SOURCE], { type: "application/javascript" }),
-      );
-      try {
-        await audioContext.audioWorklet.addModule(workletUrl);
-      } finally {
-        URL.revokeObjectURL(workletUrl);
-      }
+      await audioContext.audioWorklet.addModule(MIC_CAPTURE_WORKLET_URL);
       const source = audioContext.createMediaStreamSource(mediaStream);
       const workletNode = new AudioWorkletNode(audioContext, "t3-mic-capture");
       source.connect(workletNode);
