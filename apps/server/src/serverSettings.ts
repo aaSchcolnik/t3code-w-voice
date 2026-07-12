@@ -61,10 +61,55 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+const readConfigEnabled = (config: unknown): boolean | undefined => {
+  if (!config || typeof config !== "object" || globalThis.Array.isArray(config)) {
+    return undefined;
+  }
+  const enabled = (config as { readonly enabled?: unknown }).enabled;
+  return typeof enabled === "boolean" ? enabled : undefined;
+};
+
+/**
+ * Legacy settings can carry contradictory enablement state — an envelope
+ * `enabled` that disagrees with a driver-config `enabled` inside the same
+ * `providerInstances` entry (e.g. `{ enabled: true, config: { enabled:
+ * false } }`). The envelope field is authoritative; this rewrites both
+ * fields to the canonical value so downstream readers agree regardless of
+ * which one they consult. Entries with only a config-level flag are lifted
+ * to the envelope.
+ */
+export function canonicalizeProviderInstanceEnablement(settings: ServerSettings): ServerSettings {
+  let changed = false;
+  const providerInstances = Object.fromEntries(
+    Object.entries(settings.providerInstances).map(([instanceId, instance]) => {
+      const configEnabled = readConfigEnabled(instance.config);
+      const canonical = instance.enabled ?? configEnabled;
+      if (canonical === undefined) return [instanceId, instance] as const;
+      const envelopeOutOfSync = instance.enabled !== canonical;
+      const configOutOfSync = configEnabled !== undefined && configEnabled !== canonical;
+      if (!envelopeOutOfSync && !configOutOfSync) return [instanceId, instance] as const;
+      changed = true;
+      return [
+        instanceId,
+        {
+          ...instance,
+          enabled: canonical,
+          ...(configOutOfSync
+            ? { config: { ...(instance.config as Record<string, unknown>), enabled: canonical } }
+            : {}),
+        },
+      ] as const;
+    }),
+  );
+  return changed
+    ? { ...settings, providerInstances: providerInstances as ServerSettings["providerInstances"] }
+    : settings;
+}
+
 const normalizeServerSettings = (
   settings: ServerSettings,
 ): Effect.Effect<ServerSettings, ServerSettingsError> =>
-  encodeServerSettings(settings).pipe(
+  encodeServerSettings(canonicalizeProviderInstanceEnablement(settings)).pipe(
     Effect.flatMap(decodeServerSettings),
     Effect.mapError(
       (cause) =>

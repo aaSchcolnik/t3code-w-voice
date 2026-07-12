@@ -1,4 +1,4 @@
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -10,6 +10,8 @@ import { HttpServer } from "effect/unstable/http";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "./McpProviderSession.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
+import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
@@ -93,6 +95,8 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
 ) {
   const crypto = yield* Crypto.Crypto;
   const environment = yield* ServerEnvironment.ServerEnvironment;
+  const serverSettings = yield* ServerSettingsService;
+  const providerRegistry = yield* ProviderRegistry;
   const environmentId = yield* environment.getEnvironmentId;
   const httpServer = yield* HttpServer.HttpServer;
   const state = yield* SynchronizedRef.make<RegistryState>({ records: new Map() });
@@ -119,6 +123,44 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
 
   const issue: McpSessionRegistryShape["issue"] = Effect.fn("McpSessionRegistry.issue")(
     function* (request) {
+      const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      const providers = yield* providerRegistry.getProviders;
+      const providerAvailable = (driver: string) =>
+        providers.some(
+          (provider) =>
+            provider.driver === ProviderDriverKind.make(driver) &&
+            provider.enabled &&
+            provider.installed &&
+            provider.availability !== "unavailable",
+        );
+      const capabilities = new Set<McpInvocationContext.McpCapability>();
+      const delegatedSession = String(request.threadId).startsWith("delegated-");
+      if (settings.mcp.preview) capabilities.add("preview");
+      if (!delegatedSession && settings.mcp.codexAgent && providerAvailable("codex")) {
+        capabilities.add("codex-agent");
+      }
+      if (!delegatedSession && settings.mcp.cursorAgent && providerAvailable("cursor")) {
+        capabilities.add("cursor-agent");
+      }
+      const delegatedProviderInstances = providers
+        .filter(
+          (provider) =>
+            (provider.driver === ProviderDriverKind.make("codex") ||
+              provider.driver === ProviderDriverKind.make("cursor")) &&
+            provider.enabled &&
+            provider.installed &&
+            provider.availability !== "unavailable",
+        )
+        .map((provider) => provider.instanceId);
+      // Diagnostic trail for delegation debugging. Never log the bearer
+      // token or authorization header here.
+      yield* Effect.logInfo("Issued provider-scoped MCP credential", {
+        parentThreadId: request.threadId,
+        parentProviderInstanceId: request.providerInstanceId,
+        capabilities: [...capabilities],
+        delegatedProviderInstances,
+        endpoint,
+      });
       const issuedAt = yield* currentTimeMillis;
       const providerSessionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
       const rawToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
@@ -128,7 +170,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
-        capabilities: new Set(["preview"]),
+        capabilities,
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -142,6 +184,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           threadId: scope.threadId,
           providerSessionId,
           providerInstanceId: scope.providerInstanceId,
+          capabilities: scope.capabilities,
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
         },

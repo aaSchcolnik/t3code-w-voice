@@ -9,6 +9,7 @@ import {
   Link2Icon,
   Mic2Icon,
   PaletteIcon,
+  PlugZapIcon,
   Settings2Icon,
 } from "lucide-react";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
@@ -33,6 +34,7 @@ export type SettingsSectionPath =
   | "/settings/connections"
   | "/settings/voice"
   | "/settings/beta"
+  | "/settings/mcp"
   | "/settings/archived";
 
 export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
@@ -44,6 +46,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   { label: "Appearance", to: "/settings/appearance", icon: PaletteIcon },
   { label: "Keybindings", to: "/settings/keybindings", icon: KeyboardIcon },
   { label: "Providers", to: "/settings/providers", icon: BotIcon },
+  { label: "MCP", to: "/settings/mcp", icon: PlugZapIcon },
   { label: "Source Control", to: "/settings/source-control", icon: GitBranchIcon },
   { label: "Connections", to: "/settings/connections", icon: Link2Icon },
   { label: "Voice", to: "/settings/voice", icon: Mic2Icon },

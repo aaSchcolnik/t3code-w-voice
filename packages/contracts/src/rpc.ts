@@ -61,6 +61,7 @@ import {
   OrchestrationGetTurnDiffInput,
   OrchestrationRpcSchemas,
 } from "./orchestration.ts";
+import { ThreadId } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   RelayClientInstallFailedError,
@@ -154,6 +155,14 @@ import {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
+import {
+  DelegatedRunCancelResult,
+  DelegatedRunError,
+  DelegatedRunId,
+  SubagentTranscriptError,
+  SubagentTranscriptStreamEvent,
+  SubagentTranscriptSubscribeInput,
+} from "./delegatedRun.ts";
 import {
   TranscriptionAudioChunkInput,
   TranscriptionError,
@@ -278,6 +287,8 @@ export const WS_METHODS = {
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
   subscribeVoiceModelState: "subscribeVoiceModelState",
+  subscribeSubagentTranscript: "subagents.subscribeTranscript",
+  subagentsCancelRun: "subagents.cancelRun",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -778,6 +789,19 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+export const WsSubscribeSubagentTranscriptRpc = Rpc.make(WS_METHODS.subscribeSubagentTranscript, {
+  payload: SubagentTranscriptSubscribeInput,
+  success: SubagentTranscriptStreamEvent,
+  error: Schema.Union([SubagentTranscriptError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsSubagentsCancelRunRpc = Rpc.make(WS_METHODS.subagentsCancelRun, {
+  payload: Schema.Struct({ parentThreadId: ThreadId, runId: DelegatedRunId }),
+  success: DelegatedRunCancelResult,
+  error: Schema.Union([DelegatedRunError, EnvironmentAuthorizationError]),
+});
+
 export const WsTranscriptionStartRpc = Rpc.make(WS_METHODS.transcriptionStart, {
   payload: TranscriptionStartInput,
   success: TranscriptionUpdate,
@@ -905,6 +929,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsVoiceModelsRemoveRpc,
   WsVoiceModelsSelectRpc,
   WsSubscribeVoiceModelStateRpc,
+  WsSubscribeSubagentTranscriptRpc,
+  WsSubagentsCancelRunRpc,
   WsSubscribeTerminalEventsRpc,
   WsSubscribeTerminalMetadataRpc,
   WsPreviewOpenRpc,

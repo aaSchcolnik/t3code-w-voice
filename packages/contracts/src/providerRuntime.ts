@@ -114,6 +114,9 @@ export const TOOL_LIFECYCLE_ITEM_TYPES = [
 export const ToolLifecycleItemType = Schema.Literals(TOOL_LIFECYCLE_ITEM_TYPES);
 export type ToolLifecycleItemType = typeof ToolLifecycleItemType.Type;
 
+export const ToolStopReason = Schema.Literals(["stopped_by_main_thread"]);
+export type ToolStopReason = typeof ToolStopReason.Type;
+
 export function isToolLifecycleItemType(value: string): value is ToolLifecycleItemType {
   return TOOL_LIFECYCLE_ITEM_TYPES.includes(value as ToolLifecycleItemType);
 }

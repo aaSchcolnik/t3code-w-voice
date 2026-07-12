@@ -591,6 +591,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar
         ? ["Auto-open task panel"]
         : []),
+      ...(settings.autoOpenSubagentsPanel !== DEFAULT_UNIFIED_SETTINGS.autoOpenSubagentsPanel
+        ? ["Auto-open subagents panel"]
+        : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
@@ -621,6 +624,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       isTextGenerationModelDirty,
       isBackgroundActivityDirty,
       settings.autoOpenPlanSidebar,
+      settings.autoOpenSubagentsPanel,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.addProjectBaseDirectory,
@@ -659,6 +663,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
+      autoOpenSubagentsPanel: DEFAULT_UNIFIED_SETTINGS.autoOpenSubagentsPanel,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -1431,6 +1436,32 @@ export function GeneralSettingsPanel() {
                 updateSettings({ autoOpenPlanSidebar: Boolean(checked) })
               }
               aria-label="Open the task panel automatically"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Auto-open subagents panel"
+          description="Open the Subagents surface automatically when a delegated agent starts working."
+          resetAction={
+            settings.autoOpenSubagentsPanel !== DEFAULT_UNIFIED_SETTINGS.autoOpenSubagentsPanel ? (
+              <SettingResetButton
+                label="auto-open subagents panel"
+                onClick={() =>
+                  updateSettings({
+                    autoOpenSubagentsPanel: DEFAULT_UNIFIED_SETTINGS.autoOpenSubagentsPanel,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.autoOpenSubagentsPanel}
+              onCheckedChange={(checked) =>
+                updateSettings({ autoOpenSubagentsPanel: Boolean(checked) })
+              }
+              aria-label="Open the Subagents panel automatically"
             />
           }
         />

@@ -83,6 +83,7 @@ import {
   findSidebarProposedPlan,
   findLatestProposedPlan,
   deriveWorkLogEntries,
+  deriveSubagentEntries,
   hasActionableProposedPlan,
   isLatestTurnSettled,
 } from "../session-logic";
@@ -143,12 +144,15 @@ import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
+import { SubagentsPanel } from "./SubagentsPanel";
+import { deriveProviderInstanceEntries, getProviderInstanceEntry } from "../providerInstances";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
   GitBranchIcon,
+  LoaderCircleIcon,
   TriangleAlertIcon,
   WifiOffIcon,
 } from "lucide-react";
@@ -1220,6 +1224,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const timestampFormat = settings.timestampFormat;
   const autoOpenPlanSidebar = settings.autoOpenPlanSidebar;
+  const autoOpenSubagentsPanel = settings.autoOpenSubagentsPanel;
   const navigate = useNavigate();
   const { resolvedTheme } = useTheme();
   // Granular store selectors — avoid subscribing to prompt changes.
@@ -1292,6 +1297,8 @@ function ChatViewContent(props: ChatViewProps) {
   const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   const planSidebarDismissedForTurnRef = useRef<string | null>(null);
+  const subagentsPanelDismissedForTurnRef = useRef<string | null>(null);
+  const previousActiveSubagentCountRef = useRef(0);
   // When set, the thread-change reset effect will open the sidebar instead of closing it.
   // Used by "Implement in a new thread" to carry the sidebar-open intent across navigation.
   const planSidebarOpenOnNextThreadRef = useRef(false);
@@ -1554,6 +1561,7 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
 
   const planSidebarOpen = activeRightPanelKind === "plan";
+  const subagentsPanelOpen = activeRightPanelKind === "subagents";
 
   const existingOpenTerminalThreadKeys = useMemo(() => {
     const existingThreadKeys = new Set<string>([...serverThreadKeys, ...draftThreadKeys]);
@@ -1879,8 +1887,55 @@ function ChatViewContent(props: ChatViewProps) {
   const versionMismatchEnvironmentId =
     versionMismatch && activeThread ? activeThread.environmentId : null;
   const versionMismatchSelfUpdate = resolveServerSelfUpdateCapability(serverConfig);
+  const mcpBanner = useMemo(() => {
+    const activity = activeThread?.activities.findLast(
+      (entry) => entry.kind === "mcp.status.updated",
+    );
+    if (!activity || typeof activity.payload !== "object" || activity.payload === null) {
+      return null;
+    }
+    const payload = activity.payload as {
+      readonly phase?: unknown;
+      readonly servers?: unknown;
+    };
+    const servers = Array.isArray(payload.servers)
+      ? payload.servers.flatMap((server) => {
+          if (typeof server !== "object" || server === null) return [];
+          const candidate = server as { readonly name?: unknown; readonly status?: unknown };
+          return typeof candidate.name === "string" && typeof candidate.status === "string"
+            ? [{ name: candidate.name, status: candidate.status }]
+            : [];
+        })
+      : [];
+    const t3Code = servers.find((server) => server.name === "t3-code");
+    if (!t3Code) return null;
+    const normalizedStatus = t3Code.status.toLowerCase();
+    if (["connected", "ready", "running"].includes(normalizedStatus)) return null;
+    const loading =
+      payload.phase === "starting" ||
+      ["starting", "connecting", "pending", "initializing"].includes(normalizedStatus);
+    return {
+      loading,
+      status: t3Code.status,
+    };
+  }, [activeThread?.activities]);
   const systemComposerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const items: ComposerBannerStackItem[] = [];
+    if (mcpBanner) {
+      items.push({
+        id: `mcp:${mcpBanner.loading ? "loading" : mcpBanner.status}`,
+        variant: mcpBanner.loading ? "info" : "error",
+        icon: mcpBanner.loading ? (
+          <LoaderCircleIcon className="animate-spin" />
+        ) : (
+          <TriangleAlertIcon />
+        ),
+        title: mcpBanner.loading ? "Connecting T3 Code tools" : "T3 Code tools failed to connect",
+        description: mcpBanner.loading
+          ? "Claude is connecting to the built-in MCP server. Delegation and preview tools will be available when it is ready."
+          : `Claude reported MCP status “${mcpBanner.status}” for t3-code. Restart the provider session after resolving the server error.`,
+      });
+    }
     if (activeEnvironmentUnavailableState) {
       const connection = activeEnvironmentUnavailableState.connection;
       const isReconnecting =
@@ -1957,6 +2012,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [
     activeEnvironmentUnavailableState,
     handleReconnectActiveEnvironment,
+    mcpBanner,
     navigate,
     setDismissedVersionMismatchKey,
     showVersionMismatchBanner,
@@ -1975,6 +2031,21 @@ function ChatViewContent(props: ChatViewProps) {
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
+  const subagentEntries = useMemo(
+    () => deriveSubagentEntries(threadActivities),
+    [threadActivities],
+  );
+  const parentProviderInstance = useMemo(
+    () =>
+      activeThread?.modelSelection.instanceId
+        ? getProviderInstanceEntry(providerStatuses, activeThread.modelSelection.instanceId)
+        : undefined,
+    [activeThread?.modelSelection.instanceId, providerStatuses],
+  );
+  const subagentProviderInstances = useMemo(
+    () => deriveProviderInstanceEntries(providerStatuses),
+    [providerStatuses],
+  );
   const pendingApprovals = useMemo(
     () => derivePendingApprovals(threadActivities),
     [threadActivities],
@@ -3057,6 +3128,11 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
   }, [activeProject, activeThreadRef]);
+  const addSubagentsSurface = useCallback(() => {
+    if (!activeThreadRef) return;
+    subagentsPanelDismissedForTurnRef.current = null;
+    useRightPanelStore.getState().open(activeThreadRef, "subagents");
+  }, [activeThreadRef]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -3271,11 +3347,15 @@ function ChatViewContent(props: ChatViewProps) {
   const closeRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
+      if (surface.kind === "subagents") {
+        subagentsPanelDismissedForTurnRef.current =
+          subagentEntries.find((entry) => entry.status === "active")?.turnId ?? "__dismissed__";
+      }
       cleanupRightPanelSurfaces([surface]);
       useRightPanelStore.getState().closeSurface(activeThreadRef, surface.id);
       syncActivePreviewSurface();
     },
-    [activeThreadRef, cleanupRightPanelSurfaces, syncActivePreviewSurface],
+    [activeThreadRef, cleanupRightPanelSurfaces, subagentEntries, syncActivePreviewSurface],
   );
   const closeOtherRightPanelSurfaces = useCallback(
     (surface: RightPanelSurface) => {
@@ -3760,6 +3840,8 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
     planSidebarDismissedForTurnRef.current = null;
+    subagentsPanelDismissedForTurnRef.current = null;
+    previousActiveSubagentCountRef.current = 0;
     // activeThreadRef resets transitively with the active thread.
   }, [activeThread?.id]);
 
@@ -3784,6 +3866,17 @@ function ChatViewContent(props: ChatViewProps) {
     planSidebarOpen,
     sidebarProposedPlan?.turnId,
   ]);
+
+  useEffect(() => {
+    const activeEntries = subagentEntries.filter((entry) => entry.status === "active");
+    const previousCount = previousActiveSubagentCountRef.current;
+    previousActiveSubagentCountRef.current = activeEntries.length;
+    if (!autoOpenSubagentsPanel || activeEntries.length === 0 || previousCount > 0) return;
+    if (subagentsPanelOpen || !activeThreadRef) return;
+    const turnKey = activeEntries[0]?.turnId ?? "__active__";
+    if (subagentsPanelDismissedForTurnRef.current === turnKey) return;
+    useRightPanelStore.getState().open(activeThreadRef, "subagents");
+  }, [activeThreadRef, autoOpenSubagentsPanel, subagentEntries, subagentsPanelOpen]);
 
   useEffect(() => {
     setIsRevertingCheckpoint(false);
@@ -5618,6 +5711,20 @@ function ChatViewContent(props: ChatViewProps) {
           initialGitScope={initialDiffPanelGitScope}
         />
       </Suspense>
+    ) : activeRightPanelSurface?.kind === "subagents" ? (
+      <SubagentsPanel
+        entries={subagentEntries}
+        provider={parentProviderInstance}
+        providers={subagentProviderInstances}
+        fallbackDriverKind={
+          activeThread?.session?.providerName
+            ? ProviderDriverKind.make(activeThread.session.providerName)
+            : selectedProvider
+        }
+        environmentId={environmentId}
+        threadId={activeThreadId}
+        cwd={gitCwd ?? undefined}
+      />
     ) : activeRightPanelSurface?.kind === "plan" ? (
       <PlanSidebar
         activePlan={activePlan}
@@ -6062,6 +6169,7 @@ function ChatViewContent(props: ChatViewProps) {
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
+          onAddSubagents={addSubagentsSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
@@ -6089,6 +6197,7 @@ function ChatViewContent(props: ChatViewProps) {
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
+            onAddSubagents={addSubagentsSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}

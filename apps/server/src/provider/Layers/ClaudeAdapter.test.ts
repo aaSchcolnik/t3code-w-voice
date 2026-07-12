@@ -268,6 +268,43 @@ const THREAD_ID = ThreadId.make("thread-claude-1");
 const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
 
 describe("ClaudeAdapterLive", () => {
+  it.effect("ignores command lifecycle messages but warns for unknown SDK messages", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const warningFiber = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "runtime.warning",
+      ).pipe(Stream.runHead, Effect.forkChild);
+
+      harness.query.emit({
+        type: "command_lifecycle",
+        command_uuid: "command-1",
+        state: "started",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "bogus_message",
+        detail: "unexpected payload",
+      } as unknown as SDKMessage);
+
+      const warning = yield* Fiber.join(warningFiber);
+      assert.equal(warning._tag, "Some");
+      if (warning._tag === "Some" && warning.value.type === "runtime.warning") {
+        assert.match(warning.value.payload.message, /bogus_message/u);
+        assert.equal(/command_lifecycle/u.test(warning.value.payload.message), false);
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("returns validation error for non-claude provider on startSession", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -1711,7 +1748,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
 
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 6).pipe(
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -1721,6 +1758,27 @@ describe("ClaudeAdapterLive", () => {
         provider: ProviderDriverKind.make("claudeAgent"),
         runtimeMode: "full-access",
       });
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-task-summary",
+        uuid: "stream-task-summary-1",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "tool-task-summary-1",
+            name: "Task",
+            input: {
+              description: "Running background teammate",
+              prompt: "Review the migration edge cases",
+              subagent_type: "code-reviewer",
+            },
+          },
+        },
+      } as unknown as SDKMessage);
 
       harness.query.emit({
         type: "system",
@@ -1746,6 +1804,16 @@ describe("ClaudeAdapterLive", () => {
           "Code reviewer checked the migration edge cases.",
         );
         assert.equal(progressEvent.payload.description, "Running background teammate");
+      }
+      const subagentUpdate = runtimeEvents.find(
+        (event) => event.type === "item.updated" && event.itemId === "tool-task-summary-1",
+      );
+      assert.equal(subagentUpdate?.type, "item.updated");
+      if (subagentUpdate?.type === "item.updated") {
+        assert.equal(
+          subagentUpdate.payload.detail,
+          "Code reviewer checked the migration edge cases.",
+        );
       }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),

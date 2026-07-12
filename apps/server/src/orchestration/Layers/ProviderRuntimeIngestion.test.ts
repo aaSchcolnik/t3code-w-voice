@@ -361,6 +361,124 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.lastError).toBe("turn failed");
   });
 
+  it("synthesizes stopped tool completions when the parent turn fails", async () => {
+    const harness = await createHarness();
+    const startedAt = "2026-01-01T00:00:00.000Z";
+    const stoppedAt = "2026-01-01T00:00:01.000Z";
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-stop-sweep-turn-started"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      createdAt: startedAt,
+      turnId: asTurnId("turn-stop-sweep"),
+    });
+    harness.emit({
+      type: "item.started",
+      eventId: asEventId("evt-stop-sweep-tool-started"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      createdAt: startedAt,
+      turnId: asTurnId("turn-stop-sweep"),
+      itemId: asItemId("subagent-stop-sweep"),
+      payload: {
+        itemType: "collab_agent_tool_call",
+        status: "inProgress",
+        title: "Subagent task",
+        detail: "Review the persistence layer",
+        data: { providerField: "preserved" },
+      },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-stop-sweep-turn-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      createdAt: stoppedAt,
+      turnId: asTurnId("turn-stop-sweep"),
+      payload: { state: "failed", errorMessage: "Stopped" },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "evt-stop-sweep-turn-completed:tool-stop:subagent-stop-sweep",
+      ),
+    );
+    const stoppedActivity = thread.activities.find(
+      (activity: ProviderRuntimeTestActivity) =>
+        activity.id === "evt-stop-sweep-turn-completed:tool-stop:subagent-stop-sweep",
+    );
+    const payload = stoppedActivity?.payload as Record<string, unknown> | undefined;
+    const data = payload?.data as Record<string, unknown> | undefined;
+    expect(stoppedActivity?.kind).toBe("tool.completed");
+    expect(payload?.status).toBe("failed");
+    expect(data).toEqual({
+      providerField: "preserved",
+      toolCallId: "subagent-stop-sweep",
+      stopReason: "stopped_by_main_thread",
+    });
+  });
+
+  it("does not synthesize a duplicate after a real tool completion", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    for (const event of [
+      {
+        type: "item.started" as const,
+        eventId: asEventId("evt-real-terminal-started"),
+        payload: {
+          itemType: "collab_agent_tool_call" as const,
+          status: "inProgress" as const,
+          title: "Subagent task",
+        },
+      },
+      {
+        type: "item.completed" as const,
+        eventId: asEventId("evt-real-terminal-completed"),
+        payload: {
+          itemType: "collab_agent_tool_call" as const,
+          status: "completed" as const,
+          title: "Subagent task",
+        },
+      },
+    ]) {
+      harness.emit({
+        ...event,
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: now,
+        turnId: asTurnId("turn-real-terminal"),
+        itemId: asItemId("subagent-real-terminal"),
+      });
+    }
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-real-terminal-turn-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      createdAt: now,
+      turnId: asTurnId("turn-real-terminal"),
+      payload: { state: "failed", errorMessage: "Stopped" },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) => entry.session?.status === "error" && entry.session.activeTurnId === null,
+    );
+    expect(
+      thread.activities.filter(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.kind === "tool.completed" &&
+          (activity.payload as Record<string, unknown>)?.data &&
+          ((activity.payload as Record<string, unknown>).data as Record<string, unknown>)
+            .toolCallId === "subagent-real-terminal",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("applies provider session.state.changed transitions directly", async () => {
     const harness = await createHarness();
     const waitingAt = "2026-01-01T00:00:00.000Z";
@@ -992,7 +1110,7 @@ describe("ProviderRuntimeIngestion", () => {
       itemId: asItemId("item-tool-completed"),
       payload: {
         itemType: "dynamic_tool_call",
-        status: "completed",
+        status: "failed",
         title: "Read file",
         data: {
           toolCallId: "tool-read-1",
@@ -1028,8 +1146,9 @@ describe("ProviderRuntimeIngestion", () => {
     expect(activity?.kind).toBe("tool.completed");
     expect(activity?.summary).toBe("Read file");
     expect(payload?.itemType).toBe("dynamic_tool_call");
+    expect(payload?.status).toBe("failed");
     expect(payload?.detail).toBeUndefined();
-    expect(data?.toolCallId).toBe("tool-read-1");
+    expect(data?.toolCallId).toBe("item-tool-completed");
     expect(data?.kind).toBe("read");
     expect(rawOutput?.content).toBe('import * as Effect from "effect/Effect"\n');
   });
@@ -2732,11 +2851,13 @@ describe("ProviderRuntimeIngestion", () => {
       createdAt: now,
       threadId: asThreadId("thread-1"),
       turnId: asTurnId("turn-9"),
+      itemId: asItemId("item-tool-started"),
       payload: {
         itemType: "command_execution",
         status: "in_progress",
         title: "Read file",
         detail: "/tmp/file.ts",
+        data: "provider-specific-data",
       },
     });
 
@@ -2756,6 +2877,14 @@ describe("ProviderRuntimeIngestion", () => {
         (activity: ProviderRuntimeTestActivity) => activity.kind === "tool.started",
       ),
     ).toBe(true);
+    const startedActivity = thread.activities.find(
+      (activity: ProviderRuntimeTestActivity) => activity.kind === "tool.started",
+    );
+    const startedPayload = startedActivity?.payload as Record<string, unknown> | undefined;
+    expect(startedPayload?.data).toEqual({
+      toolCallId: "item-tool-started",
+      value: "provider-specific-data",
+    });
   });
 
   it("consumes P1 runtime events into thread metadata, diff checkpoints, and activities", async () => {

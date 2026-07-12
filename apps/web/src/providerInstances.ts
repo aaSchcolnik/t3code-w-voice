@@ -105,7 +105,7 @@ function humanizeInstanceId(instanceId: ProviderInstanceId): string {
   return words.join(" ");
 }
 
-function driverKindLabel(driverKind: ProviderDriverKind): string {
+export function driverKindLabel(driverKind: ProviderDriverKind): string {
   return PROVIDER_DISPLAY_NAMES[driverKind] ?? formatProviderDriverKindLabel(driverKind);
 }
 

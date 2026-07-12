@@ -70,6 +70,11 @@ import * as Stream from "effect/Stream";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import {
+  detectUntrackedDelegationAttempt,
+  trackedDelegationInstructions,
+  untrackedDelegationDenialMessage,
+} from "../../mcp/delegationPolicy.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
@@ -194,6 +199,23 @@ interface ClaudeSessionContext {
     items: Array<unknown>;
   }>;
   readonly inFlightTools: Map<number, ToolInFlight>;
+  /**
+   * Child-scoped (subagent) tools keyed by tool-use id. Populated from
+   * completed child assistant messages (tagged with `parent_tool_use_id`)
+   * and consumed by the matching child tool results, so child transcripts
+   * carry full tool lifecycle without touching the parent streaming state.
+   */
+  readonly childTools: Map<
+    string,
+    {
+      readonly itemType: CanonicalItemType;
+      readonly toolName: string;
+      readonly title: string;
+      readonly detail: string;
+      readonly input: Record<string, unknown>;
+      readonly parentToolUseId: string;
+    }
+  >;
   readonly claudeTasks: Map<string, ClaudeTaskState>;
   turnState: ClaudeTurnState | undefined;
   lastKnownContextWindow: number | undefined;
@@ -210,6 +232,9 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
   readonly getContextUsage?: () => Promise<SDKControlGetContextUsageResponse>;
+  readonly mcpServerStatus?: () => Promise<
+    ReadonlyArray<{ readonly name: string; readonly status: string }>
+  >;
   readonly close: () => void;
 }
 
@@ -845,6 +870,9 @@ function summarizeToolRequest(toolName: string, input: Record<string, unknown>):
     if (label) {
       return subagentType ? `${subagentType}: ${label}` : label;
     }
+    // Streaming tool starts can arrive before the input assembled; never
+    // surface serialized JSON (e.g. `Agent: {}`) for subagent rows.
+    return subagentType ?? toolName;
   }
 
   const serialized = encodeJsonStringForDiagnostics(input) ?? "[unserializable input]";
@@ -1270,6 +1298,11 @@ const SDK_MESSAGE_NOISE_KEYS = new Set([
   "parent_tool_use_id",
   "request_id",
 ]);
+
+// SDK message types emitted by the Claude CLI but not yet modeled by the
+// installed SDK. They contain no transcript content and remain available in
+// the native event log, so they should not surface as work-log warnings.
+const UNMODELED_BENIGN_SDK_MESSAGE_TYPES: ReadonlySet<string> = new Set(["command_lifecycle"]);
 
 // Pull the salient scalar content out of a message the adapter doesn't model
 // yet, so the work-log row shows what actually arrived (e.g. a notification's
@@ -2001,6 +2034,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           data: {
             toolName: tool.toolName,
             input: tool.input,
+            ...(status === "interrupted" ? { stopReason: "stopped_by_main_thread" as const } : {}),
           },
         },
         providerRefs: nativeProviderRefs(context, {
@@ -2076,13 +2110,18 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
+    // Child-scoped stream events belong to a subagent, not the parent
+    // conversation. Complete child messages arrive separately (type
+    // "assistant"/"user" with parent_tool_use_id) and are routed into the
+    // child transcript there; processing the deltas here would interleave
+    // subagent text and tools into the parent's streaming state.
+    if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) {
+      return;
+    }
+
     const { event } = message;
 
     if (event.type === "message_delta") {
-      if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) {
-        return;
-      }
-
       const snapshot = normalizeClaudeActiveTokenUsage(
         event.usage,
         context.lastKnownContextWindow,
@@ -2343,6 +2382,43 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
+    if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) {
+      const parentToolUseId = message.parent_tool_use_id;
+      for (const toolResult of toolResultBlocksFromUserMessage(message)) {
+        const child = context.childTools.get(toolResult.toolUseId);
+        const itemType = child?.itemType ?? "dynamic_tool_call";
+        const stamp = yield* makeEventStamp();
+        yield* offerRuntimeEvent({
+          type: "item.completed",
+          eventId: stamp.eventId,
+          provider: PROVIDER,
+          createdAt: stamp.createdAt,
+          threadId: context.session.threadId,
+          ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+          itemId: asRuntimeItemId(toolResult.toolUseId),
+          payload: {
+            itemType,
+            status: toolResult.isError ? "failed" : "completed",
+            title: child?.title ?? titleForTool(itemType),
+            ...(child?.detail ? { detail: child.detail } : {}),
+            data: {
+              ...(child ? { toolName: child.toolName, input: child.input } : {}),
+              result: toolResult.block,
+              parentToolUseId,
+            },
+          },
+          providerRefs: nativeProviderRefs(context, { providerItemId: toolResult.toolUseId }),
+          raw: {
+            source: "claude.sdk.message",
+            method: "claude/user/subagent",
+            payload: message,
+          },
+        });
+        context.childTools.delete(toolResult.toolUseId);
+      }
+      return;
+    }
+
     if (context.turnState) {
       context.turnState.items.push(message.message);
     }
@@ -2457,11 +2533,115 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
   });
 
+  // Translate a completed child (subagent) assistant message into
+  // child-scoped canonical events: text blocks become completed
+  // assistant_message items and tool_use blocks become started tool items.
+  // Every payload carries `data.parentToolUseId`, which routes the event
+  // into the child transcript and keeps it out of the parent timeline.
+  const emitChildAssistantMessage = Effect.fn("emitChildAssistantMessage")(function* (
+    context: ClaudeSessionContext,
+    message: SDKMessage & { readonly type: "assistant" },
+    parentToolUseId: string,
+  ) {
+    const content = message.message?.content;
+    if (!Array.isArray(content)) {
+      return;
+    }
+    for (const [blockIndex, block] of content.entries()) {
+      if (!block || typeof block !== "object") continue;
+      const typed = block as {
+        readonly type?: unknown;
+        readonly id?: unknown;
+        readonly name?: unknown;
+        readonly input?: unknown;
+      };
+      if (typed.type === "text") {
+        const text = extractContentBlockText(block).trim();
+        if (text.length === 0) continue;
+        const stamp = yield* makeEventStamp();
+        yield* offerRuntimeEvent({
+          type: "item.completed",
+          eventId: stamp.eventId,
+          provider: PROVIDER,
+          createdAt: stamp.createdAt,
+          threadId: context.session.threadId,
+          ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+          itemId: asRuntimeItemId(`${message.uuid ?? stamp.eventId}:${blockIndex}`),
+          payload: {
+            itemType: "assistant_message",
+            status: "completed",
+            detail: text,
+            data: { parentToolUseId },
+          },
+          providerRefs: nativeProviderRefs(context),
+          raw: {
+            source: "claude.sdk.message",
+            method: "claude/assistant/subagent",
+            payload: message,
+          },
+        });
+        continue;
+      }
+      if (
+        typed.type !== "tool_use" &&
+        typed.type !== "server_tool_use" &&
+        typed.type !== "mcp_tool_use"
+      ) {
+        continue;
+      }
+      const toolName = typeof typed.name === "string" ? typed.name : "tool";
+      const toolUseId = typeof typed.id === "string" ? typed.id : undefined;
+      if (!toolUseId) continue;
+      const input =
+        typeof typed.input === "object" && typed.input !== null
+          ? (typed.input as Record<string, unknown>)
+          : {};
+      const itemType = classifyToolItemType(toolName);
+      const child = {
+        itemType,
+        toolName,
+        title: titleForTool(itemType),
+        detail: summarizeToolRequest(toolName, input),
+        input,
+        parentToolUseId,
+      };
+      context.childTools.set(toolUseId, child);
+      const stamp = yield* makeEventStamp();
+      yield* offerRuntimeEvent({
+        type: "item.started",
+        eventId: stamp.eventId,
+        provider: PROVIDER,
+        createdAt: stamp.createdAt,
+        threadId: context.session.threadId,
+        ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+        itemId: asRuntimeItemId(toolUseId),
+        payload: {
+          itemType: child.itemType,
+          status: "inProgress",
+          title: child.title,
+          detail: child.detail,
+          data: { toolName, input, parentToolUseId },
+        },
+        providerRefs: nativeProviderRefs(context, { providerItemId: toolUseId }),
+        raw: {
+          source: "claude.sdk.message",
+          method: "claude/assistant/subagent",
+          payload: message,
+        },
+      });
+    }
+  });
+
   const handleAssistantMessage = Effect.fn("handleAssistantMessage")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
   ) {
     if (message.type !== "assistant") {
+      return;
+    }
+
+    if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) {
+      yield* emitChildAssistantMessage(context, message, message.parent_tool_use_id);
       return;
     }
 
@@ -2602,6 +2782,67 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       case "init":
         yield* offerRuntimeEvent({
           ...base,
+          type: "mcp.status.updated",
+          payload: {
+            status: {
+              phase: "settled",
+              servers: message.mcp_servers,
+            },
+          },
+        });
+        if (
+          context.query.mcpServerStatus &&
+          message.mcp_servers.some(
+            (server) =>
+              server.name === "t3-code" &&
+              ["starting", "connecting", "pending", "initializing"].includes(
+                server.status.toLowerCase(),
+              ),
+          )
+        ) {
+          yield* Effect.gen(function* () {
+            for (let attempt = 0; attempt < 20; attempt += 1) {
+              yield* Effect.sleep("500 millis");
+              const servers = yield* Effect.tryPromise({
+                try: () => context.query.mcpServerStatus!(),
+                catch: () => undefined,
+              }).pipe(Effect.orElseSucceed(() => undefined));
+              if (!servers) continue;
+              const t3Code = servers.find((server) => server.name === "t3-code");
+              if (!t3Code) continue;
+              const statusStamp = yield* makeEventStamp();
+              yield* offerRuntimeEvent({
+                ...base,
+                eventId: statusStamp.eventId,
+                createdAt: statusStamp.createdAt,
+                type: "mcp.status.updated",
+                payload: { status: { phase: "settled", servers } },
+              });
+              if (
+                !["starting", "connecting", "pending", "initializing"].includes(
+                  t3Code.status.toLowerCase(),
+                )
+              ) {
+                return;
+              }
+            }
+            const timeoutStamp = yield* makeEventStamp();
+            yield* offerRuntimeEvent({
+              ...base,
+              eventId: timeoutStamp.eventId,
+              createdAt: timeoutStamp.createdAt,
+              type: "mcp.status.updated",
+              payload: {
+                status: {
+                  phase: "settled",
+                  servers: [{ name: "t3-code", status: "timed out while connecting" }],
+                },
+              },
+            });
+          }).pipe(Effect.forkChild);
+        }
+        yield* offerRuntimeEvent({
+          ...base,
           type: "session.configured",
           payload: {
             config: message as Record<string, unknown>,
@@ -2698,6 +2939,48 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             rawPayload: message,
           },
         );
+        if (message.summary) {
+          const description = message.description.trim();
+          const matchingSubagent = Array.from(context.inFlightTools.values())
+            .toReversed()
+            .find(
+              (tool) =>
+                tool.itemType === "collab_agent_tool_call" &&
+                typeof tool.input.description === "string" &&
+                tool.input.description.trim() === description,
+            );
+          if (matchingSubagent) {
+            const stamp = yield* makeEventStamp();
+            yield* offerRuntimeEvent({
+              type: "item.updated",
+              eventId: stamp.eventId,
+              provider: PROVIDER,
+              createdAt: stamp.createdAt,
+              threadId: context.session.threadId,
+              ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+              itemId: asRuntimeItemId(matchingSubagent.itemId),
+              payload: {
+                itemType: matchingSubagent.itemType,
+                status: "inProgress",
+                title: matchingSubagent.title,
+                detail: message.summary,
+                data: {
+                  toolName: matchingSubagent.toolName,
+                  input: matchingSubagent.input,
+                  taskId: message.task_id,
+                },
+              },
+              providerRefs: nativeProviderRefs(context, {
+                providerItemId: matchingSubagent.itemId,
+              }),
+              raw: {
+                source: "claude.sdk.message",
+                method: "claude/system/task_progress",
+                payload: message,
+              },
+            });
+          }
+        }
         yield* offerRuntimeEvent({
           ...base,
           type: "task.progress",
@@ -2953,10 +3236,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         // Exhaustiveness guard (see handleSystemMessage): new SDK top-level
         // message types fail typecheck here instead of warning at runtime.
         message satisfies never;
-        const unknownMessage = message as never as { type: string };
+        const messageType = (message as never as { readonly type: string }).type;
+        if (UNMODELED_BENIGN_SDK_MESSAGE_TYPES.has(messageType)) {
+          yield* Effect.logDebug("ignoring unmodeled Claude SDK message", {
+            type: messageType,
+          });
+          return;
+        }
         yield* emitRuntimeWarning(
           context,
-          describeUnknownSdkMessage(`Claude SDK message '${unknownMessage.type}'`, message),
+          describeUnknownSdkMessage(`Claude SDK message '${messageType}'`, message),
           message,
         );
         return;
@@ -3369,6 +3658,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           } satisfies PermissionResult;
         }
 
+        const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+        if (mcpSession) {
+          const untrackedDelegation = detectUntrackedDelegationAttempt(
+            toolName,
+            toolInput,
+            mcpSession.capabilities,
+          );
+          if (untrackedDelegation) {
+            return {
+              behavior: "deny",
+              message: untrackedDelegationDenialMessage(untrackedDelegation),
+            } satisfies PermissionResult;
+          }
+        }
+
         const runtimeMode = input.runtimeMode ?? "full-access";
         if (runtimeMode === "full-access") {
           return {
@@ -3521,11 +3825,18 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(ultracode ? { ultracode: true } : {}),
       };
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+      const delegationInstructions = mcpSession
+        ? trackedDelegationInstructions(mcpSession.capabilities)
+        : undefined;
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
-        systemPrompt: { type: "preset", preset: "claude_code" },
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          ...(delegationInstructions ? { append: delegationInstructions } : {}),
+        },
         settingSources: [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.
@@ -3633,6 +3944,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         pendingUserInputs,
         turns: [],
         inFlightTools,
+        childTools: new Map(),
         claudeTasks,
         turnState: undefined,
         lastKnownContextWindow: initialContextWindow,
@@ -3655,6 +3967,24 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         payload: input.resumeCursor !== undefined ? { resume: input.resumeCursor } : {},
         providerRefs: {},
       });
+
+      if (mcpSession) {
+        const mcpStartingStamp = yield* makeEventStamp();
+        yield* offerRuntimeEvent({
+          type: "mcp.status.updated",
+          eventId: mcpStartingStamp.eventId,
+          provider: PROVIDER,
+          createdAt: mcpStartingStamp.createdAt,
+          threadId,
+          payload: {
+            status: {
+              phase: "starting",
+              servers: [{ name: "t3-code", status: "connecting" }],
+            },
+          },
+          providerRefs: {},
+        });
+      }
 
       const configuredStamp = yield* makeEventStamp();
       yield* offerRuntimeEvent({

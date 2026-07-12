@@ -41,6 +41,8 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as TranscriptionServiceModule from "./transcription/TranscriptionService.ts";
 import * as ServerVoiceModelManager from "./transcription/ServerVoiceModelManager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
+import * as DelegatedRunService from "./orchestration/DelegatedRunService.ts";
+import * as SubagentTranscriptService from "./orchestration/SubagentTranscriptService.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
@@ -338,6 +340,16 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
+const SubagentTranscriptLayerLive = SubagentTranscriptService.layer.pipe(
+  Layer.provide(ProviderRuntimeLayerLive),
+);
+
+const DelegatedRunLayerLive = DelegatedRunService.layer.pipe(
+  Layer.provide(SubagentTranscriptLayerLive),
+  Layer.provide(ProviderRuntimeLayerLive),
+  Layer.provide(OrchestrationLayerLive),
+);
+
 const RuntimeCoreServicesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive),
@@ -346,6 +358,7 @@ const RuntimeCoreServicesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
+  Layer.provideMerge(Layer.mergeAll(DelegatedRunLayerLive, SubagentTranscriptLayerLive)),
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(Keybindings.layer),

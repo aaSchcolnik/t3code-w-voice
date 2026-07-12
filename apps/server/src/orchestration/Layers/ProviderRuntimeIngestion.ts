@@ -7,6 +7,7 @@ import {
   type OrchestrationMessage,
   type OrchestrationProposedPlanId,
   CheckpointRef,
+  EventId,
   isToolLifecycleItemType,
   ThreadId,
   type ThreadTokenUsageSnapshot,
@@ -31,6 +32,7 @@ import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import { isGitRepository } from "../../git/Utils.ts";
+import { childScopedParentToolUseId } from "../SubagentTranscriptService.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
@@ -83,6 +85,13 @@ interface AssistantSegmentState {
   activeMessageId: MessageId | null;
 }
 
+interface InFlightToolActivity {
+  readonly itemId: string;
+  readonly turnId: TurnId;
+  readonly startedAt: string;
+  readonly payload: Extract<ProviderRuntimeEvent, { type: "item.started" }>["payload"];
+}
+
 const TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY = 10_000;
 const TURN_MESSAGE_IDS_BY_TURN_TTL = Duration.minutes(120);
 const BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_CACHE_CAPACITY = 20_000;
@@ -122,6 +131,28 @@ function sameId(left: string | null | undefined, right: string | null | undefine
     return false;
   }
   return left === right;
+}
+
+function toolLifecycleData(
+  itemId: string | undefined,
+  data: unknown,
+): Record<string, unknown> | undefined {
+  if (itemId === undefined) {
+    return data !== null && typeof data === "object" && !Array.isArray(data)
+      ? (data as Record<string, unknown>)
+      : data === undefined
+        ? undefined
+        : { value: data };
+  }
+
+  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
+    return { ...data, toolCallId: itemId };
+  }
+
+  return {
+    toolCallId: itemId,
+    ...(data !== undefined ? { value: data } : {}),
+  };
 }
 
 function hasAssistantMessageForTurn(
@@ -317,6 +348,21 @@ export function runtimeEventToActivities(
       : {};
   })();
   switch (event.type) {
+    case "mcp.status.updated": {
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "info",
+          kind: "mcp.status.updated",
+          summary: "MCP status updated",
+          payload: event.payload.status,
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
     case "request.opened": {
       if (event.payload.requestType === "tool_user_input") {
         return [];
@@ -617,6 +663,7 @@ export function runtimeEventToActivities(
       if (!isToolLifecycleItemType(event.payload.itemType)) {
         return [];
       }
+      const data = toolLifecycleData(event.itemId, event.payload.data);
       return [
         {
           id: event.eventId,
@@ -628,7 +675,7 @@ export function runtimeEventToActivities(
             itemType: event.payload.itemType,
             ...(event.payload.status ? { status: event.payload.status } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
-            ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
+            ...(data !== undefined ? { data } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -640,6 +687,7 @@ export function runtimeEventToActivities(
       if (!isToolLifecycleItemType(event.payload.itemType)) {
         return [];
       }
+      const data = toolLifecycleData(event.itemId, event.payload.data);
       return [
         {
           id: event.eventId,
@@ -649,8 +697,9 @@ export function runtimeEventToActivities(
           summary: event.payload.title ?? "Tool",
           payload: {
             itemType: event.payload.itemType,
+            ...(event.payload.status ? { status: event.payload.status } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
-            ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
+            ...(data !== undefined ? { data } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -662,6 +711,7 @@ export function runtimeEventToActivities(
       if (!isToolLifecycleItemType(event.payload.itemType)) {
         return [];
       }
+      const data = toolLifecycleData(event.itemId, event.payload.data);
       return [
         {
           id: event.eventId,
@@ -672,6 +722,7 @@ export function runtimeEventToActivities(
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(data !== undefined ? { data } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -745,6 +796,8 @@ const make = Effect.gen(function* () {
         Option.filter(description, (value) => value.length > 0).pipe(Option.getOrUndefined),
       ),
     );
+
+  const inFlightToolsByTurnKey = new Map<string, Map<string, InFlightToolActivity>>();
 
   const resolveThreadDetail = Effect.fn("resolveThreadDetail")(function* (threadId: ThreadId) {
     return yield* projectionSnapshotQuery
@@ -1292,8 +1345,96 @@ const make = Effect.gen(function* () {
 
   const processRuntimeEvent = (event: ProviderRuntimeEvent) =>
     Effect.gen(function* () {
+      // Child-scoped events (native subagent activity tagged with a parent
+      // tool-use id) belong to the child transcript, not the parent timeline.
+      if (childScopedParentToolUseId(event) !== undefined) return;
       const thread = yield* resolveThreadShell(event.threadId);
       if (!thread) return;
+
+      const eventTurnId = toTurnId(event.turnId);
+      const turnKey = eventTurnId ? providerTurnKey(thread.id, eventTurnId) : undefined;
+      if (
+        event.type === "item.started" &&
+        event.itemId !== undefined &&
+        eventTurnId !== undefined &&
+        isToolLifecycleItemType(event.payload.itemType)
+      ) {
+        const inFlightForTurn = inFlightToolsByTurnKey.get(turnKey!) ?? new Map();
+        inFlightForTurn.set(event.itemId, {
+          itemId: event.itemId,
+          turnId: eventTurnId,
+          startedAt: event.createdAt,
+          payload: event.payload,
+        });
+        inFlightToolsByTurnKey.set(turnKey!, inFlightForTurn);
+      } else if (
+        event.type === "item.updated" &&
+        event.itemId !== undefined &&
+        turnKey !== undefined
+      ) {
+        const inFlightForTurn = inFlightToolsByTurnKey.get(turnKey);
+        const existing = inFlightForTurn?.get(event.itemId);
+        if (existing) {
+          inFlightForTurn!.set(event.itemId, {
+            ...existing,
+            payload: { ...existing.payload, ...event.payload },
+          });
+        }
+      } else if (
+        event.type === "item.completed" &&
+        event.itemId !== undefined &&
+        turnKey !== undefined
+      ) {
+        const inFlightForTurn = inFlightToolsByTurnKey.get(turnKey);
+        inFlightForTurn?.delete(event.itemId);
+        if (inFlightForTurn?.size === 0) {
+          inFlightToolsByTurnKey.delete(turnKey);
+        }
+      }
+
+      const stoppedToolActivities: Array<OrchestrationThreadActivity> = [];
+      const stopInFlightTools = (entries: Iterable<InFlightToolActivity>) => {
+        for (const inFlight of entries) {
+          const data = toolLifecycleData(inFlight.itemId, inFlight.payload.data);
+          stoppedToolActivities.push({
+            id: EventId.make(`${event.eventId}:tool-stop:${inFlight.itemId}`),
+            createdAt: event.createdAt,
+            tone: "tool",
+            kind: "tool.completed",
+            summary: inFlight.payload.title ?? "Tool",
+            payload: {
+              itemType: inFlight.payload.itemType,
+              status: "failed",
+              ...(inFlight.payload.detail
+                ? { detail: truncateDetail(inFlight.payload.detail) }
+                : {}),
+              data: {
+                ...(data ?? { toolCallId: inFlight.itemId }),
+                stopReason: "stopped_by_main_thread",
+              },
+            },
+            turnId: inFlight.turnId,
+          });
+        }
+      };
+
+      if (event.type === "turn.completed" && turnKey !== undefined) {
+        const turnState = normalizeRuntimeTurnState(event.payload.state);
+        if (turnState !== "completed") {
+          const inFlightForTurn = inFlightToolsByTurnKey.get(turnKey);
+          if (inFlightForTurn) {
+            stopInFlightTools(inFlightForTurn.values());
+            inFlightToolsByTurnKey.delete(turnKey);
+          }
+        }
+      } else if (event.type === "session.exited") {
+        const threadPrefix = `${thread.id}:`;
+        for (const [key, inFlightForTurn] of inFlightToolsByTurnKey) {
+          if (!key.startsWith(threadPrefix)) continue;
+          stopInFlightTools(inFlightForTurn.values());
+          inFlightToolsByTurnKey.delete(key);
+        }
+      }
 
       let loadedThreadDetail: OrchestrationThread | null | undefined;
       const getLoadedThreadDetail = () =>
@@ -1306,7 +1447,6 @@ const make = Effect.gen(function* () {
         });
 
       const now = event.createdAt;
-      const eventTurnId = toTurnId(event.turnId);
       const activeTurnId = thread.session?.activeTurnId ?? null;
       const pendingTurnStart = yield* projectionTurnRepository.getPendingTurnStartByThreadId({
         threadId: thread.id,
@@ -1764,7 +1904,10 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = runtimeEventToActivities(event, taskTitle);
+      const activities = [
+        ...stoppedToolActivities,
+        ...runtimeEventToActivities(event, taskTitle),
+      ];
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>

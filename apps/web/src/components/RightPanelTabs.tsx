@@ -1,6 +1,15 @@
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
-import { ClipboardList, FileDiff, Files, Globe2, Plus, TerminalSquare, X } from "lucide-react";
+import {
+  ClipboardList,
+  FileDiff,
+  Files,
+  Globe2,
+  Plus,
+  TerminalSquare,
+  UsersRound,
+  X,
+} from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
@@ -44,6 +53,7 @@ interface RightPanelTabsProps {
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
+  onAddSubagents: () => void;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
@@ -91,11 +101,20 @@ function RightPanelEmptyState(props: {
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
+  onAddSubagents: () => void;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
 }) {
   const actions = [
+    {
+      label: "Subagents",
+      description: "Follow delegated agents and their latest updates.",
+      icon: UsersRound,
+      available: true,
+      disabledReason: null,
+      onClick: props.onAddSubagents,
+    },
     {
       label: "Browser",
       description: "Open a local app or URL.",
@@ -205,6 +224,8 @@ function surfaceTitle(
       );
     case "plan":
       return "Plan";
+    case "subagents":
+      return "Subagents";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -266,6 +287,8 @@ function SurfaceIcon({
       return <TerminalSquare className="size-3.5 shrink-0" />;
     case "plan":
       return <ClipboardList className="size-3.5 shrink-0" />;
+    case "subagents":
+      return <UsersRound className="size-3.5 shrink-0" />;
   }
 }
 
@@ -455,6 +478,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     <TerminalSquare />
                     Terminal
                   </SurfaceMenuItem>
+                  <SurfaceMenuItem available onClick={props.onAddSubagents}>
+                    <UsersRound />
+                    Subagents
+                  </SurfaceMenuItem>
                   <SurfaceMenuItem
                     available={props.filesAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.files}
@@ -485,6 +512,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
+            onAddSubagents={props.onAddSubagents}
             browserAvailable={props.browserAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}

@@ -87,6 +87,7 @@ import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
+import * as SubagentTranscriptService from "./orchestration/SubagentTranscriptService.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -690,6 +691,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(Layer.succeed(ServerVoiceModelManager, {} as ServerVoiceModelManagerImpl)),
       Layer.provide(
         Layer.mergeAll(
+          Layer.mock(SubagentTranscriptService.SubagentTranscriptService)({}),
           Layer.mock(PreviewManager.PreviewManager)({
             open: () => Effect.die("PreviewManager not stubbed in this test"),
             navigate: () => Effect.die("PreviewManager not stubbed in this test"),

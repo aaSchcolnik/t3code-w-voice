@@ -7,6 +7,9 @@ import {
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
   ProviderDriverKind,
+  ProviderInstanceId,
+  type SubagentTranscript,
+  type SubagentTranscriptStreamEvent,
   type ToolLifecycleItemType,
   type UserInputQuestion,
   type ThreadId,
@@ -78,6 +81,32 @@ export interface WorkLogEntry {
   toolLifecycleStatus?: WorkLogToolLifecycleStatus;
   /** Originating orchestration activity kind (e.g. `user-input.requested`) for row chrome. */
   sourceActivityKind?: OrchestrationThreadActivity["kind"];
+}
+
+export interface SubagentEntry {
+  id: string;
+  name: string;
+  lastMessage: string | null;
+  status: "active" | "done";
+  outcome: "completed" | "failed" | "stopped" | null;
+  turnId: TurnId | null;
+  createdAt: string;
+  completedAt: string | null;
+  providerInstanceId: ProviderInstanceId | null;
+  /**
+   * Native entries are provider-run subagents (e.g. Claude's Agent tool) and
+   * inherit the parent provider identity; delegated entries are cross-provider
+   * runs started through the built-in MCP and carry their own identity.
+   */
+  source: "native" | "delegated";
+  /** Driver kind for delegated entries; null for native (parent provider). */
+  providerDriver: ProviderDriverKind | null;
+  /** Resolved model for delegated entries when known. */
+  model: string | null;
+  /** Native agent type (e.g. `Explore`) when the provider reports one. */
+  agentType: string | null;
+  /** Identifier of the child transcript when one exists. */
+  transcriptId: string | null;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -641,6 +670,265 @@ export function deriveWorkLogEntries(
     const { activityKind, collapseKey: _collapseKey, ...rest } = entry;
     return Object.assign(rest, { sourceActivityKind: activityKind });
   });
+}
+
+const SUBAGENT_MESSAGE_LIMIT = 200;
+
+function truncateSubagentText(value: string | null): string | null {
+  if (!value) return null;
+  const compact = value.replace(/\s+/gu, " ").trim();
+  if (compact.length <= SUBAGENT_MESSAGE_LIMIT) return compact;
+  return `${compact.slice(0, SUBAGENT_MESSAGE_LIMIT - 1).trimEnd()}…`;
+}
+
+function subagentInput(data: Record<string, unknown> | null): Record<string, unknown> | null {
+  const directInput = asRecord(data?.input);
+  if (directInput) return directInput;
+  return asRecord(asRecord(data?.value)?.input);
+}
+
+const SUBAGENT_FALLBACK_NAME = "Subagent";
+
+/**
+ * Serialized tool input (e.g. `Agent: {}`) must never be shown as a subagent
+ * name. Streaming tool starts can arrive before the input finished
+ * assembling, so summaries that carry raw JSON are treated as absent.
+ */
+function looksLikeSerializedToolInput(value: string): boolean {
+  return /^[\w.-]+:\s*[{[]/u.test(value) || /^[{[]/u.test(value);
+}
+
+function subagentName(
+  activity: OrchestrationThreadActivity,
+  payload: Record<string, unknown>,
+): string {
+  const data = asRecord(payload.data);
+  const input = subagentInput(data);
+  const description = asTrimmedString(input?.description);
+  if (description) return description;
+  const prompt = truncateSubagentText(asTrimmedString(input?.prompt));
+  if (prompt) return prompt;
+  const collabPrompt = truncateSubagentText(asTrimmedString(subagentItem(data)?.prompt));
+  if (collabPrompt) return collabPrompt;
+  const agentType = asTrimmedString(input?.subagent_type) ?? asTrimmedString(input?.subagentType);
+  if (agentType) return agentType;
+  const detail = truncateSubagentText(asTrimmedString(payload.detail));
+  if (detail && !looksLikeSerializedToolInput(detail)) return detail;
+  const summary = activity.summary.replace(/\s+started$/iu, "").trim();
+  if (summary && !looksLikeSerializedToolInput(summary)) return summary;
+  return SUBAGENT_FALLBACK_NAME;
+}
+
+function subagentItem(data: Record<string, unknown> | null): Record<string, unknown> | null {
+  return asRecord(data?.item) ?? asRecord(asRecord(data?.value)?.item);
+}
+
+/**
+ * Codex native collaboration emits one `collabAgentToolCall` item per tool
+ * interaction with the same spawned agent (spawnAgent, wait, sendInput,
+ * closeAgent…). Group those items by the receiver agent thread so the panel
+ * shows one entry per agent instead of one row per poll. The agent's own
+ * lifecycle status (from `agentsStates`) decides when the entry is done — a
+ * completed spawn or wait call does not mean the agent finished.
+ */
+interface CollabAgentGroup {
+  readonly id: string;
+  readonly prompt: string | null;
+  readonly agentStatus: string | null;
+}
+
+const COLLAB_AGENT_OUTCOMES: Record<string, "completed" | "failed" | "stopped"> = {
+  completed: "completed",
+  errored: "failed",
+  notFound: "failed",
+  interrupted: "stopped",
+  shutdown: "completed",
+};
+
+function collabAgentGroup(data: Record<string, unknown> | null): CollabAgentGroup | null {
+  const item = subagentItem(data);
+  if (!item) return null;
+  if (item.type === "collabAgentToolCall") {
+    const receivers = Array.isArray(item.receiverThreadIds)
+      ? item.receiverThreadIds.filter(
+          (value): value is string => typeof value === "string" && value.length > 0,
+        )
+      : [];
+    const first = receivers[0];
+    if (first === undefined) return null;
+    const state = asRecord(asRecord(item.agentsStates)?.[first]);
+    return {
+      id: `collab-agent:${receivers.join("+")}`,
+      prompt: asTrimmedString(item.prompt),
+      agentStatus: asTrimmedString(state?.status),
+    };
+  }
+  if (item.type === "subAgentActivity") {
+    const agentThreadId = asTrimmedString(item.agentThreadId);
+    if (!agentThreadId) return null;
+    return { id: `collab-agent:${agentThreadId}`, prompt: null, agentStatus: null };
+  }
+  return null;
+}
+
+function collectAgentMessages(value: unknown): string[] {
+  const record = asRecord(value);
+  if (!record) return [];
+  return Object.values(record).flatMap((state) => {
+    const message = asTrimmedString(asRecord(state)?.message);
+    return message ? [message] : [];
+  });
+}
+
+function subagentLastMessage(payload: Record<string, unknown>): string | null {
+  const data = asRecord(payload.data);
+  const nestedValue = asRecord(data?.value);
+  const item = asRecord(data?.item) ?? asRecord(nestedValue?.item);
+  const result =
+    asTrimmedString(data?.result) ??
+    asTrimmedString(nestedValue?.result) ??
+    asTrimmedString(item?.result);
+  if (result) return truncateSubagentText(result);
+  const agentMessages = [
+    ...collectAgentMessages(data?.agentsStates),
+    ...collectAgentMessages(item?.agentsStates),
+  ];
+  if (agentMessages.length > 0) {
+    return truncateSubagentText(agentMessages.join(" · "));
+  }
+  return truncateSubagentText(asTrimmedString(payload.detail));
+}
+
+export function deriveSubagentEntries(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): SubagentEntry[] {
+  const entries = new Map<string, SubagentEntry>();
+  // Delegated-run activities carry a strictly monotonic run sequence. Activity
+  // timestamps come from provider events with mixed clock sources, so a stale
+  // update can sort after the terminal activity — the sequence is authoritative.
+  const delegatedSequences = new Map<string, number>();
+  const ordered = [...activities].toSorted(compareActivitiesByOrder);
+
+  for (const activity of ordered) {
+    if (
+      activity.kind !== "tool.started" &&
+      activity.kind !== "tool.updated" &&
+      activity.kind !== "tool.completed"
+    ) {
+      continue;
+    }
+    const payload = asRecord(activity.payload);
+    if (payload?.itemType !== "collab_agent_tool_call") continue;
+    const data = asRecord(payload.data);
+    const toolCallId = asTrimmedString(data?.toolCallId);
+    const collab = collabAgentGroup(data);
+    const fallbackKey = [
+      activity.turnId ?? "no-turn",
+      activity.summary.replace(/\s+(?:started|completed)$/iu, "").trim(),
+    ].join(":");
+    const id = collab?.id ?? toolCallId ?? fallbackKey;
+    const runSequence = asRecord(data?.delegatedRun)?.sequence;
+    if (typeof runSequence === "number") {
+      const latest = delegatedSequences.get(id);
+      if (latest !== undefined && runSequence <= latest) continue;
+      delegatedSequences.set(id, runSequence);
+    }
+    const previous = entries.get(id);
+    const lifecycleStatus = extractWorkLogToolLifecycleStatus(payload);
+    const stopped = asTrimmedString(data?.stopReason) === "stopped_by_main_thread";
+    const collabOutcome = collab?.agentStatus
+      ? (COLLAB_AGENT_OUTCOMES[collab.agentStatus] ?? null)
+      : null;
+    const terminal = collab?.agentStatus
+      ? stopped || collabOutcome !== null
+      : activity.kind === "tool.completed" || lifecycleStatus === "failed";
+    const message = subagentLastMessage(payload);
+    const delegatedRun = asRecord(data?.delegatedRun);
+    const delegatedDriver = asTrimmedString(delegatedRun?.provider);
+    const input = subagentInput(data);
+    const agentType =
+      asTrimmedString(input?.subagent_type) ??
+      asTrimmedString(input?.subagentType) ??
+      previous?.agentType ??
+      null;
+    const model =
+      asTrimmedString(delegatedRun?.resolvedModel) ??
+      asTrimmedString(delegatedRun?.model) ??
+      previous?.model ??
+      null;
+    const transcriptId =
+      asTrimmedString(delegatedRun?.id) ?? previous?.transcriptId ?? toolCallId ?? null;
+    // A later activity can carry the completed tool input, so upgrade names
+    // that fell back to the generic label.
+    const name =
+      previous?.name && previous.name !== SUBAGENT_FALLBACK_NAME
+        ? previous.name
+        : subagentName(activity, payload);
+
+    entries.set(id, {
+      id,
+      name,
+      lastMessage: message ?? previous?.lastMessage ?? null,
+      status: terminal ? "done" : "active",
+      outcome: terminal
+        ? stopped
+          ? "stopped"
+          : (collabOutcome ?? (lifecycleStatus === "failed" ? "failed" : "completed"))
+        : null,
+      turnId: activity.turnId ?? previous?.turnId ?? null,
+      createdAt: previous?.createdAt ?? activity.createdAt,
+      completedAt: terminal ? activity.createdAt : null,
+      providerInstanceId:
+        (asTrimmedString(data?.providerInstanceId)
+          ? ProviderInstanceId.make(asTrimmedString(data?.providerInstanceId)!)
+          : previous?.providerInstanceId) ?? null,
+      source: delegatedRun ? "delegated" : (previous?.source ?? "native"),
+      providerDriver: delegatedDriver
+        ? ProviderDriverKind.make(delegatedDriver)
+        : (previous?.providerDriver ?? null),
+      model,
+      agentType,
+      transcriptId,
+    });
+  }
+
+  return [...entries.values()].toSorted((left, right) => {
+    if (left.status !== right.status) return left.status === "active" ? -1 : 1;
+    const leftTime = left.completedAt ?? left.createdAt;
+    const rightTime = right.completedAt ?? right.createdAt;
+    return rightTime.localeCompare(leftTime);
+  });
+}
+
+/**
+ * Fold subagent transcript stream events into the latest snapshot. The server
+ * sends one `snapshot` first, then monotonically sequenced upserts; events
+ * arriving before the snapshot are ignored.
+ */
+export function applySubagentTranscriptEvent(
+  current: SubagentTranscript | null,
+  event: SubagentTranscriptStreamEvent,
+): SubagentTranscript | null {
+  if (event.type === "snapshot") return event.transcript;
+  if (!current || event.sequence <= current.latestSequence) return current;
+  if (event.type === "message.upserted") {
+    const index = current.messages.findIndex((message) => message.id === event.message.id);
+    const messages =
+      index >= 0
+        ? current.messages.map((message, position) =>
+            position === index ? event.message : message,
+          )
+        : [...current.messages, event.message];
+    return { ...current, messages, latestSequence: event.sequence };
+  }
+  const index = current.activities.findIndex((activity) => activity.id === event.activity.id);
+  const activities =
+    index >= 0
+      ? current.activities.map((activity, position) =>
+          position === index ? event.activity : activity,
+        )
+      : [...current.activities, event.activity];
+  return { ...current, activities, latestSequence: event.sequence };
 }
 
 function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): boolean {

@@ -54,7 +54,8 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeVcsStatus
   | typeof WS_METHODS.terminalAttach
   | typeof WS_METHODS.transcriptionStart
-  | typeof WS_METHODS.subscribeVoiceModelState;
+  | typeof WS_METHODS.subscribeVoiceModelState
+  | typeof WS_METHODS.subscribeSubagentTranscript;
 
 export type EnvironmentStreamCommandRpcTag =
   | typeof WS_METHODS.cloudInstallRelayClient

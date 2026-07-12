@@ -22,6 +22,10 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
+import { CodexAgentToolkitHandlersLive } from "./toolkits/codexAgent/handlers.ts";
+import { CodexAgentToolkit } from "./toolkits/codexAgent/tools.ts";
+import { CursorAgentToolkitHandlersLive } from "./toolkits/cursorAgent/handlers.ts";
+import { CursorAgentToolkit } from "./toolkits/cursorAgent/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -216,10 +220,43 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
+export const CodexAgentToolkitRegistrationLive = McpServer.toolkit(CodexAgentToolkit).pipe(
+  Layer.provide(CodexAgentToolkitHandlersLive),
+);
+
+export const CursorAgentToolkitRegistrationLive = McpServer.toolkit(CursorAgentToolkit).pipe(
+  Layer.provide(CursorAgentToolkitHandlersLive),
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
   path: "/mcp",
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+// The Streamable HTTP transport only offers POST JSON-RPC (plus DELETE session
+// termination); it has no SSE listener, so a client-opened GET must receive a
+// protocol-compatible 405 instead of falling through to an application route.
+export const mcpMethodNotAllowedResponse = HttpServerResponse.empty({
+  status: 405,
+  headers: {
+    allow: "POST, DELETE",
+    "cache-control": "no-store",
+  },
+});
+
+const McpGetRouteLive = HttpRouter.add(
+  "GET",
+  "/mcp",
+  Effect.gen(function* () {
+    yield* McpInvocationContext.McpInvocationContext;
+    return mcpMethodNotAllowedResponse;
+  }),
+).pipe(Layer.provide(McpAuthMiddlewareLive));
+
+export const layer = Layer.mergeAll(
+  PreviewToolkitRegistrationLive,
+  CodexAgentToolkitRegistrationLive,
+  CursorAgentToolkitRegistrationLive,
+  McpGetRouteLive,
+).pipe(Layer.provideMerge(McpTransportLive));

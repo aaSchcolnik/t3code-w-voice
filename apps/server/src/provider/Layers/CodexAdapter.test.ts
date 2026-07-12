@@ -512,6 +512,52 @@ function startLifecycleRuntime() {
 }
 
 lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
+  it.effect("keeps the event pump alive after the session-starting fiber completes", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const startFiber = yield* adapter
+        .startSession({
+          provider: ProviderDriverKind.make("codex"),
+          threadId: asThreadId("thread-short-lived-starter"),
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.forkChild);
+      yield* Fiber.join(startFiber);
+
+      const runtime = lifecycleRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const completedEventFiber = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runHead, Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-turn-completed-after-start"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "turn/completed",
+        threadId: asThreadId("thread-short-lived-starter"),
+        turnId: asTurnId("turn-after-start"),
+        payload: {
+          threadId: "thread-short-lived-starter",
+          turn: {
+            id: "turn-after-start",
+            status: "completed",
+            items: [],
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const completedEvent = yield* Fiber.join(completedEventFiber);
+      NodeAssert.equal(completedEvent._tag, "Some");
+      if (completedEvent._tag === "Some") {
+        NodeAssert.equal(completedEvent.value.type, "turn.completed");
+        NodeAssert.equal(completedEvent.value.turnId, "turn-after-start");
+      }
+    }),
+  );
+
   it.effect("maps completed agent message items to canonical item.completed events", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
@@ -610,6 +656,82 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           status: "completed",
         },
       });
+    }),
+  );
+
+  it.effect("preserves failed Codex collab status and latest agent messages", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-collab-failed"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_1"),
+        payload: {
+          completedAtMs: 1_778_000_000_000,
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_1",
+            tool: "wait",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["child-1"],
+            agentsStates: {
+              "child-1": { status: "errored", message: "Tests exposed a race" },
+            },
+            status: "failed",
+          },
+        },
+      });
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "item.completed") return;
+      NodeAssert.equal(firstEvent.value.payload.itemType, "collab_agent_tool_call");
+      NodeAssert.equal(firstEvent.value.payload.status, "failed");
+      NodeAssert.equal(firstEvent.value.payload.detail, "Tests exposed a race");
+    }),
+  );
+
+  it.effect("maps Codex sub-agent activity to the collab lifecycle", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-subagent-activity"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("subagent_1"),
+        payload: {
+          completedAtMs: 1_778_000_000_000,
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "subAgentActivity",
+            id: "subagent_1",
+            agentPath: "agents/reviewer",
+            agentThreadId: "child-1",
+            kind: "started",
+          },
+        },
+      });
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some" || firstEvent.value.type !== "item.completed") return;
+      NodeAssert.equal(firstEvent.value.payload.itemType, "collab_agent_tool_call");
     }),
   );
 

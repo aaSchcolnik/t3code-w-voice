@@ -4,15 +4,18 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationThreadActivity,
+  type SubagentTranscript,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  applySubagentTranscriptEvent,
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
   derivePendingApprovals,
   derivePendingUserInputs,
   deriveTimelineEntries,
+  deriveSubagentEntries,
   deriveWorkLogEntries,
   findLatestProposedPlan,
   findSidebarProposedPlan,
@@ -687,6 +690,494 @@ describe("workEntryIndicatesToolFailure", () => {
         detail: "File not found in conversation",
       }),
     ).toBe(false);
+  });
+});
+
+describe("deriveSubagentEntries", () => {
+  it("groups lifecycle events by tool call and moves active entries to done", () => {
+    const entries = deriveSubagentEntries([
+      makeActivity({
+        id: "subagent-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Subagent task started",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          data: {
+            toolCallId: "subagent-1",
+            input: { description: "Review persistence" },
+          },
+        },
+      }),
+      makeActivity({
+        id: "subagent-progress",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.updated",
+        summary: "Subagent task",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          detail: "Checking transaction boundaries",
+          data: { toolCallId: "subagent-1" },
+        },
+      }),
+      makeActivity({
+        id: "subagent-completed",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "tool.completed",
+        summary: "Subagent task",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "completed",
+          data: { toolCallId: "subagent-1", result: "No transaction leaks found." },
+        },
+      }),
+    ]);
+
+    expect(entries).toEqual([
+      {
+        id: "subagent-1",
+        name: "Review persistence",
+        lastMessage: "No transaction leaks found.",
+        status: "done",
+        outcome: "completed",
+        turnId: TurnId.make("turn-1"),
+        createdAt: "2026-02-23T00:00:01.000Z",
+        completedAt: "2026-02-23T00:00:03.000Z",
+        providerInstanceId: null,
+        source: "native",
+        providerDriver: null,
+        model: null,
+        agentType: null,
+        transcriptId: "subagent-1",
+      },
+    ]);
+  });
+
+  it("never renders serialized empty input and upgrades the name once input arrives", () => {
+    const activities = [
+      makeActivity({
+        id: "agent-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Agent: {}",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          data: { toolCallId: "agent-1", input: {} },
+        },
+      }),
+    ];
+
+    const [pending] = deriveSubagentEntries(activities);
+    expect(pending?.name).toBe("Subagent");
+
+    const [upgraded] = deriveSubagentEntries([
+      ...activities,
+      makeActivity({
+        id: "agent-update",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.updated",
+        summary: "Agent: {}",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          data: {
+            toolCallId: "agent-1",
+            input: { subagent_type: "Explore", prompt: "Research pnpm/Bun/Vite Plus" },
+          },
+        },
+      }),
+    ]);
+    expect(upgraded?.name).toBe("Research pnpm/Bun/Vite Plus");
+    expect(upgraded?.agentType).toBe("Explore");
+    expect(upgraded?.source).toBe("native");
+  });
+
+  it("derives delegated identity from the embedded delegated run", () => {
+    const [entry] = deriveSubagentEntries([
+      makeActivity({
+        id: "delegated-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Compare package managers",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          data: {
+            toolCallId: "delegated:run-1",
+            providerInstanceId: "cursor",
+            delegatedRun: {
+              id: "run-1",
+              provider: "cursor",
+              providerInstanceId: "cursor",
+              resolvedModel: "composer-2.5",
+            },
+            input: { description: "Compare package managers" },
+          },
+        },
+      }),
+    ]);
+
+    expect(entry).toMatchObject({
+      name: "Compare package managers",
+      source: "delegated",
+      providerDriver: "cursor",
+      providerInstanceId: "cursor",
+      model: "composer-2.5",
+      transcriptId: "run-1",
+    });
+  });
+
+  it("keeps a delegated run done when a stale update carries a later timestamp", () => {
+    const delegatedActivity = (overrides: {
+      id: string;
+      createdAt: string;
+      kind: "tool.updated" | "tool.completed";
+      status: "inProgress" | "completed";
+      sequence: number;
+    }) =>
+      makeActivity({
+        id: overrides.id,
+        createdAt: overrides.createdAt,
+        kind: overrides.kind,
+        summary: "Research package tooling",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: overrides.status,
+          data: {
+            toolCallId: "delegated:run-1",
+            delegatedRun: {
+              id: "run-1",
+              provider: "cursor",
+              status: overrides.status === "completed" ? "completed" : "running",
+              sequence: overrides.sequence,
+            },
+            input: { description: "Research package tooling" },
+          },
+        },
+      });
+
+    // Provider event clocks are not monotonic: a mid-run update can carry a
+    // createdAt later than the terminal activity. The run sequence decides.
+    const [entry] = deriveSubagentEntries([
+      delegatedActivity({
+        id: "delegated-run:run-1:429",
+        createdAt: "2026-02-23T00:00:30.982Z",
+        kind: "tool.updated",
+        status: "inProgress",
+        sequence: 429,
+      }),
+      delegatedActivity({
+        id: "delegated-run:run-1:1348",
+        createdAt: "2026-02-23T00:00:30.944Z",
+        kind: "tool.completed",
+        status: "completed",
+        sequence: 1348,
+      }),
+    ]);
+
+    expect(entry?.status).toBe("done");
+    expect(entry?.outcome).toBe("completed");
+  });
+
+  it("uses the latest sequence when a delegated stream activity id is reused", () => {
+    const streamActivity = (sequence: number, detail: string, createdAt: string) =>
+      makeActivity({
+        id: "delegated-run:run-1:stream",
+        createdAt,
+        kind: "tool.updated",
+        summary: "Research package tooling",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          detail,
+          data: {
+            toolCallId: "delegated:run-1",
+            delegatedRun: {
+              id: "run-1",
+              provider: "cursor",
+              sequence,
+            },
+            input: { description: "Research package tooling" },
+          },
+        },
+      });
+
+    const [entry] = deriveSubagentEntries([
+      streamActivity(12, "older preview", "2026-02-23T00:00:01.000Z"),
+      streamActivity(13, "latest preview", "2026-02-23T00:00:02.000Z"),
+    ]);
+
+    expect(entry?.status).toBe("active");
+    expect(entry?.lastMessage).toBe("latest preview");
+  });
+
+  it("marks swept entries as stopped and truncates large messages", () => {
+    const longResult = "x".repeat(240);
+    const [entry] = deriveSubagentEntries([
+      makeActivity({
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.completed",
+        summary: "Subagent task",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "failed",
+          detail: "Review persistence",
+          data: {
+            toolCallId: "subagent-stopped",
+            stopReason: "stopped_by_main_thread",
+            result: longResult,
+          },
+        },
+      }),
+    ]);
+
+    expect(entry?.outcome).toBe("stopped");
+    expect(entry?.lastMessage).toHaveLength(200);
+    expect(entry?.lastMessage?.endsWith("…")).toBe(true);
+  });
+
+  it("groups codex collab tool calls into one entry per spawned agent", () => {
+    const collabItem = (overrides: Record<string, unknown>) => ({
+      type: "collabAgentToolCall",
+      senderThreadId: "parent-thread",
+      receiverThreadIds: ["agent-thread-9"],
+      ...overrides,
+    });
+    const activities = [
+      makeActivity({
+        id: "spawn-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Spawn agent started",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          data: {
+            toolCallId: "call-spawn",
+            item: collabItem({
+              id: "item-spawn",
+              tool: "spawnAgent",
+              status: "inProgress",
+              prompt: "Research pnpm vs Bun vs Vite Plus",
+              agentsStates: { "agent-thread-9": { status: "pendingInit", message: null } },
+            }),
+          },
+        },
+      }),
+      makeActivity({
+        id: "spawn-done",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Spawn agent",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "completed",
+          data: {
+            toolCallId: "call-spawn",
+            item: collabItem({
+              id: "item-spawn",
+              tool: "spawnAgent",
+              status: "completed",
+              prompt: "Research pnpm vs Bun vs Vite Plus",
+              agentsStates: { "agent-thread-9": { status: "running", message: null } },
+            }),
+          },
+        },
+      }),
+      makeActivity({
+        id: "wait-done",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "tool.completed",
+        summary: "Wait for agent",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "completed",
+          data: {
+            toolCallId: "call-wait",
+            item: collabItem({
+              id: "item-wait",
+              tool: "wait",
+              status: "completed",
+              prompt: null,
+              agentsStates: {
+                "agent-thread-9": { status: "completed", message: "Recommends Vite Plus." },
+              },
+            }),
+          },
+        },
+      }),
+    ];
+
+    // A completed spawn call does not finish the agent: it is still running.
+    const [pending] = deriveSubagentEntries(activities.slice(0, 2));
+    expect(pending?.status).toBe("active");
+    expect(pending?.outcome).toBeNull();
+
+    const entries = deriveSubagentEntries(activities);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "collab-agent:agent-thread-9",
+      name: "Research pnpm vs Bun vs Vite Plus",
+      status: "done",
+      outcome: "completed",
+      lastMessage: "Recommends Vite Plus.",
+      createdAt: "2026-02-23T00:00:01.000Z",
+      completedAt: "2026-02-23T00:00:03.000Z",
+    });
+  });
+
+  it("marks collab agents that error or shut down with the agent outcome", () => {
+    const [errored] = deriveSubagentEntries([
+      makeActivity({
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.completed",
+        summary: "Wait for agent",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "completed",
+          data: {
+            toolCallId: "call-wait",
+            item: {
+              type: "collabAgentToolCall",
+              id: "item-wait",
+              tool: "wait",
+              status: "completed",
+              senderThreadId: "parent-thread",
+              receiverThreadIds: ["agent-thread-9"],
+              agentsStates: { "agent-thread-9": { status: "errored", message: "boom" } },
+            },
+          },
+        },
+      }),
+    ]);
+    expect(errored?.status).toBe("done");
+    expect(errored?.outcome).toBe("failed");
+  });
+
+  it("uses a stable fuzzy fallback for legacy activities", () => {
+    const entries = deriveSubagentEntries([
+      makeActivity({
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Subagent task started",
+        turnId: "turn-legacy",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          detail: "Legacy review",
+        },
+      }),
+      makeActivity({
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.updated",
+        summary: "Subagent task",
+        turnId: "turn-legacy",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          detail: "Still reviewing",
+        },
+      }),
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.name).toBe("Legacy review");
+    expect(entries[0]?.lastMessage).toBe("Still reviewing");
+  });
+});
+
+describe("applySubagentTranscriptEvent", () => {
+  const baseTranscript: SubagentTranscript = {
+    id: "run-1",
+    source: "delegated",
+    parentThreadId: ThreadId.make("thread-1"),
+    messages: [],
+    activities: [],
+    latestSequence: 2,
+  };
+
+  it("ignores events before the snapshot and stale sequences", () => {
+    const message = {
+      id: MessageId.make("m1"),
+      role: "assistant" as const,
+      text: "hello",
+      turnId: null,
+      streaming: false,
+      createdAt: "2026-02-23T00:00:01.000Z",
+      updatedAt: "2026-02-23T00:00:01.000Z",
+    };
+    expect(
+      applySubagentTranscriptEvent(null, { type: "message.upserted", sequence: 5, message }),
+    ).toBeNull();
+    expect(
+      applySubagentTranscriptEvent(baseTranscript, {
+        type: "message.upserted",
+        sequence: 1,
+        message,
+      }),
+    ).toBe(baseTranscript);
+  });
+
+  it("applies snapshots and upserts messages and activities in sequence", () => {
+    const snapshot = applySubagentTranscriptEvent(null, {
+      type: "snapshot",
+      transcript: baseTranscript,
+    });
+    expect(snapshot).toBe(baseTranscript);
+
+    const message = {
+      id: MessageId.make("m1"),
+      role: "assistant" as const,
+      text: "partial",
+      turnId: null,
+      streaming: true,
+      createdAt: "2026-02-23T00:00:01.000Z",
+      updatedAt: "2026-02-23T00:00:01.000Z",
+    };
+    const withMessage = applySubagentTranscriptEvent(snapshot, {
+      type: "message.upserted",
+      sequence: 3,
+      message,
+    });
+    expect(withMessage?.messages).toHaveLength(1);
+    const updated = applySubagentTranscriptEvent(withMessage, {
+      type: "message.upserted",
+      sequence: 4,
+      message: { ...message, text: "final", streaming: false },
+    });
+    expect(updated?.messages).toHaveLength(1);
+    expect(updated?.messages[0]?.text).toBe("final");
+
+    const withActivity = applySubagentTranscriptEvent(updated, {
+      type: "activity.upserted",
+      sequence: 5,
+      activity: {
+        id: EventId.make("a1"),
+        createdAt: "2026-02-23T00:00:02.000Z",
+        tone: "tool",
+        kind: "tool.started",
+        summary: "Command run",
+        payload: {},
+        turnId: null,
+        sequence: 5,
+      },
+    });
+    expect(withActivity?.activities).toHaveLength(1);
+    expect(withActivity?.latestSequence).toBe(5);
   });
 });
 

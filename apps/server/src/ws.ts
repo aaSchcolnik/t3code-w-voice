@@ -15,6 +15,7 @@ import {
   type AuthAccessStreamEvent,
   AuthSessionId,
   CommandId,
+  DelegatedRunError,
   type DiscoveredLocalServerList,
   EventId,
   type OrchestrationCommand,
@@ -71,6 +72,8 @@ import {
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as DelegatedRunServiceModule from "./orchestration/DelegatedRunService.ts";
+import * as SubagentTranscriptService from "./orchestration/SubagentTranscriptService.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
   observeRpcStream as instrumentRpcStream,
@@ -359,6 +362,7 @@ const makeWsRpcLayer = (
       const terminalManager = yield* TerminalManager.TerminalManager;
       const transcription = yield* TranscriptionService.TranscriptionService;
       const voiceModels = yield* ServerVoiceModelManager.ServerVoiceModelManager;
+      const subagentTranscripts = yield* SubagentTranscriptService.SubagentTranscriptService;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
@@ -1844,6 +1848,31 @@ const makeWsRpcLayer = (
               ),
             ),
             { "rpc.aggregate": "transcription" },
+          ),
+        [WS_METHODS.subagentsCancelRun]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.subagentsCancelRun,
+            Effect.gen(function* () {
+              const run = yield* DelegatedRunServiceModule.getActiveDelegatedRun(input.runId);
+              if (run.parentThreadId !== input.parentThreadId) {
+                return yield* new DelegatedRunError({
+                  operation: "cancel",
+                  message: "Delegated run not found for this parent thread.",
+                  runId: input.runId,
+                });
+              }
+              const cancelled = yield* DelegatedRunServiceModule.cancelActiveDelegatedRun(
+                input.runId,
+              );
+              return { runId: input.runId, cancelled };
+            }),
+            { "rpc.aggregate": "subagents" },
+          ),
+        [WS_METHODS.subscribeSubagentTranscript]: (input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeSubagentTranscript,
+            Stream.unwrap(subagentTranscripts.subscribe(input)),
+            { "rpc.aggregate": "subagents" },
           ),
         [WS_METHODS.transcriptionSendAudio]: (input) =>
           observeRpcEffect(

@@ -1,11 +1,20 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { HttpServer } from "effect/unstable/http";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
+import { makeProviderRegistryLayer } from "../provider/testUtils/providerRegistryMock.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
 const makeFakeHttpServer = (hostname: string, port = 43123) =>
@@ -19,16 +28,47 @@ const fakeEnvironment = ServerEnvironment.ServerEnvironment.of({
   getDescriptor: Effect.die("unused"),
 });
 
-const makeRegistry = (now: () => number, httpServer = fakeHttpServer) =>
+const makeProvider = (
+  driver: "codex" | "cursor",
+  overrides: Partial<ServerProvider> = {},
+): ServerProvider => ({
+  instanceId: ProviderInstanceId.make(driver),
+  driver: ProviderDriverKind.make(driver),
+  enabled: true,
+  installed: true,
+  version: "1.0.0",
+  status: "ready",
+  auth: { status: "authenticated" },
+  checkedAt: "2026-01-01T00:00:00.000Z",
+  models: [],
+  slashCommands: [],
+  skills: [],
+  ...overrides,
+});
+
+const makeRegistry = (
+  now: () => number,
+  httpServer = fakeHttpServer,
+  options: {
+    providers?: ReadonlyArray<ServerProvider>;
+    mcp?: { preview?: boolean; codexAgent?: boolean; cursorAgent?: boolean };
+  } = {},
+) =>
   McpSessionRegistry.__testing
     .make({
       now,
       livenessWindowMs: 100,
     })
     .pipe(
-      Effect.provideService(HttpServer.HttpServer, httpServer),
-      Effect.provideService(ServerEnvironment.ServerEnvironment, fakeEnvironment),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.succeed(HttpServer.HttpServer, httpServer),
+          Layer.succeed(ServerEnvironment.ServerEnvironment, fakeEnvironment),
+          ServerSettingsService.layerTest({ mcp: options.mcp ?? {} }),
+          makeProviderRegistryLayer(options.providers ?? []),
+          NodeServices.layer,
+        ),
+      ),
     );
 
 it.effect("stores only a token hash, resolves the bearer token, and revokes by thread", () =>
@@ -51,6 +91,37 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
     expect(yield* registry.resolve(token)).toBeUndefined();
 
     timestamp += 2_000;
+  }),
+);
+
+it.effect("grants MCP capabilities from settings and provider availability", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      providers: [makeProvider("codex"), makeProvider("cursor", { availability: "unavailable" })],
+      mcp: { preview: false, codexAgent: true, cursorAgent: true },
+    });
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-capabilities"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect([...resolved!.capabilities]).toEqual(["codex-agent"]);
+  }),
+);
+
+it.effect("does not grant recursive agent delegation to delegated sessions", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      providers: [makeProvider("codex"), makeProvider("cursor")],
+    });
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("delegated-child-run"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect([...resolved!.capabilities]).toEqual(["preview"]);
   }),
 );
 

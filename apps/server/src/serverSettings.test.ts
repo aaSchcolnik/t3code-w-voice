@@ -92,6 +92,42 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(settingsLayer));
   });
 
+  it.effect("canonicalizes conflicting provider instance enablement", () =>
+    Effect.gen(function* () {
+      const settings = yield* decodeServerSettings({
+        providerInstances: {
+          cursor: { driver: "cursor", enabled: true, config: { enabled: false } },
+          codex_config_only: { driver: "codex", config: { enabled: false } },
+          codex_untouched: { driver: "codex", config: {} },
+        },
+      });
+      const canonical = ServerSettingsModule.canonicalizeProviderInstanceEnablement(settings);
+
+      const cursorId = ProviderInstanceId.make("cursor");
+      // Envelope wins over the contradictory config flag.
+      assert.strictEqual(canonical.providerInstances[cursorId]?.enabled, true);
+      assert.deepEqual(canonical.providerInstances[cursorId]?.config, { enabled: true });
+
+      // A config-only flag is lifted to the authoritative envelope field.
+      const configOnlyId = ProviderInstanceId.make("codex_config_only");
+      assert.strictEqual(canonical.providerInstances[configOnlyId]?.enabled, false);
+      assert.deepEqual(canonical.providerInstances[configOnlyId]?.config, { enabled: false });
+
+      // Entries without any enablement flags are left untouched.
+      const untouchedId = ProviderInstanceId.make("codex_untouched");
+      assert.strictEqual(
+        canonical.providerInstances[untouchedId],
+        settings.providerInstances[untouchedId],
+      );
+
+      // Already-canonical settings are returned by reference.
+      assert.strictEqual(
+        ServerSettingsModule.canonicalizeProviderInstanceEnablement(canonical),
+        canonical,
+      );
+    }),
+  );
+
   it.effect("decodes nested settings patches", () =>
     Effect.gen(function* () {
       assert.deepEqual(

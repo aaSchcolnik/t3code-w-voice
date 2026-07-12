@@ -8,8 +8,15 @@ import * as Stream from "effect/Stream";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
+import * as ServerConfig from "../config.ts";
+import { staticAndDevRouteLayer } from "../http.ts";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - the manual-redirect test server needs Node's createServer directly.
+import * as NodeHttp from "node:http";
+import { FetchHttpClient, HttpServer } from "effect/unstable/http";
+
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
@@ -36,6 +43,88 @@ const client = McpSchema.McpServerClient.of({
 const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+);
+
+const AllToolkitTestLayer = Layer.mergeAll(
+  McpHttpServer.PreviewToolkitRegistrationLive,
+  McpHttpServer.CodexAgentToolkitRegistrationLive,
+  McpHttpServer.CursorAgentToolkitRegistrationLive,
+).pipe(
+  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+);
+
+it.effect("registers the built-in delegation toolkits", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    expect(server.tools.map(({ tool }) => tool.name)).toEqual(
+      expect.arrayContaining([
+        "codex_capabilities",
+        "codex_start",
+        "codex_status",
+        "codex_result",
+        "codex_cancel",
+        "cursor_capabilities",
+        "cursor_start",
+        "cursor_status",
+        "cursor_result",
+        "cursor_cancel",
+        "cursor_respond",
+      ]),
+    );
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("describes delegated results as event-driven waits instead of polling", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    for (const provider of ["codex", "cursor"] as const) {
+      const start = server.tools.find(({ tool }) => tool.name === `${provider}_start`)?.tool;
+      const status = server.tools.find(({ tool }) => tool.name === `${provider}_status`)?.tool;
+      const result = server.tools.find(({ tool }) => tool.name === `${provider}_result`)?.tool;
+      expect(start?.description).toContain("exactly once");
+      expect(start?.description).toContain("Do not poll");
+      expect(status?.description).toContain("never poll");
+      expect(result?.description).toContain("blocks without polling");
+    }
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+// MCP requires every tool's inputSchema to be a plain `type: "object"` schema.
+// Claude Code validates the whole tools/list response and drops ALL tools when
+// a single schema deviates (e.g. the `anyOf: [object, array]` that
+// `Schema.Struct({})` parameters produce), so one bad tool silently kills the
+// entire t3-code server for Claude sessions.
+it.effect("emits an MCP-valid object inputSchema for every registered tool", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    expect(server.tools.length).toBeGreaterThan(0);
+    for (const { tool } of server.tools) {
+      expect({ name: tool.name, type: tool.inputSchema.type }).toEqual({
+        name: tool.name,
+        type: "object",
+      });
+    }
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("exposes provider-neutral delegated execution configuration", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    for (const provider of ["codex", "cursor"] as const) {
+      const start = server.tools.find(({ tool }) => tool.name === `${provider}_start`)?.tool;
+      expect(start?.inputSchema.properties).toMatchObject({
+        model: expect.any(Object),
+        options: expect.any(Object),
+        interactionMode: expect.any(Object),
+        approvalPolicy: expect.any(Object),
+        sandboxMode: expect.any(Object),
+        runtimeMode: expect.any(Object),
+        attachments: expect.any(Object),
+        profile: expect.any(Object),
+      });
+    }
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
 
 it("normalizes empty successful notification responses to accepted", () => {
@@ -147,6 +236,114 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
       expect(reusedSessionResponse.status).toBe(404);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+const validToken = "valid-mcp-token";
+
+const RegistryStubLive = Layer.succeed(
+  McpSessionRegistry.McpSessionRegistry,
+  McpSessionRegistry.McpSessionRegistry.of({
+    issue: () => Effect.die("issue is unused in transport tests"),
+    resolve: (token) => Effect.succeed(token === validToken ? invocation : undefined),
+    revokeProviderSession: () => Effect.void,
+    revokeThread: () => Effect.void,
+    revokeAll: Effect.void,
+  }),
+);
+
+const DevConfigLive = Layer.effect(
+  ServerConfig.ServerConfig,
+  Effect.gen(function* () {
+    const base = yield* ServerConfig.ServerConfig;
+    return ServerConfig.make({ ...base, devUrl: new URL("http://localhost:5733/") });
+  }),
+).pipe(
+  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "mcp-http-transport-test" })),
+  Layer.provide(NodeServices.layer),
+);
+
+const TransportRoutesLive = Layer.mergeAll(
+  McpHttpServer.layer.pipe(
+    Layer.provide(RegistryStubLive),
+    Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+  ),
+  staticAndDevRouteLayer,
+);
+
+// Like NodeHttpServer.layerTest, but with manual redirect handling so 302
+// responses can be asserted instead of being followed by fetch.
+const ManualRedirectServerTestLive = HttpServer.layerTestClient.pipe(
+  Layer.provide(
+    Layer.fresh(FetchHttpClient.layer).pipe(
+      Layer.provide(
+        Layer.succeed(FetchHttpClient.RequestInit)({ keepalive: false, redirect: "manual" }),
+      ),
+    ),
+  ),
+  Layer.provideMerge(NodeHttpServer.layer(NodeHttp.createServer, { port: 0 })),
+);
+
+it.effect("serves /mcp deliberately and never redirects it to the dev server", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      yield* HttpRouter.serve(TransportRoutesLive, {
+        disableListenLog: true,
+        disableLogger: true,
+      }).pipe(Layer.provide(DevConfigLive), Layer.provide(NodeServices.layer), Layer.build);
+      const httpClient = yield* HttpClient.HttpClient;
+
+      const initializeBody = HttpBody.text(
+        `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mcp-test","version":"1.0.0"}}}`,
+        "application/json",
+      );
+
+      const unauthenticatedInitialize = yield* httpClient.post("/mcp", {
+        headers: { accept: "application/json, text/event-stream" },
+        body: initializeBody,
+      });
+      expect(unauthenticatedInitialize.status).toBe(401);
+
+      const initializeResponse = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${validToken}`,
+        },
+        body: initializeBody,
+      });
+      expect(initializeResponse.status).toBe(200);
+
+      const authenticatedGet = yield* httpClient.get("/mcp", {
+        headers: {
+          accept: "text/event-stream",
+          authorization: `Bearer ${validToken}`,
+        },
+      });
+      expect(authenticatedGet.status).toBe(405);
+      expect(authenticatedGet.headers.allow).toContain("POST");
+      expect(authenticatedGet.headers.location).toBeUndefined();
+
+      const unauthenticatedGet = yield* httpClient.get("/mcp", {
+        headers: { accept: "text/event-stream" },
+      });
+      expect(unauthenticatedGet.status).toBe(401);
+
+      const unauthenticatedDelete = yield* httpClient.del("/mcp");
+      expect(unauthenticatedDelete.status).toBe(401);
+
+      const missingSessionDelete = yield* httpClient.del("/mcp", {
+        headers: { authorization: `Bearer ${validToken}` },
+      });
+      expect(missingSessionDelete.status).toBe(400);
+
+      const webRouteResponse = yield* httpClient.get("/some/app/route", {
+        headers: { authorization: `Bearer ${validToken}` },
+      });
+      expect(webRouteResponse.status).toBe(302);
+      expect(webRouteResponse.headers.location).toBe("http://localhost:5733/some/app/route");
+      expect(webRouteResponse.headers.authorization).toBeUndefined();
+      expect(webRouteResponse.headers["www-authenticate"]).toBeUndefined();
+    }),
+  ).pipe(Effect.provide(ManualRedirectServerTestLive)),
 );
 
 it.effect("registers annotated tools and preserves authenticated request context", () =>

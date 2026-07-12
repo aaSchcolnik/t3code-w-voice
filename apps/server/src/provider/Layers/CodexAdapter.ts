@@ -226,7 +226,8 @@ function toCanonicalItemType(raw: string | undefined | null): CanonicalItemType 
     return "file_change";
   if (type.includes("mcp")) return "mcp_tool_call";
   if (type.includes("dynamic tool")) return "dynamic_tool_call";
-  if (type.includes("collab")) return "collab_agent_tool_call";
+  if (type.includes("collab") || type.includes("sub agent activity"))
+    return "collab_agent_tool_call";
   if (type.includes("web search")) return "web_search";
   if (type.includes("image")) return "image_view";
   if (type.includes("review entered")) return "review_entered";
@@ -236,9 +237,26 @@ function toCanonicalItemType(raw: string | undefined | null): CanonicalItemType 
   return "unknown";
 }
 
+const COLLAB_TOOL_TITLES: Record<string, string> = {
+  spawnAgent: "Spawn agent",
+  sendInput: "Send input to agent",
+  resumeAgent: "Resume agent",
+  wait: "Wait for agent",
+  closeAgent: "Close agent",
+};
+
 function itemTitle(itemType: CanonicalItemType, item?: CodexLifecycleItem): string | undefined {
   if (itemType === "mcp_tool_call" && item?.type === "mcpToolCall") {
     return `${item.server} · ${item.tool}`;
+  }
+  if (itemType === "collab_agent_tool_call") {
+    if (item?.type === "collabAgentToolCall") {
+      return COLLAB_TOOL_TITLES[item.tool] ?? "Agent tool call";
+    }
+    if (item?.type === "subAgentActivity") {
+      return "Agent activity";
+    }
+    return "Agent tool call";
   }
   switch (itemType) {
     case "assistant_message":
@@ -272,6 +290,15 @@ function itemDetail(itemType: CanonicalItemType, item: CodexLifecycleItem): stri
   const itemRecord = item as Record<string, unknown>;
   const action = itemRecord.action as Record<string, unknown> | undefined;
   const actionQueries = Array.isArray(action?.queries) ? action.queries : [];
+
+  if (item.type === "collabAgentToolCall") {
+    const agentMessages = item.receiverThreadIds
+      .map((threadId) => trimText(item.agentsStates[threadId]?.message ?? undefined))
+      .filter((message): message is string => message !== undefined);
+    if (agentMessages.length > 0) {
+      return agentMessages.join(" · ");
+    }
+  }
   const candidates = [
     ...(itemType === "web_search"
       ? [itemRecord.query, action?.query, ...actionQueries, action?.pattern, action?.url]
@@ -478,7 +505,9 @@ function mapItemLifecycle(
     lifecycle === "item.started"
       ? "inProgress"
       : lifecycle === "item.completed"
-        ? "completed"
+        ? "status" in item && item.status === "failed"
+          ? "failed"
+          : "completed"
         : undefined;
 
   return {
@@ -1462,7 +1491,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             }
             yield* Queue.offerAll(runtimeEventQueue, runtimeEvents);
           }),
-        ).pipe(Effect.forkChild);
+        ).pipe(Effect.forkIn(sessionScope));
 
         const started = yield* runtime.start().pipe(
           Effect.mapError(

@@ -6,6 +6,7 @@ import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
+import { DelegationProfile } from "./delegatedRun.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -65,8 +66,15 @@ export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationM
 export const VoiceInferenceMode = Schema.Literals(["auto", "local", "server"]);
 export type VoiceInferenceMode = typeof VoiceInferenceMode.Type;
 
+const McpSettings = Schema.Struct({
+  preview: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  codexAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  cursorAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+});
+
 export const ClientSettingsSchema = Schema.Struct({
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  autoOpenSubagentsPanel: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   dismissedProviderUpdateNotificationKeys: Schema.Array(TrimmedNonEmptyString).pipe(
@@ -603,6 +611,10 @@ export const ServerSettings = Schema.Struct({
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   voice: VoiceSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  mcp: McpSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  delegationProfiles: Schema.Array(DelegationProfile).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -753,11 +765,20 @@ export const ServerSettingsPatch = Schema.Struct({
       engine: Schema.optionalKey(VoiceEngine),
     }),
   ),
+  mcp: Schema.optionalKey(
+    Schema.Struct({
+      preview: Schema.optionalKey(Schema.Boolean),
+      codexAgent: Schema.optionalKey(Schema.Boolean),
+      cursorAgent: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
+  delegationProfiles: Schema.optionalKey(Schema.Array(DelegationProfile)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
   autoOpenPlanSidebar: Schema.optionalKey(Schema.Boolean),
+  autoOpenSubagentsPanel: Schema.optionalKey(Schema.Boolean),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),

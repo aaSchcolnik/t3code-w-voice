@@ -220,6 +220,29 @@ describe("buildTurnStartParams", () => {
     }),
   );
 
+  it("appends tracked delegation instructions inside the collaboration mode block", () => {
+    const params = Effect.runSync(
+      buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Delegate it",
+        model: "gpt-5.3-codex",
+        interactionMode: "default",
+        delegationInstructions: "## T3 Code tracked subagents\nUse `cursor_start` for Cursor.",
+      }),
+    );
+
+    const instructions = params.collaborationMode?.settings.developer_instructions ?? "";
+    NodeAssert.match(instructions, /## T3 Code tracked subagents/);
+    // The delegation section must live inside the collaboration mode block so
+    // Codex treats it as active-mode guidance. The body prose also mentions the
+    // closing tag, so compare against the final (structural) occurrence.
+    NodeAssert.ok(
+      instructions.indexOf("cursor_start") < instructions.lastIndexOf("</collaboration_mode>"),
+    );
+    NodeAssert.ok(instructions.trimEnd().endsWith("</collaboration_mode>"));
+  });
+
   it("omits collaboration mode when interaction mode is absent", () => {
     const params = Effect.runSync(
       buildTurnStartParams({

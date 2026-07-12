@@ -137,6 +137,19 @@ export const browserApiCorsLayer = Layer.unwrap(
   }),
 );
 
+/**
+ * Route prefixes owned by dedicated transports (for example the MCP endpoint).
+ * The static/dev fallback must never serve or redirect these, even if route
+ * composition changes, because a 302 to Vite leaves MCP clients stuck pending.
+ */
+const RESERVED_SERVER_ROUTE_PREFIXES = ["/mcp"] as const;
+
+export function isReservedServerRoute(pathname: string): boolean {
+  return RESERVED_SERVER_ROUTE_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
 export function isLoopbackHostname(hostname: string): boolean {
   const normalizedHostname = hostname
     .trim()
@@ -291,6 +304,16 @@ export const staticAndDevRouteLayer = HttpRouter.add(
 
     if (Option.isNone(url)) {
       return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+
+    if (isReservedServerRoute(url.value.pathname)) {
+      return HttpServerResponse.empty({
+        status: 405,
+        headers: {
+          allow: "POST, DELETE",
+          "cache-control": "no-store",
+        },
+      });
     }
 
     const config = yield* ServerConfig.ServerConfig;
