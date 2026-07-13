@@ -19,6 +19,8 @@ When delegating work to Codex, Cursor, or Claude (including specific models such
 Do not substitute another delegation mechanism: a provider-specific agent/plugin (for example, a \`codex:*\` or \`cursor:*\` subagent type), your own native collaboration or agent-spawning tools (for example \`spawn_agent\`) when the user asked for a Codex, Cursor, or Claude subagent, launching \`codex exec\`, \`cursor-agent -p\`, or \`claude -p\`, or an equivalent companion script through Bash or another shell. Those paths are untracked or run the wrong provider: the user cannot see the actual provider status, transcript, result, or cancellation controls in the Subagents panel.
 
 After starting a tracked run, call the matching \`codex_result\`, \`cursor_result\`, or \`claude_result\` tool exactly once. The result call waits event-driven until the run finishes (or needs structured input). If Cursor needs input, call \`cursor_respond\` and then call \`cursor_result\` exactly once again for the next active phase. NEVER poll the status/result tools and NEVER create shell sleep timers or background polling commands. Use a status tool only when the user explicitly asks for a one-time progress snapshot.
+
+Tracked subagents launch with a server-locked workspace-write sandbox, automatic approval handling, and a mandatory Git read-only policy. They may edit project files, but must never access paths outside the workspace or run Git commands that change local or remote state. The execution configuration is fixed by the server; do not attempt to override it with a profile or start-tool arguments. Permission requests from a tracked subagent are accepted by the server and never require user action; structured questions may still be returned through the result tool.
 `.trim();
 
 export function trackedDelegationInstructions(
@@ -33,7 +35,7 @@ export function trackedDelegationInstructions(
 
 const IMPLEMENTATION_ENGINE_INSTRUCTIONS = `## T3 Code Implementation Engine
 
-Implementation Engine tools are available for project-aware planning, consensus analysis, implementation, audits, performance analysis, and TypeScript work. Before coding tasks, call \`engine_knowledge_status\`. Use \`engine_plan\`, \`engine_consensus\`, \`engine_enrich\`, \`engine_implement\`, and the matching quality/performance tools when their structured workflow fits the task. \`engine_consensus\` can analyze any subject with a multi-agent panel. Store workflow output with the engine case/artifact tools; do not create engine temp directories in the repository. Custom skills are listed in the "T3 Code skills" section; run one with \`engine_skill_run({ slug, task })\`. Call \`engine_skill_list\` only if you need to re-check the catalog. When the user asks to create or modify a T3 Code skill, use \`engine_skill_save\`; skills are globally stored and versioned in T3 Code's database, not written into project files. Delegation defaults are configurable per project: call \`engine_delegation_get\` to inspect global, project, effective, and resolved chains. \`engine_delegation_set\` changes the current project by default; pass scope=\`global\` only when the user explicitly asks to change every inheriting project. Consensus members, models, reasoning options, and focus lenses can be changed through role \`consensus\` and take effect on the next hydration.`;
+Implementation Engine tools are available for project-aware planning, consensus analysis, implementation, audits, performance analysis, and TypeScript work. Before coding tasks, call \`engine_knowledge_status\`. Use \`engine_plan\`, \`engine_consensus\`, \`engine_enrich\`, \`engine_implement\`, and the matching quality/performance tools when their structured workflow fits the task. \`engine_consensus\` can analyze any subject with a multi-agent panel. Store workflow output with the engine case/artifact tools; do not create engine temp directories in the repository. Custom skills are listed in the "T3 Code skills" section; run one with \`engine_skill_run({ slug, task })\`. Call \`engine_skill_list\` only if you need to re-check the catalog. When the user asks to create or modify a T3 Code skill, use \`engine_skill_save\`; skills are stored and versioned in T3 Code's database, and an existing current-project variant takes precedence over its global fallback. Delegation defaults are configurable per project: call \`engine_delegation_get\` to inspect global, project, effective, and resolved chains. \`engine_delegation_set\` changes the current project by default; pass scope=\`global\` only when the user explicitly asks to change every inheriting project. Consensus members, models, reasoning options, and focus lenses can be changed through role \`consensus\` and take effect on the next hydration.`;
 
 export function implementationEngineInstructions(
   capabilities: ReadonlySet<McpCapability>,
@@ -67,7 +69,10 @@ export const buildMcpSessionInstructions = Effect.fn("buildMcpSessionInstruction
     const skills = yield* SkillRepository;
     const projects = yield* ProjectionProjectRepository;
     const [records, project] = yield* Effect.all(
-      [skills.list(), projects.getById({ projectId: session.projectId })],
+      [
+        skills.list({ projectId: session.projectId }),
+        projects.getById({ projectId: session.projectId }),
+      ],
       { concurrency: "unbounded" },
     );
     const projectSkillOverrides = Option.isSome(project)

@@ -19,7 +19,6 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   displayName: string;
   accentColor?: string | undefined;
   showBadge?: boolean;
-  badgeContent?: "initials" | "none";
   className?: string;
   iconClassName?: string;
   badgeClassName?: string;
@@ -31,8 +30,6 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   const accentStyle = props.accentColor
     ? ({ "--provider-accent": props.accentColor } as CSSProperties)
     : undefined;
-  const badgeContent = props.badgeContent ?? "initials";
-
   return (
     <span
       className={cn(
@@ -71,7 +68,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
           style={{ borderColor: indicatorBackground }}
           aria-hidden
         >
-          {badgeContent === "initials" ? providerInstanceInitials(props.displayName) : null}
+          {providerInstanceInitials(props.displayName)}
         </span>
       ) : null}
     </span>

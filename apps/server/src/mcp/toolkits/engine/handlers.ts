@@ -103,9 +103,11 @@ const workflow = (
   requiredCapability?: McpInvocationContext.McpCapability,
 ) =>
   Effect.gen(function* () {
-    const builtinWorkflow = builtinWorkflowNames.has(name)
-      ? (name as EngineWorkflowName)
-      : undefined;
+    const invokedAsCustomSkill = requiredCapability !== undefined;
+    const builtinWorkflow =
+      !invokedAsCustomSkill && builtinWorkflowNames.has(name)
+        ? (name as EngineWorkflowName)
+        : undefined;
     const capability =
       builtinWorkflow === undefined ? requiredCapability : capabilityByWorkflow[builtinWorkflow];
     if (capability === undefined) {
@@ -116,7 +118,9 @@ const workflow = (
     }
     const scope = yield* requireCapability(capability);
     const skills = yield* SkillRepository;
-    const storedSkill = yield* skills.getBySlug(name).pipe(mapFailure("workflow-skill"));
+    const storedSkill = yield* skills
+      .getBySlug(name, invokedAsCustomSkill ? { projectId: scope.projectId! } : undefined)
+      .pipe(mapFailure("workflow-skill"));
     if (Option.isNone(storedSkill)) {
       return yield* new KnowledgeError({
         operation: "workflow-skill",
@@ -138,7 +142,10 @@ const workflow = (
     const projectOverrides = Option.isSome(project)
       ? (project.value.mcpOverrides ?? undefined)
       : undefined;
-    if (projectOverrides?.skills?.[storedSkill.value.skill.skillId] === false) {
+    if (
+      storedSkill.value.skill.projectId === null &&
+      projectOverrides?.skills?.[storedSkill.value.skill.skillId] === false
+    ) {
       return yield* new KnowledgeError({
         operation: "workflow-skill",
         message: `Skill '${name}' is disabled for this project in Settings → Skills.`,
@@ -277,7 +284,9 @@ export const EngineToolkitHandlersLive = EngineToolkit.toLayer({
       const skillOverrides = Option.isSome(project)
         ? project.value.mcpOverrides?.skills
         : undefined;
-      const records = yield* skills.list().pipe(mapFailure("skill-list"));
+      const records = yield* skills
+        .list({ projectId: scope.projectId! })
+        .pipe(mapFailure("skill-list"));
       return {
         data: {
           skills: records
@@ -301,8 +310,11 @@ export const EngineToolkitHandlersLive = EngineToolkit.toLayer({
     }),
   engine_skill_run: ({ slug, task }) =>
     Effect.gen(function* () {
+      const scope = yield* requireCapability("engine-knowledge");
       const skills = yield* SkillRepository;
-      const skill = yield* skills.getBySlug(slug).pipe(mapFailure("skill-run"));
+      const skill = yield* skills
+        .getBySlug(slug, { projectId: scope.projectId! })
+        .pipe(mapFailure("skill-run"));
       if (Option.isSome(skill) && skill.value.skill.source === "builtin") {
         return yield* new KnowledgeError({
           operation: "skill-run",
@@ -313,9 +325,11 @@ export const EngineToolkitHandlersLive = EngineToolkit.toLayer({
     }),
   engine_skill_save: ({ slug, title, description, content, delegation }) =>
     Effect.gen(function* () {
-      yield* requireCapability("engine-knowledge");
+      const scope = yield* requireCapability("engine-knowledge");
       const skills = yield* SkillRepository;
-      const existing = yield* skills.getBySlug(slug).pipe(mapFailure("skill-save"));
+      const existing = yield* skills
+        .getBySlug(slug, { projectId: scope.projectId! })
+        .pipe(mapFailure("skill-save"));
       if (Option.isNone(existing)) {
         const created = yield* skills
           .create({

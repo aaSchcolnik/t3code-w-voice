@@ -5,10 +5,12 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  RuntimeRequestId,
   ThreadId,
   TurnId,
   type OrchestrationCommand,
   type ProviderRuntimeEvent,
+  type ProviderRespondToRequestInput,
   type ProviderSendTurnInput,
   type ProviderSessionStartInput,
   type ServerProvider,
@@ -84,6 +86,8 @@ const providerRegistryStub = (providers: ReadonlyArray<ServerProvider>) =>
 const makeStubbedProviderService = (
   streamEvents: Stream.Stream<ProviderRuntimeEvent> = Stream.empty,
   onStopSession: Effect.Effect<void> = Effect.void,
+  onRespondToRequest: (input: ProviderRespondToRequestInput) => Effect.Effect<void> = () =>
+    Effect.die("unused"),
 ) =>
   ProviderService.of({
     startSession: (threadId) =>
@@ -103,7 +107,7 @@ const makeStubbedProviderService = (
     listSessions: () => Effect.succeed([]),
     getCapabilities: () => Effect.die("unused"),
     getInstanceInfo: () => Effect.die("unused"),
-    respondToRequest: () => Effect.die("unused"),
+    respondToRequest: onRespondToRequest,
     respondToUserInput: () => Effect.die("unused"),
     rollbackConversation: () => Effect.die("unused"),
     streamEvents,
@@ -158,6 +162,7 @@ const waitForStatus = Effect.fn("waitForStatus")(function* (
 
 const makeStreamingHarness = Effect.gen(function* () {
   const commands: OrchestrationCommand[] = [];
+  const approvalResponses: ProviderRespondToRequestInput[] = [];
   const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const stopped = yield* Deferred.make<void>();
   const service = yield* DelegatedRunService.__testing.make.pipe(
@@ -166,6 +171,10 @@ const makeStreamingHarness = Effect.gen(function* () {
       makeStubbedProviderService(
         Stream.fromPubSub(events),
         Deferred.succeed(stopped, undefined).pipe(Effect.asVoid),
+        (input) =>
+          Effect.sync(() => {
+            approvalResponses.push(input);
+          }),
       ),
     ),
     Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
@@ -181,6 +190,7 @@ const makeStreamingHarness = Effect.gen(function* () {
     PubSub.publish(events, event).pipe(Effect.andThen(Effect.yieldNow));
   return {
     commands,
+    approvalResponses,
     service,
     queued,
     childThreadId,
@@ -435,9 +445,9 @@ it.effect("propagates and records validated options at both execution boundaries
       model: "gpt-5",
       options: [{ id: "reasoningEffort", value: "high" }],
       interactionMode: "plan",
-      approvalPolicy: "on-request",
-      sandboxMode: "read-only",
-      runtimeMode: "approval-required",
+      approvalPolicy: "never",
+      sandboxMode: "workspace-write",
+      runtimeMode: "auto-accept-edits",
       attachments: [
         { type: "image", id: "diagram", name: "diagram.png", mimeType: "image/png", sizeBytes: 42 },
       ],
@@ -451,18 +461,21 @@ it.effect("propagates and records validated options at both execution boundaries
     expect(sessionInput?.modelSelection).toEqual(expectedSelection);
     expect(turnInput?.modelSelection).toEqual(expectedSelection);
     expect(sessionInput).toMatchObject({
-      approvalPolicy: "on-request",
-      sandboxMode: "read-only",
-      runtimeMode: "approval-required",
+      approvalPolicy: "never",
+      sandboxMode: "workspace-write",
+      runtimeMode: "auto-accept-edits",
     });
     expect(turnInput).toMatchObject({ interactionMode: "plan", attachments: [{ id: "diagram" }] });
+    expect(turnInput?.input).toContain("## Subagent execution boundary");
+    expect(turnInput?.input).toContain("Git is strictly read-only.");
+    expect(turnInput?.input).toContain("Review architecture");
     expect(running.requestedOptions).toEqual(expectedSelection.options);
     expect(running.resolvedOptions).toEqual(expectedSelection.options);
     expect(running).toMatchObject({
       interactionMode: "plan",
-      approvalPolicy: "on-request",
-      sandboxMode: "read-only",
-      runtimeMode: "approval-required",
+      approvalPolicy: "never",
+      sandboxMode: "workspace-write",
+      runtimeMode: "auto-accept-edits",
       attachments: [{ id: "diagram" }],
     });
   }).pipe(
@@ -498,7 +511,8 @@ it.effect("resolves named profiles live and rejects ambiguous or unsafe configur
           model: "gpt-5",
           options: [{ id: "reasoningEffort", value: "high" }],
           interactionMode: "plan",
-          sandboxMode: "read-only",
+          sandboxMode: "workspace-write",
+          runtimeMode: "auto-accept-edits",
         },
         { id: "unsafe", provider: "codex", sandboxMode: "danger-full-access" },
         { id: "cursor-only", provider: "cursor" },
@@ -525,7 +539,8 @@ it.effect("resolves named profiles live and rejects ambiguous or unsafe configur
       requestedModel: "gpt-5",
       requestedOptions: [{ id: "reasoningEffort", value: "high" }],
       interactionMode: "plan",
-      sandboxMode: "read-only",
+      sandboxMode: "workspace-write",
+      runtimeMode: "auto-accept-edits",
     });
 
     const conflict = yield* service
@@ -547,7 +562,27 @@ it.effect("resolves named profiles live and rejects ambiguous or unsafe configur
         profile: "unsafe",
       })
       .pipe(Effect.flip);
-    expect(unsafe.message).toContain("may not loosen");
+    expect(unsafe.message).toContain("fixed to the workspace-write sandbox");
+
+    const fullAccess = yield* service
+      .start({
+        provider: "codex",
+        parentThreadId,
+        task: "Review",
+        runtimeMode: "full-access",
+      })
+      .pipe(Effect.flip);
+    expect(fullAccess.message).toContain("fixed to the workspace-write sandbox");
+
+    const readOnly = yield* service
+      .start({
+        provider: "codex",
+        parentThreadId,
+        task: "Review",
+        sandboxMode: "read-only",
+      })
+      .pipe(Effect.flip);
+    expect(readOnly.message).toContain("fixed to the workspace-write sandbox");
 
     const wrongProvider = yield* service
       .start({
@@ -618,6 +653,34 @@ it.effect("throttles burst previews while keeping the run state fresh", () =>
     expect(payload.data.delegatedRun.sequence).toBe(fresh.sequence);
     expect(payload.data.delegatedRun).not.toHaveProperty("lastSummary");
     expect(payload.data.delegatedRun).not.toHaveProperty("finalMessage");
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("auto-approves delegated permission requests without waiting for the user", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeStreamingHarness;
+    yield* harness.publish(
+      makeEvent({
+        type: "request.opened",
+        threadId: harness.childThreadId,
+        turnId: TurnId.make("child-turn"),
+        requestId: RuntimeRequestId.make("approval-1"),
+        payload: {
+          requestType: "command_execution_approval",
+          detail: "Run project tests",
+        },
+      } as never),
+    );
+    yield* Effect.yieldNow;
+
+    expect(harness.approvalResponses).toEqual([
+      {
+        threadId: harness.childThreadId,
+        requestId: "approval-1",
+        decision: "accept",
+      },
+    ]);
+    expect((yield* harness.service.get(harness.queued.id)).status).toBe("running");
   }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
 );
 

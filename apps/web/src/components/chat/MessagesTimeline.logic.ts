@@ -1,15 +1,17 @@
 import * as Equal from "effect/Equal";
-import {
-  formatDuration,
-  workEntryIndicatesToolNeutralStatus,
-  workLogEntryIsToolLike,
-  type TimelineEntry,
-  type WorkLogEntry,
-} from "../../session-logic";
+import { type TimelineEntry, type WorkLogEntry } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
 import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import { partitionWorkLogEntries } from "./workLogPresentation";
+import {
+  deriveTerminalAssistantMessageIds as deriveSharedTerminalAssistantMessageIds,
+  deriveTimelineTurnFolds,
+  type TimelineFoldEntry,
+  type TimelineTurnFold,
+  type TimelineTurnTiming,
+} from "./timelineTurnFolding";
 
-export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
+export { MAX_VISIBLE_WORK_LOG_ENTRIES, normalizeCompactToolLabel } from "./workLogPresentation";
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
 export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
 export const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
@@ -102,24 +104,6 @@ export function resolveTimelineMinimapInteractiveWidth(
 ): number | string {
   return expanded ? TIMELINE_MINIMAP_EXPANDED_HIT_STRIP_WIDTH : collapsedWidth;
 }
-
-function computeElapsedMs(startIso: string, endIso: string): number | null {
-  const start = Date.parse(startIso);
-  const end = Date.parse(endIso);
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-  return Math.max(0, end - start);
-}
-
-function maxIsoTimestamp(a: string | null, b: string | null): string | null {
-  if (a === null) return b;
-  if (b === null) return a;
-  const aMs = Date.parse(a);
-  const bMs = Date.parse(b);
-  if (!Number.isFinite(aMs)) return b;
-  if (!Number.isFinite(bMs)) return a;
-  return bMs > aMs ? b : a;
-}
-
 export interface TimelineDurationMessage {
   id: string;
   role: "user" | "assistant" | "system";
@@ -201,10 +185,6 @@ export function computeMessageDurationStart(
   return result;
 }
 
-export function normalizeCompactToolLabel(value: string): string {
-  return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
-}
-
 export function resolveAssistantMessageCopyState({
   text,
   showCopyButton,
@@ -221,38 +201,34 @@ export function resolveAssistantMessageCopyState({
   };
 }
 
-function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<TimelineEntry>) {
-  const lastAssistantMessageIdByResponseKey = new Map<string, string>();
-  let nullTurnResponseIndex = 0;
-
-  for (const timelineEntry of timelineEntries) {
-    if (timelineEntry.kind !== "message") {
-      continue;
+function toFoldEntries(timelineEntries: ReadonlyArray<TimelineEntry>): TimelineFoldEntry[] {
+  return timelineEntries.map((entry) => {
+    if (entry.kind === "message") {
+      return {
+        id: entry.id,
+        createdAt: entry.createdAt,
+        turnId: entry.message.turnId,
+        role: entry.message.role,
+        updatedAt: entry.message.updatedAt,
+        streaming: entry.message.streaming,
+        messageId: entry.message.id,
+      };
     }
-    const { message } = timelineEntry;
-    if (message.role === "user") {
-      nullTurnResponseIndex += 1;
-      continue;
+    if (entry.kind === "work") {
+      return {
+        id: entry.id,
+        createdAt: entry.createdAt,
+        turnId: entry.entry.turnId ?? null,
+        role: "work",
+      };
     }
-    if (message.role !== "assistant") {
-      continue;
-    }
-
-    const responseKey = message.turnId
-      ? `turn:${message.turnId}`
-      : `unkeyed:${nullTurnResponseIndex}`;
-    lastAssistantMessageIdByResponseKey.set(responseKey, message.id);
-  }
-
-  return new Set(lastAssistantMessageIdByResponseKey.values());
-}
-
-interface TurnFold {
-  turnId: TurnId;
-  anchorEntryId: string;
-  createdAt: string;
-  hiddenEntryIds: ReadonlySet<string>;
-  label: string;
+    return {
+      id: entry.id,
+      createdAt: entry.createdAt,
+      turnId: null,
+      role: "other",
+    };
+  });
 }
 
 /**
@@ -287,119 +263,16 @@ function deriveTurnFolds(input: {
   terminalAssistantMessageIds: ReadonlySet<string>;
   latestTurn: TimelineLatestTurn | null;
   unsettledTurnId: TurnId | null;
-}): ReadonlyMap<string, TurnFold> {
-  interface TurnGroup {
-    entries: Array<TimelineEntry>;
-    terminalEntry: Extract<TimelineEntry, { kind: "message" }> | null;
-    hasStreamingMessage: boolean;
-    /**
-     * The user message that kicked the turn off. Entry timestamps alone
-     * undercount the duration (the first entry appears only once the
-     * provider starts producing output), and a turn cut short by a steer may
-     * hold a single instantaneous commentary message.
-     */
-    startBoundary: string | null;
-  }
-  const groupsByTurnId = new Map<TurnId, TurnGroup>();
-
-  let pendingUserBoundary: string | null = null;
-  for (const entry of input.timelineEntries) {
-    if (entry.kind === "message" && entry.message.role === "user") {
-      pendingUserBoundary = entry.message.createdAt;
-      continue;
-    }
-    const turnId =
-      entry.kind === "message" && entry.message.role === "assistant"
-        ? (entry.message.turnId ?? null)
-        : entry.kind === "work"
-          ? (entry.entry.turnId ?? null)
-          : null;
-    if (!turnId) {
-      continue;
-    }
-    let group = groupsByTurnId.get(turnId);
-    if (!group) {
-      group = {
-        entries: [],
-        terminalEntry: null,
-        hasStreamingMessage: false,
-        // Each user boundary starts at most one turn; a second turn after the
-        // same user message (e.g. a steer-superseded continuation) falls back
-        // to its own first entry.
-        startBoundary: pendingUserBoundary,
-      };
-      pendingUserBoundary = null;
-      groupsByTurnId.set(turnId, group);
-    }
-    group.entries.push(entry);
-    if (entry.kind === "message") {
-      if (input.terminalAssistantMessageIds.has(entry.message.id)) {
-        group.terminalEntry = entry;
-      }
-      if (entry.message.streaming) {
-        group.hasStreamingMessage = true;
-      }
-    }
-  }
-
-  const foldsByAnchorEntryId = new Map<string, TurnFold>();
-  for (const [turnId, group] of groupsByTurnId) {
-    if (turnId === input.unsettledTurnId) {
-      continue;
-    }
-    if (group.hasStreamingMessage) {
-      continue;
-    }
-    const hiddenEntryIds = new Set<string>();
-    for (const entry of group.entries) {
-      if (entry.id !== group.terminalEntry?.id) {
-        hiddenEntryIds.add(entry.id);
-      }
-    }
-    if (hiddenEntryIds.size === 0) {
-      continue;
-    }
-
-    const firstEntry = group.entries[0];
-    const lastEntry = group.entries.at(-1);
-    if (!firstEntry || !lastEntry) {
-      continue;
-    }
-
-    const isLatestInterruptedTurn =
-      input.latestTurn?.turnId === turnId && input.latestTurn.state === "interrupted";
-    // A turn cut short by a steer leaves trailing work entries behind its
-    // terminal message — take whichever ended last.
-    const lastEntryEnd =
-      lastEntry.kind === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
-    const elapsedMs =
-      input.latestTurn?.turnId === turnId &&
-      input.latestTurn.startedAt &&
-      input.latestTurn.completedAt
-        ? computeElapsedMs(input.latestTurn.startedAt, input.latestTurn.completedAt)
-        : computeElapsedMs(
-            group.startBoundary ?? firstEntry.createdAt,
-            maxIsoTimestamp(group.terminalEntry?.message.updatedAt ?? null, lastEntryEnd) ??
-              lastEntryEnd,
-          );
-    const duration = elapsedMs !== null ? formatDuration(elapsedMs) : null;
-    const label = isLatestInterruptedTurn
-      ? duration
-        ? `You stopped after ${duration}`
-        : "You stopped this response"
-      : duration
-        ? `Worked for ${duration}`
-        : "Worked";
-
-    foldsByAnchorEntryId.set(firstEntry.id, {
-      turnId,
-      anchorEntryId: firstEntry.id,
-      createdAt: firstEntry.createdAt,
-      hiddenEntryIds,
-      label,
-    });
-  }
-  return foldsByAnchorEntryId;
+}): ReadonlyMap<string, TimelineTurnFold> {
+  const timingByTurnId = input.latestTurn
+    ? new Map<string, TimelineTurnTiming>([[input.latestTurn.turnId, input.latestTurn]])
+    : undefined;
+  return deriveTimelineTurnFolds({
+    entries: toFoldEntries(input.timelineEntries),
+    terminalAssistantMessageIds: input.terminalAssistantMessageIds,
+    unsettledTurnId: input.unsettledTurnId,
+    ...(timingByTurnId ? { timingByTurnId } : {}),
+  });
 }
 
 export function deriveMessagesTimelineRows(input: {
@@ -417,7 +290,9 @@ export function deriveMessagesTimelineRows(input: {
   const durationStartByMessageId = computeMessageDurationStart(
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
-  const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(input.timelineEntries);
+  const terminalAssistantMessageIds = deriveSharedTerminalAssistantMessageIds(
+    toFoldEntries(input.timelineEntries),
+  );
   const unsettledTurnId = deriveUnsettledTurnId(
     input.latestTurn ?? null,
     input.runningTurnId ?? null,
@@ -430,7 +305,7 @@ export function deriveMessagesTimelineRows(input: {
   });
   const collapsedEntryIds = new Set<string>();
   for (const fold of foldsByAnchorEntryId.values()) {
-    if (!input.expandedTurnIds?.has(fold.turnId)) {
+    if (!input.expandedTurnIds?.has(fold.turnId as TurnId)) {
       for (const entryId of fold.hiddenEntryIds) {
         collapsedEntryIds.add(entryId);
       }
@@ -445,13 +320,14 @@ export function deriveMessagesTimelineRows(input: {
 
     const turnFold = foldsByAnchorEntryId.get(timelineEntry.id);
     if (turnFold) {
+      const turnId = turnFold.turnId as TurnId;
       nextRows.push({
         kind: "turn-fold",
-        id: `turn-fold:${turnFold.turnId}`,
+        id: `turn-fold:${turnId}`,
         createdAt: turnFold.createdAt,
-        turnId: turnFold.turnId,
+        turnId,
         label: turnFold.label,
-        expanded: input.expandedTurnIds?.has(turnFold.turnId) ?? false,
+        expanded: input.expandedTurnIds?.has(turnId) ?? false,
       });
     }
 
@@ -475,11 +351,13 @@ export function deriveMessagesTimelineRows(input: {
         groupedEntries.push(nextEntry.entry);
         cursor += 1;
       }
-      const visibleGroupedEntries = groupedEntries.filter(
-        (entry) => !workEntryIndicatesToolNeutralStatus(entry),
-      );
+      const collapsedPartition = partitionWorkLogEntries(groupedEntries, { expanded: false });
+      const visibleGroupedEntries = [
+        ...collapsedPartition.hiddenEntries,
+        ...collapsedPartition.visibleEntries,
+      ];
       if (visibleGroupedEntries.length > 0) {
-        if (visibleGroupedEntries.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
+        if (collapsedPartition.hiddenCount === 0) {
           nextRows.push({
             kind: "work",
             id: timelineEntry.id,
@@ -489,11 +367,9 @@ export function deriveMessagesTimelineRows(input: {
         } else {
           const groupId = `work-group:${timelineEntry.id}`;
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
-          const hiddenEntries = visibleGroupedEntries.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
-          const visibleEntries = visibleGroupedEntries.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES);
-          const renderedEntries = expanded ? [...hiddenEntries, ...visibleEntries] : visibleEntries;
+          const partition = partitionWorkLogEntries(groupedEntries, { expanded });
 
-          for (const workEntry of renderedEntries) {
+          for (const workEntry of partition.renderedEntries) {
             nextRows.push({
               kind: "work",
               id: workEntry.id,
@@ -507,9 +383,9 @@ export function deriveMessagesTimelineRows(input: {
             id: `work-toggle:${timelineEntry.id}`,
             createdAt: timelineEntry.createdAt,
             groupId,
-            hiddenCount: hiddenEntries.length,
+            hiddenCount: partition.hiddenCount,
             expanded,
-            onlyToolEntries: visibleGroupedEntries.every((entry) => workLogEntryIsToolLike(entry)),
+            onlyToolEntries: partition.onlyToolEntries,
           });
         }
       }

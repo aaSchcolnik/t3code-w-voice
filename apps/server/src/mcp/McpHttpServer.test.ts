@@ -5,6 +5,7 @@ import {
   EnvironmentId,
   PreviewTabId,
   ProjectId,
+  SkillSlug,
   type ProjectMcpOverrides,
   ProviderInstanceId,
   ThreadId,
@@ -338,6 +339,62 @@ it.effect("creates, lists, and runs a versioned custom skill", () =>
     expect(runText).toContain("ship version 1.0");
     expect(runText).toContain("## Subagent delegation");
     expect(runText).toContain("reusableComponents");
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("prefers project skill shadows for list, run, and save", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const skills = yield* SkillRepository;
+    const scope = {
+      ...invocation,
+      capabilities: new Set(["engine-knowledge"] as const),
+    };
+    const call = (name: string, args: Record<string, unknown>) =>
+      server
+        .callTool({ name, arguments: args })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+
+    const global = yield* skills.create({
+      slug: SkillSlug.make("shadowed-skill"),
+      title: "Global shadow",
+      description: "Global fallback",
+      content: "# Global shadow\n\nGlobal {{TASK}}.",
+    });
+    const project = yield* skills.create({
+      slug: SkillSlug.make("shadowed-skill"),
+      title: "Project shadow",
+      description: "Project variant",
+      content: "# Project shadow\n\nProject {{TASK}}.",
+      projectId: invocation.projectId,
+    });
+
+    const listed = yield* call("engine_skill_list", {});
+    const listText = listed.content[0]?.type === "text" ? listed.content[0].text : "";
+    expect(listText).toContain("Project shadow");
+
+    const run = yield* call("engine_skill_run", {
+      slug: "shadowed-skill",
+      task: "task body",
+    });
+    const runText = run.content[0]?.type === "text" ? run.content[0].text : "";
+    expect(run.isError).toBe(false);
+    expect(runText).toContain("# Project shadow");
+    expect(runText).not.toContain("# Global shadow");
+
+    const saved = yield* call("engine_skill_save", {
+      slug: "shadowed-skill",
+      title: "Updated project shadow",
+      content: "# Project shadow v2\n\nProject {{TASK}}.",
+    });
+    expect(saved.isError).toBe(false);
+    const reloadedProject = yield* skills.get(project.skill.skillId);
+    const reloadedGlobal = yield* skills.get(global.skill.skillId);
+    expect(Option.isSome(reloadedProject) && reloadedProject.value.versions.length).toBe(2);
+    expect(Option.isSome(reloadedGlobal) && reloadedGlobal.value.versions.length).toBe(1);
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
 

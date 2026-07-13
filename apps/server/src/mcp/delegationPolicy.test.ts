@@ -18,6 +18,9 @@ describe("trackedDelegationInstructions", () => {
     expect(instructions).toContain("cursor_result");
     expect(instructions).toContain("NEVER poll");
     expect(instructions).toContain("NEVER create shell sleep timers");
+    expect(instructions).toContain("server-locked workspace-write sandbox");
+    expect(instructions).toContain("never require user action");
+    expect(instructions).toContain("Git read-only policy");
   });
 
   it("does not add guidance without a delegation capability", () => {

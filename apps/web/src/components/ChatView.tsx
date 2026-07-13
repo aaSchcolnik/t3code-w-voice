@@ -5732,6 +5732,7 @@ function ChatViewContent(props: ChatViewProps) {
         environmentId={environmentId}
         threadId={activeThreadId}
         cwd={gitCwd ?? undefined}
+        workspaceRoot={activeWorkspaceRoot}
       />
     ) : activeRightPanelSurface?.kind === "plan" ? (
       <PlanSidebar

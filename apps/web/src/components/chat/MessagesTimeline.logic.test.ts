@@ -1011,6 +1011,95 @@ describe("deriveMessagesTimelineRows", () => {
       expanded: true,
     });
   });
+
+  it("labels mixed work overflow without claiming every hidden row is a tool call", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "commentary-work-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:01Z",
+          entry: {
+            id: "commentary-work",
+            createdAt: "2026-01-01T00:00:01Z",
+            label: "Reasoned about the change",
+            tone: "info",
+          },
+        },
+        {
+          id: "tool-work-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:02Z",
+          entry: {
+            id: "tool-work",
+            createdAt: "2026-01-01T00:00:02Z",
+            label: "Ran tests",
+            tone: "tool",
+          },
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["tool-work", "work-toggle:commentary-work-entry"]);
+    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
+      hiddenCount: 1,
+      onlyToolEntries: false,
+    });
+  });
+
+  it("does not fold commentary or work belonging to the active turn", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "active-commentary-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:01Z",
+          message: {
+            id: "active-commentary" as never,
+            role: "assistant",
+            text: "Still working",
+            turnId: "turn-active" as never,
+            createdAt: "2026-01-01T00:00:01Z",
+            updatedAt: "2026-01-01T00:00:01Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "active-work-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:02Z",
+          entry: {
+            id: "active-work",
+            createdAt: "2026-01-01T00:00:02Z",
+            turnId: "turn-active" as never,
+            label: "Running tests",
+            tone: "tool",
+          },
+        },
+      ],
+      latestTurn: {
+        turnId: "turn-active" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.some((row) => row.kind === "turn-fold")).toBe(false);
+    expect(rows.map((row) => row.id)).toEqual([
+      "active-commentary-entry",
+      "active-work-entry",
+      "working-indicator-row",
+    ]);
+  });
 });
 
 describe("computeStableMessagesTimelineRows", () => {

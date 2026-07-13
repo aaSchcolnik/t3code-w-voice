@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as NodeOS from "node:os";
+import * as NodeCrypto from "node:crypto";
 
 import type {
   KnowledgeSkillsResult,
@@ -56,18 +57,21 @@ type ScannedProjectSkill = Omit<ProjectSkill, "locations"> & {
 };
 
 const mergeSkills = (skills: ReadonlyArray<ScannedProjectSkill>): Array<ProjectSkill> => {
-  const skillsById = new Map<string, ProjectSkill>();
+  const skillsByContent = new Map<string, ProjectSkill>();
 
-  for (const { skillId, location, ...skill } of skills) {
-    const existing = skillsById.get(skillId);
+  for (const { location, ...skill } of skills) {
+    const existing = skillsByContent.get(skill.contentHash);
     if (existing === undefined) {
-      skillsById.set(skillId, { skillId, ...skill, locations: [location] });
+      skillsByContent.set(skill.contentHash, { ...skill, locations: [location] });
       continue;
     }
-    skillsById.set(skillId, { ...existing, locations: [...existing.locations, location] });
+    skillsByContent.set(skill.contentHash, {
+      ...existing,
+      locations: [...existing.locations, location],
+    });
   }
 
-  return Array.from(skillsById.values());
+  return Array.from(skillsByContent.values());
 };
 
 export class ProjectSkillScanner extends Context.Service<
@@ -132,9 +136,12 @@ export const make = Effect.gen(function* () {
         continue;
       }
       const metadata = parseSkillMetadata(contents.value, entry);
+      const contentHash = NodeCrypto.createHash("sha256").update(contents.value).digest("hex");
       skills.push({
         ...metadata,
         skillId: entry,
+        content: contents.value,
+        contentHash,
         location: {
           path:
             scope === "user"
@@ -156,6 +163,13 @@ export const make = Effect.gen(function* () {
         if (!(yield* isDirectory(normalizedRoot))) {
           return emptyResult();
         }
+        const rootReadable = yield* fileSystem
+          .readDirectory(normalizedRoot, { recursive: false })
+          .pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          );
+        if (!rootReadable) return emptyResult();
 
         const userHome = path.resolve(userHomeOverride ?? NodeOS.homedir());
         const [claudeMd, agentsMd, ...skillGroups] = yield* Effect.all([

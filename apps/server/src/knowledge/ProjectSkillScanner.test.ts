@@ -64,6 +64,8 @@ it.layer(TestLayer)("ProjectSkillScanner", (it) => {
               skillId: "release",
               name: "Release automation",
               description: "Deploy safely.",
+              content: expect.stringContaining("# Release"),
+              contentHash: expect.any(String),
               locations: [
                 {
                   source: "claude",
@@ -76,6 +78,8 @@ it.layer(TestLayer)("ProjectSkillScanner", (it) => {
               skillId: "code-review",
               name: "code-review",
               description: "Review a change.",
+              content: expect.stringContaining("# Code review"),
+              contentHash: expect.any(String),
               locations: [
                 {
                   source: "agents",
@@ -98,7 +102,7 @@ it.layer(TestLayer)("ProjectSkillScanner", (it) => {
         const result = yield* scanner.scan(root, userHome);
 
         expect(result.skills).toEqual([
-          {
+          expect.objectContaining({
             skillId: "no-frontmatter",
             name: "no-frontmatter",
             description: "",
@@ -109,7 +113,7 @@ it.layer(TestLayer)("ProjectSkillScanner", (it) => {
                 path: ".claude/skills/no-frontmatter/SKILL.md",
               },
             ],
-          },
+          }),
         ]);
       }),
     );
@@ -127,7 +131,7 @@ it.layer(TestLayer)("ProjectSkillScanner", (it) => {
         const result = yield* scanner.scan(root, userHome);
 
         expect(result.skills).toEqual([
-          {
+          expect.objectContaining({
             skillId: "shared",
             name: "Shared skill",
             description: "Used by either agent.",
@@ -139,8 +143,8 @@ it.layer(TestLayer)("ProjectSkillScanner", (it) => {
               },
               { source: "agents", scope: "user", path: "~/.agents/skills/shared/SKILL.md" },
             ],
-          },
-          {
+          }),
+          expect.objectContaining({
             skillId: "cursor-only",
             name: "cursor-only",
             description: "",
@@ -151,8 +155,8 @@ it.layer(TestLayer)("ProjectSkillScanner", (it) => {
                 path: "~/.cursor/skills/cursor-only/SKILL.md",
               },
             ],
-          },
-          {
+          }),
+          expect.objectContaining({
             skillId: "codex-only",
             name: "codex-only",
             description: "",
@@ -163,7 +167,7 @@ it.layer(TestLayer)("ProjectSkillScanner", (it) => {
                 path: "~/.codex/skills/codex-only/SKILL.md",
               },
             ],
-          },
+          }),
         ]);
       }),
     );

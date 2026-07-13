@@ -12,7 +12,6 @@ import {
 import type { SubagentEntry } from "../../session-logic";
 import { subagentsCancelRun, subagentTranscriptAtomFamily } from "../../state/subagents";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { ScrollArea } from "../ui/scroll-area";
 import { SubagentHeader } from "./SubagentHeader";
 import { SubagentTimeline } from "./SubagentTimeline";
 
@@ -24,6 +23,7 @@ interface SubagentTranscriptPanelProps {
   providerLabel: string;
   accentColor?: string | undefined;
   cwd?: string | undefined;
+  workspaceRoot?: string | undefined;
   onBack: () => void;
 }
 
@@ -48,6 +48,7 @@ export function SubagentTranscriptPanel({
   providerLabel,
   accentColor,
   cwd,
+  workspaceRoot,
   onBack,
 }: SubagentTranscriptPanelProps) {
   const transcriptId = entry.transcriptId;
@@ -105,17 +106,26 @@ export function SubagentTranscriptPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {header}
-      <SubagentTranscriptBody atom={transcriptAtom} cwd={cwd} />
+      <SubagentTranscriptBody
+        atom={transcriptAtom}
+        entry={entry}
+        cwd={cwd}
+        workspaceRoot={workspaceRoot}
+      />
     </div>
   );
 }
 
 function SubagentTranscriptBody({
   atom,
+  entry,
   cwd,
+  workspaceRoot,
 }: {
   atom: NonNullable<ReturnType<typeof subagentTranscriptAtomFamily>>;
+  entry: SubagentEntry;
   cwd?: string | undefined;
+  workspaceRoot?: string | undefined;
 }) {
   const result = useAtomValue(atom);
 
@@ -131,8 +141,13 @@ function SubagentTranscriptBody({
   }
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <SubagentTimeline transcript={result.value} cwd={cwd} />
-    </ScrollArea>
+    <div className="min-h-0 flex-1">
+      <SubagentTimeline
+        transcript={result.value}
+        entry={entry}
+        cwd={cwd}
+        workspaceRoot={workspaceRoot}
+      />
+    </div>
   );
 }

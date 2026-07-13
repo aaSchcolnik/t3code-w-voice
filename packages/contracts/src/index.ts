@@ -35,4 +35,5 @@ export * from "./voice-models.ts";
 export * from "./delegatedRun.ts";
 export * from "./knowledge.ts";
 export * from "./skills.ts";
+export * from "./computerUse.ts";
 export * from "./rpc.ts";

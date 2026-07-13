@@ -26,7 +26,11 @@ export interface SkillAvailabilityInput {
 }
 
 export const isSkillAvailable = (skill: SkillSummary, input: SkillAvailabilityInput): boolean => {
-  if (!skill.enabled || input.projectSkillOverrides?.[skill.skillId] === false) return false;
+  if (
+    !skill.enabled ||
+    (skill.projectId === null && input.projectSkillOverrides?.[skill.skillId] === false)
+  )
+    return false;
   if (skill.source !== "builtin") return true;
   return (
     typeof skill.capability === "string" &&

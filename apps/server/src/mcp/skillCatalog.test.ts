@@ -30,6 +30,8 @@ const skill = (slug: string, overrides: Partial<SkillSummary> = {}): SkillSummar
     description: `${slug} description`,
     source: "agent",
     capability: null,
+    projectId: null,
+    importedFrom: null,
     activeVersion: 1,
     enabled: true,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -78,6 +80,19 @@ describe("renderSkillCatalogSection", () => {
     expect(rendered).toContain("available");
   });
 
+  it("does not apply global override keys to project-owned skills", () => {
+    const projectSkill = skill("project-owned", {
+      projectId: ProjectId.make("project-catalog"),
+    });
+    const rendered = renderSkillCatalogSection({
+      skills: [projectSkill],
+      projectSkillOverrides: { [projectSkill.skillId]: false },
+      capabilities: capabilities("engine-knowledge"),
+    });
+
+    expect(rendered).toContain("project-owned");
+  });
+
   it("drops a built-in skill when its dedicated tool capability is absent", () => {
     const rendered = renderSkillCatalogSection({
       skills: [
@@ -122,8 +137,9 @@ describe("buildMcpSessionInstructions", () => {
       Layer.succeed(
         SkillRepository,
         SkillRepository.of({
-          list: () =>
-            Effect.succeed([
+          list: (options?: { readonly projectId?: ProjectId }) => {
+            expect(options).toEqual({ projectId: session.projectId });
+            return Effect.succeed([
               skill("plan-brief", {
                 title: "Edited planning trigger",
                 description: "Use for tiny planning requests from the live database.",
@@ -134,7 +150,8 @@ describe("buildMcpSessionInstructions", () => {
                 title: "Release notes",
                 description: "Draft merged changes since the last tag.",
               }),
-            ]),
+            ]);
+          },
         } as unknown as SkillRepository["Service"]),
       ),
       Layer.succeed(

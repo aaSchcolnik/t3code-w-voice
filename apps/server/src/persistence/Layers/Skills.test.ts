@@ -1,4 +1,4 @@
-import { SkillSlug } from "@t3tools/contracts";
+import { ProjectId, SkillSlug } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -139,6 +139,80 @@ skillsLayer("SkillRepository", (it) => {
         [3, 2, 1],
       );
       assert.strictEqual(new Set(versions.map((version) => version.content)).size, 3);
+    }),
+  );
+
+  it.effect("scopes slugs per project and prefers a project skill over its global shadow", () =>
+    Effect.gen(function* () {
+      const repository = yield* SkillRepository;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`DELETE FROM skills_tombstones`;
+      yield* sql`DELETE FROM skills`;
+
+      const projectA = ProjectId.make("project-a");
+      const projectB = ProjectId.make("project-b");
+      const global = yield* repository.create({
+        slug: SkillSlug.make("shared-skill"),
+        title: "Global skill",
+        content: "# Global",
+      });
+      const scoped = yield* repository.create({
+        slug: SkillSlug.make("shared-skill"),
+        title: "Project skill",
+        content: "# Project",
+        projectId: projectA,
+        importedFrom: ".claude/skills/shared-skill/SKILL.md",
+      });
+      yield* repository.create({
+        slug: SkillSlug.make("project-only"),
+        title: "Other project skill",
+        content: "# Other project",
+        projectId: projectB,
+      });
+
+      assert.deepStrictEqual(
+        (yield* repository.list()).map((skill) => skill.skillId),
+        [global.skill.skillId],
+      );
+      assert.deepStrictEqual(
+        new Set((yield* repository.list({ projectId: projectA })).map((skill) => skill.skillId)),
+        new Set([global.skill.skillId, scoped.skill.skillId]),
+      );
+
+      const resolved = yield* repository.getBySlug("shared-skill", { projectId: projectA });
+      assert.strictEqual(Option.isSome(resolved), true);
+      if (Option.isNone(resolved)) return yield* Effect.die("Expected scoped skill.");
+      assert.strictEqual(resolved.value.skill.skillId, scoped.skill.skillId);
+      assert.strictEqual(resolved.value.skill.projectId, projectA);
+      assert.strictEqual(resolved.value.skill.importedFrom, ".claude/skills/shared-skill/SKILL.md");
+
+      const fallback = yield* repository.getBySlug("shared-skill", { projectId: projectB });
+      assert.strictEqual(Option.isSome(fallback), true);
+      if (Option.isNone(fallback)) return yield* Effect.die("Expected global fallback.");
+      assert.strictEqual(fallback.value.skill.skillId, global.skill.skillId);
+    }),
+  );
+
+  it.effect("enforces slug uniqueness independently in global and project scopes", () =>
+    Effect.gen(function* () {
+      const repository = yield* SkillRepository;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`DELETE FROM skills_tombstones`;
+      yield* sql`DELETE FROM skills`;
+      const projectId = ProjectId.make("project-unique");
+      const input = {
+        slug: SkillSlug.make("unique-skill"),
+        title: "Unique skill",
+        content: "# Unique",
+      } as const;
+
+      yield* repository.create(input);
+      yield* repository.create({ ...input, projectId });
+
+      const globalDuplicate = yield* Effect.flip(repository.create(input));
+      assert.strictEqual(globalDuplicate.reason, "already_exists");
+      const projectDuplicate = yield* Effect.flip(repository.create({ ...input, projectId }));
+      assert.strictEqual(projectDuplicate.reason, "already_exists");
     }),
   );
 });

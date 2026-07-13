@@ -344,6 +344,8 @@ export const ProjectSkill = Schema.Struct({
   skillId: Schema.String,
   name: Schema.String,
   description: Schema.String,
+  content: Schema.String,
+  contentHash: Schema.String,
   locations: Schema.Array(ProjectSkillLocation),
 });
 export type ProjectSkill = typeof ProjectSkill.Type;

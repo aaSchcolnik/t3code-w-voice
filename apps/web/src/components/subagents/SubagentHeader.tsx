@@ -62,10 +62,10 @@ export function SubagentHeader({
           driverKind={driverKind}
           displayName={providerLabel}
           accentColor={accentColor}
-          showBadge={false}
-          badgeContent="none"
+          showBadge={accentColor !== undefined}
           className="size-4.5"
           iconClassName="size-4"
+          badgeClassName="h-3 min-w-3 px-0.5 text-[7px]"
           indicatorBackground="var(--background)"
         />
       </span>

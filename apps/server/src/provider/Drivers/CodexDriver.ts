@@ -36,6 +36,7 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeCodexAdapter } from "../Layers/CodexAdapter.ts";
+import { makeCodexComputerUseCapability } from "../Layers/CodexComputerUse.ts";
 import { checkCodexProviderStatus, makePendingCodexProvider } from "../Layers/CodexProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
@@ -161,6 +162,12 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       });
       const textGeneration = yield* makeCodexTextGeneration(effectiveConfig, processEnv);
+      const computerUse = yield* makeCodexComputerUseCapability({
+        providerInstanceId: instanceId,
+        providerDisplayName: displayName ?? "Codex",
+        config: effectiveConfig,
+        environment: processEnv,
+      });
 
       // Build a managed snapshot whose settings never change — mutations come
       // in as instance rebuilds from the registry rather than in-place
@@ -208,6 +215,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         snapshot,
         adapter,
         textGeneration,
+        computerUse,
       } satisfies ProviderInstance;
     }),
 };

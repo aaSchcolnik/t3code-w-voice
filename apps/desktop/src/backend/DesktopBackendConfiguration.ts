@@ -402,6 +402,11 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
+        // Explicit host-app identity so backend diagnostics (Computer Use)
+        // target this window instead of guessing from the global app list —
+        // a dev Electron host is discovered as generic "Electron", not "T3 Code".
+        T3CODE_COMPUTER_USE_HOST_KIND: environment.isPackaged ? "t3-packaged" : "t3-electron-dev",
+        T3CODE_COMPUTER_USE_HOST_BUNDLE_ID: environment.appUserModelId,
       },
       // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
       extendEnv: true,

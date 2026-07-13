@@ -3,6 +3,7 @@ import {
   resolveDelegationRoles,
   type EngineDelegationRole,
   type EngineDelegationSkillOverride,
+  type ProjectId,
   type ProjectMcpOverrides,
   type SkillDetail,
   type SkillSummary,
@@ -10,6 +11,7 @@ import {
 import {
   ChevronDownIcon,
   ChevronRightIcon,
+  DownloadIcon,
   PencilIcon,
   PlusIcon,
   RotateCcwIcon,
@@ -68,8 +70,14 @@ import { Textarea } from "../ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ChainEditor } from "./EngineDelegationSettings";
 import { McpBooleanControl } from "./McpSettings";
+import { ImportSkillsDialog } from "./ImportSkillsDialog";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
-import { hasMissingBuiltinSkills, orderSkillVersions, skillDelegationRoles } from "./skillsLogic";
+import {
+  hasMissingBuiltinSkills,
+  orderSkillVersions,
+  partitionSkillsByProject,
+  skillDelegationRoles,
+} from "./skillsLogic";
 
 const roleLabels: Record<EngineDelegationRole, { title: string; description: string }> = {
   scout: {
@@ -489,12 +497,15 @@ function NewSkillDialog({
   open,
   onOpenChange,
   onCreated,
+  environmentId,
+  projectId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
+  environmentId: NonNullable<ReturnType<typeof usePrimaryEnvironment>>["environmentId"];
+  projectId?: ProjectId | undefined;
 }) {
-  const environmentId = usePrimaryEnvironment()!.environmentId;
   const createSkill = useAtomCommand(serverEnvironment.skillsCreate);
   const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
@@ -513,6 +524,7 @@ function NewSkillDialog({
         title: title.trim(),
         description: "",
         content: `# ${title.trim()}\n\n## Instructions\n\nDescribe what this skill should do.\n\n## Delegation guidance\n\n- **Judge:** Own the final result on the main thread.`,
+        ...(projectId === undefined ? {} : { projectId }),
       },
     });
     setSaving(false);
@@ -529,7 +541,8 @@ function NewSkillDialog({
         <DialogHeader>
           <DialogTitle>New skill</DialogTitle>
           <DialogDescription>
-            Create a globally available, versioned engine skill.
+            Create a {projectId === undefined ? "globally available" : "project-owned"}, versioned
+            engine skill.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -586,9 +599,9 @@ function SkillsScopeField({
     <Field>
       <FieldLabel>Settings scope</FieldLabel>
       <FieldDescription>
-        Projects inherit the global skill catalog. Skills can only be created, edited, and deleted
-        from the global scope; per project you can enable or disable them. Title and description
-        changes are advertised to agents when the next thread starts.
+        Projects inherit the global skill catalog and can enable or disable global skills. Skills
+        owned by the selected project can be created, edited, versioned, and deleted there. Title
+        and description changes are advertised to agents when the next thread starts.
       </FieldDescription>
       <div className="flex items-center gap-2">
         <Select
@@ -617,19 +630,30 @@ function SkillsScopeField({
 
 export function SkillsSettingsPanel() {
   const environmentId = usePrimaryEnvironment()?.environmentId ?? null;
-  const skills = useEnvironmentQuery(
-    environmentId ? serverEnvironment.skillsList({ environmentId, input: {} }) : null,
-  );
-  const restoreDefaults = useAtomCommand(serverEnvironment.skillsRestoreDefaults);
   const projects = useProjects();
   const [scope, setScope] = useState("global");
-  const updateProjectMcp = useAtomCommand(projectEnvironment.updateMcpSettings);
-  const [creating, setCreating] = useState(false);
-  const records = skills.data ?? [];
-  const missingBuiltins = hasMissingBuiltinSkills(records);
   const selectedProject = projects.find(
     (project) => `${project.environmentId}:${project.id}` === scope,
   );
+  const queryEnvironmentId = selectedProject?.environmentId ?? environmentId;
+  const skills = useEnvironmentQuery(
+    queryEnvironmentId
+      ? serverEnvironment.skillsList({
+          environmentId: queryEnvironmentId,
+          input: selectedProject === undefined ? {} : { projectId: selectedProject.id },
+        })
+      : null,
+  );
+  const restoreDefaults = useAtomCommand(serverEnvironment.skillsRestoreDefaults);
+  const updateProjectMcp = useAtomCommand(projectEnvironment.updateMcpSettings);
+  const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const records = skills.data ?? [];
+  const scopedRecords =
+    selectedProject === undefined
+      ? { projectSkills: [], globalSkills: records }
+      : partitionSkillsByProject(records, selectedProject.id);
+  const missingBuiltins = hasMissingBuiltinSkills(scopedRecords.globalSkills);
   const projectOverrides = selectedProject?.mcpOverrides ?? undefined;
   const scopeItems = [
     { value: "global", label: "Global defaults" },
@@ -675,21 +699,60 @@ export function SkillsSettingsPanel() {
             )
           }
         />
-        <SettingsSection title="Skills">
-          {records.length === 0 ? (
+        <SettingsSection
+          title="Project skills"
+          headerAction={
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
+                <DownloadIcon data-icon="inline-start" />
+                Import
+              </Button>
+              <IconAction label="New project skill" onClick={() => setCreating(true)}>
+                <PlusIcon />
+              </IconAction>
+            </div>
+          }
+        >
+          <div className="flex flex-col gap-3 p-3 sm:p-4">
+            {skills.isPending && skills.data === null ? (
+              <Skeleton className="h-28 rounded-2xl" />
+            ) : scopedRecords.projectSkills.length === 0 ? (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <SparklesIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>No project skills</EmptyTitle>
+                  <EmptyDescription>
+                    Create a skill available only to {selectedProject.title}.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              scopedRecords.projectSkills.map((skill) => (
+                <SkillCard
+                  key={skill.skillId}
+                  skill={skill}
+                  environmentId={selectedProject.environmentId}
+                  onChanged={skills.refresh}
+                />
+              ))
+            )}
+          </div>
+        </SettingsSection>
+        <SettingsSection title="Global skills">
+          {scopedRecords.globalSkills.length === 0 ? (
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <SparklesIcon />
                 </EmptyMedia>
-                <EmptyTitle>No skills</EmptyTitle>
-                <EmptyDescription>
-                  Skills are created and edited from the global scope.
-                </EmptyDescription>
+                <EmptyTitle>No global skills</EmptyTitle>
+                <EmptyDescription>Create global skills from the global scope.</EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
-            records.map((skill) => (
+            scopedRecords.globalSkills.map((skill) => (
               <SettingsRow
                 key={skill.skillId}
                 title={
@@ -718,6 +781,21 @@ export function SkillsSettingsPanel() {
             ))
           )}
         </SettingsSection>
+        <NewSkillDialog
+          open={creating}
+          onOpenChange={setCreating}
+          onCreated={skills.refresh}
+          environmentId={selectedProject.environmentId}
+          projectId={selectedProject.id}
+        />
+        <ImportSkillsDialog
+          open={importing}
+          onOpenChange={setImporting}
+          target="project"
+          projects={projects}
+          project={selectedProject}
+          onImported={skills.refresh}
+        />
       </SettingsPageContainer>
     );
   }
@@ -728,9 +806,15 @@ export function SkillsSettingsPanel() {
       <SettingsSection
         title="Skills"
         headerAction={
-          <IconAction label="New skill" onClick={() => setCreating(true)}>
-            <PlusIcon />
-          </IconAction>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
+              <DownloadIcon data-icon="inline-start" />
+              Import
+            </Button>
+            <IconAction label="New skill" onClick={() => setCreating(true)}>
+              <PlusIcon />
+            </IconAction>
+          </div>
         }
       >
         <div className="flex flex-col gap-3 p-3 sm:p-4">
@@ -776,7 +860,21 @@ export function SkillsSettingsPanel() {
         </div>
       </SettingsSection>
       {environmentId ? (
-        <NewSkillDialog open={creating} onOpenChange={setCreating} onCreated={skills.refresh} />
+        <>
+          <NewSkillDialog
+            open={creating}
+            onOpenChange={setCreating}
+            onCreated={skills.refresh}
+            environmentId={environmentId}
+          />
+          <ImportSkillsDialog
+            open={importing}
+            onOpenChange={setImporting}
+            target="global"
+            projects={projects.filter((project) => project.environmentId === environmentId)}
+            onImported={skills.refresh}
+          />
+        </>
       ) : null}
     </SettingsPageContainer>
   );

@@ -23,6 +23,7 @@ import {
 } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { ComputerUseSettingsSection } from "./ComputerUseSettings";
 
 type McpBooleanKey = "preview" | "codexAgent" | "cursorAgent" | "claudeAgent";
 
@@ -273,6 +274,11 @@ export function McpSettingsPanel() {
           }
         />
       </SettingsSection>
+      <ComputerUseSettingsSection
+        {...(selectedProject
+          ? { environmentId: selectedProject.environmentId, cwd: selectedProject.workspaceRoot }
+          : {})}
+      />
     </SettingsPageContainer>
   );
 }

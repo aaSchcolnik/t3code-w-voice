@@ -1,9 +1,11 @@
 import {
+  ApprovalRequestId,
   CommandId,
   DelegatedRun as DelegatedRunSchema,
   DelegatedRunError,
   DelegatedRunId,
   EventId,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderDriverKind,
   ThreadId,
   TurnId,
@@ -54,6 +56,33 @@ const STREAM_ACTIVITY_INTERVAL_MS = 500;
 const DelegatedRunsJson = Schema.fromJsonString(Schema.Array(DelegatedRunSchema));
 const decodeDelegatedRunsJson = Schema.decodeUnknownEffect(DelegatedRunsJson);
 const encodeDelegatedRunsJson = Schema.encodeEffect(DelegatedRunsJson);
+
+// Delegated runs are intentionally less privileged than their parent. These
+// values are not user-configurable: allowing a profile or tool call to loosen
+// either one would turn a supposedly tracked subagent into an escape hatch.
+const DELEGATED_SANDBOX_MODE = "workspace-write" as const;
+const DELEGATED_RUNTIME_MODE = "auto-accept-edits" as const;
+const DELEGATED_APPROVAL_POLICY = "never" as const;
+
+export const DELEGATED_SUBAGENT_SAFETY_INSTRUCTIONS = `
+## Subagent execution boundary
+
+You may read, create, edit, move, and delete files inside the current project workspace as required by the assigned task. Do not access, modify, delete, or create anything outside that workspace, including parent directories, home directories, temporary directories, credentials, or global configuration.
+
+Git is strictly read-only. You may use inspection commands such as \`git status\`, \`git diff\`, \`git log\`, \`git show\`, and \`git branch --show-current\`. Do not run any Git command that changes local or remote state, including \`git add\`, \`git commit\`, \`git push\`, \`git pull\`, \`git fetch\`, \`git merge\`, \`git rebase\`, \`git reset\`, \`git restore\`, \`git checkout\`, \`git clean\`, \`git stash\`, \`git switch\`, \`git tag\`, or any equivalent alias.
+
+Before running a destructive filesystem command, ensure every target resolves inside the project workspace. Never use a relative traversal, home-directory path, global path, or other target that could remove, overwrite, move, or alter anything outside the project. If completing the task would require an action outside this boundary, stop and report the limitation to the parent agent.
+`.trim();
+
+const delegatedTaskInput = (task: string) =>
+  `${DELEGATED_SUBAGENT_SAFETY_INSTRUCTIONS}\n\n## Assigned task\n\n${task}`;
+
+const isDelegatedExecutionConfiguration = (input: {
+  readonly sandboxMode?: "read-only" | "workspace-write" | "danger-full-access" | undefined;
+  readonly runtimeMode?: "approval-required" | "auto-accept-edits" | "full-access" | undefined;
+}) =>
+  (input.sandboxMode === undefined || input.sandboxMode === DELEGATED_SANDBOX_MODE) &&
+  (input.runtimeMode === undefined || input.runtimeMode === DELEGATED_RUNTIME_MODE);
 
 const isTerminal = (run: DelegatedRun) =>
   run.status === "completed" || run.status === "failed" || run.status === "cancelled";
@@ -422,7 +451,45 @@ const make = Effect.gen(function* () {
           updatedAt: now,
           sequence: run.sequence + 1,
         }));
-      } else if (event.type === "request.opened" || event.type === "user-input.requested") {
+      } else if (event.type === "request.opened") {
+        if (!event.requestId) {
+          yield* updateRun(runId, (run) => ({
+            ...run,
+            status: "failed",
+            error: "The provider requested permission without a request identifier.",
+            completedAt: now,
+            updatedAt: now,
+            sequence: run.sequence + 1,
+          }));
+          yield* providerService
+            .stopSession({ threadId: event.threadId })
+            .pipe(Effect.ignoreCause({ log: false }));
+        } else {
+          yield* providerService
+            .respondToRequest({
+              threadId: event.threadId,
+              requestId: ApprovalRequestId.make(event.requestId),
+              decision: "accept",
+            })
+            .pipe(
+              Effect.catch((cause) =>
+                Effect.gen(function* () {
+                  yield* updateRun(runId, (run) => ({
+                    ...run,
+                    status: "failed",
+                    error: `Could not auto-approve delegated permission request: ${cause.message}`,
+                    completedAt: now,
+                    updatedAt: now,
+                    sequence: run.sequence + 1,
+                  }));
+                  yield* providerService
+                    .stopSession({ threadId: event.threadId })
+                    .pipe(Effect.ignoreCause({ log: false }));
+                }),
+              ),
+            );
+        }
+      } else if (event.type === "user-input.requested") {
         yield* updateRun(runId, (run) => ({
           ...run,
           status: "waiting_for_input",
@@ -590,18 +657,29 @@ const make = Effect.gen(function* () {
           message: `Delegation profile '${profile.id}' is for '${profile.provider}', not '${input.provider}'.`,
         });
       }
+      if (
+        !isDelegatedExecutionConfiguration(input) ||
+        (profile && !isDelegatedExecutionConfiguration(profile))
+      ) {
+        return yield* new DelegatedRunError({
+          operation: "start",
+          message:
+            "Delegated runs are fixed to the workspace-write sandbox and auto-accept-edits runtime. They may not use read-only, full-access, or danger-full-access execution settings.",
+        });
+      }
       const providerInstanceId = profile?.providerInstanceId ?? input.providerInstanceId;
       const requestedModel = profile?.model ?? input.model;
       const requestedOptions = profile?.options ?? input.options;
       const interactionMode = profile?.interactionMode ?? input.interactionMode ?? "default";
-      const approvalPolicy = profile?.approvalPolicy ?? input.approvalPolicy ?? "never";
-      const sandboxMode = profile?.sandboxMode ?? input.sandboxMode ?? "workspace-write";
-      const runtimeMode = profile?.runtimeMode ?? input.runtimeMode ?? "full-access";
+      const approvalPolicy = DELEGATED_APPROVAL_POLICY;
+      const sandboxMode = DELEGATED_SANDBOX_MODE;
+      const runtimeMode = DELEGATED_RUNTIME_MODE;
       const attachments = profile?.attachments ?? input.attachments ?? [];
-      if (sandboxMode === "danger-full-access") {
+      const task = delegatedTaskInput(input.task);
+      if (task.length > PROVIDER_SEND_TURN_MAX_INPUT_CHARS) {
         return yield* new DelegatedRunError({
           operation: "start",
-          message: "Delegated runs may not loosen the sandbox beyond 'workspace-write'.",
+          message: "The delegated task is too large after mandatory safety instructions are added.",
         });
       }
       const providerSnapshots = yield* providerRegistry.getProviders;
@@ -709,7 +787,7 @@ const make = Effect.gen(function* () {
         });
         const turn = yield* providerService.sendTurn({
           threadId: providerThreadId,
-          input: input.task,
+          input: task,
           attachments,
           interactionMode,
           ...(modelSelection ? { modelSelection } : {}),

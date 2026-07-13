@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { hasMissingBuiltinSkills, orderSkillVersions, skillDelegationRoles } from "./skillsLogic";
+import {
+  hasMissingBuiltinSkills,
+  orderSkillVersions,
+  partitionSkillsByProject,
+  skillDelegationRoles,
+} from "./skillsLogic";
 
 describe("skills settings presentation logic", () => {
   it("orders versions newest first", () => {
@@ -48,5 +53,15 @@ describe("skills settings presentation logic", () => {
 - **Worker:** This is not delegation guidance.`),
     ).toEqual(["scout", "consensus"]);
     expect(skillDelegationRoles("# TypeScript\n\nWork inline.")).toEqual([]);
+  });
+
+  it("separates current-project skills from global fallbacks", () => {
+    const global = { skillId: "global", projectId: null } as never;
+    const current = { skillId: "current", projectId: "project-a" } as never;
+    const other = { skillId: "other", projectId: "project-b" } as never;
+    expect(partitionSkillsByProject([global, current, other], "project-a")).toEqual({
+      projectSkills: [current],
+      globalSkills: [global],
+    });
   });
 });

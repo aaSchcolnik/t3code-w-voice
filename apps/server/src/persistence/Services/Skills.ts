@@ -14,6 +14,7 @@ import type {
   SkillVersionCreator,
   SkillVersionMutationResult,
   SkillVersionRecord,
+  ProjectId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -32,12 +33,26 @@ export interface SkillRepositoryCreateInput extends SkillCreateInput {
   readonly source?: SkillSource | undefined;
   readonly capability?: string | null | undefined;
   readonly createdBy?: SkillVersionCreator | undefined;
+  readonly importedFrom?: string | null | undefined;
+}
+
+export interface SkillsListOptions {
+  readonly projectId?: ProjectId | undefined;
+}
+
+export interface SkillLookupOptions {
+  readonly projectId?: ProjectId | undefined;
 }
 
 export interface SkillRepositoryShape {
-  readonly list: () => Effect.Effect<ReadonlyArray<SkillSummary>, SkillError>;
+  readonly list: (
+    options?: SkillsListOptions,
+  ) => Effect.Effect<ReadonlyArray<SkillSummary>, SkillError>;
   readonly get: (skillId: SkillId) => Effect.Effect<Option.Option<SkillDetail>, SkillError>;
-  readonly getBySlug: (slug: string) => Effect.Effect<Option.Option<SkillDetail>, SkillError>;
+  readonly getBySlug: (
+    slug: string,
+    options?: SkillLookupOptions,
+  ) => Effect.Effect<Option.Option<SkillDetail>, SkillError>;
   readonly getVersions: (
     skillId: SkillId,
   ) => Effect.Effect<ReadonlyArray<SkillVersionRecord>, SkillError>;

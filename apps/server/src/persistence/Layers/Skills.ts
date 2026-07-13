@@ -6,6 +6,7 @@ import {
   SkillError,
   SkillId,
   PositiveInt,
+  ProjectId,
   SkillRecord,
   SkillSlug,
   TrimmedNonEmptyString,
@@ -18,6 +19,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlError from "effect/unstable/sql/SqlError";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
 import {
@@ -34,6 +36,8 @@ const SkillDbRow = Schema.Struct({
   description: TrimmedString,
   source: Schema.Literals(["builtin", "user", "agent"]),
   capability: Schema.NullOr(Schema.String),
+  projectId: Schema.NullOr(ProjectId),
+  importedFrom: Schema.NullOr(Schema.String),
   activeVersion: PositiveInt,
   enabled: Schema.BooleanFromBit,
   createdAt: Schema.String,
@@ -59,7 +63,23 @@ const encodeDelegation = Schema.encodeSync(Schema.fromJsonString(EngineDelegatio
 const mapPersistenceError = (operation: string) => (cause: unknown) =>
   skillError("persistence", `${operation} failed: ${String(cause)}`);
 
-const contentHash = (content: string, delegation: EngineDelegationSkillOverride | null): string =>
+const isUniqueViolation = (cause: unknown, seen = new Set<object>()): boolean => {
+  if (typeof cause === "string") {
+    return cause.includes("UNIQUE constraint") || cause.includes("SQLITE_CONSTRAINT_UNIQUE");
+  }
+  if (cause === null || typeof cause !== "object" || seen.has(cause)) return false;
+  seen.add(cause);
+  const record = cause as Record<string, unknown>;
+  if (record._tag === "UniqueViolation" || record.code === "SQLITE_CONSTRAINT_UNIQUE") return true;
+  return [record.message, record.cause, record.reason].some((value) =>
+    isUniqueViolation(value, seen),
+  );
+};
+
+export const contentHash = (
+  content: string,
+  delegation: EngineDelegationSkillOverride | null,
+): string =>
   NodeCrypto.createHash("sha256")
     .update(content)
     .update("\0")
@@ -82,35 +102,61 @@ const makeSkillRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
   const listRows = SqlSchema.findAll({
-    Request: Schema.Void,
+    Request: Schema.Struct({ projectId: Schema.optional(ProjectId) }),
     Result: SkillDbRow,
-    execute: () => sql`
-      SELECT skill_id AS "skillId", slug, title, description, source, capability,
-        active_version AS "activeVersion", enabled, created_at AS "createdAt",
-        updated_at AS "updatedAt"
-      FROM skills
-      ORDER BY CASE source WHEN 'builtin' THEN 0 ELSE 1 END, created_at, slug
-    `,
+    execute: ({ projectId }) =>
+      projectId === undefined
+        ? sql`
+            SELECT skill_id AS "skillId", slug, title, description, source, capability,
+              project_id AS "projectId", imported_from AS "importedFrom",
+              active_version AS "activeVersion", enabled, created_at AS "createdAt",
+              updated_at AS "updatedAt"
+            FROM skills WHERE project_id IS NULL
+            ORDER BY CASE source WHEN 'builtin' THEN 0 ELSE 1 END, created_at, slug
+          `
+        : sql`
+            SELECT skill_id AS "skillId", slug, title, description, source, capability,
+              project_id AS "projectId", imported_from AS "importedFrom",
+              active_version AS "activeVersion", enabled, created_at AS "createdAt",
+              updated_at AS "updatedAt"
+            FROM skills WHERE project_id IS NULL OR project_id = ${projectId}
+            ORDER BY project_id IS NOT NULL DESC,
+              CASE source WHEN 'builtin' THEN 0 ELSE 1 END, created_at, slug
+          `,
   });
   const getRow = SqlSchema.findOneOption({
     Request: Schema.Struct({ skillId: SkillId }),
     Result: SkillDbRow,
     execute: ({ skillId }) => sql`
       SELECT skill_id AS "skillId", slug, title, description, source, capability,
+        project_id AS "projectId", imported_from AS "importedFrom",
         active_version AS "activeVersion", enabled, created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM skills WHERE skill_id = ${skillId}
     `,
   });
   const getRowBySlug = SqlSchema.findOneOption({
-    Request: Schema.Struct({ slug: Schema.String }),
+    Request: Schema.Struct({ slug: Schema.String, projectId: Schema.optional(ProjectId) }),
     Result: SkillDbRow,
-    execute: ({ slug }) => sql`
-      SELECT skill_id AS "skillId", slug, title, description, source, capability,
-        active_version AS "activeVersion", enabled, created_at AS "createdAt",
-        updated_at AS "updatedAt"
-      FROM skills WHERE slug = ${slug}
-    `,
+    execute: ({ slug, projectId }) =>
+      projectId === undefined
+        ? sql`
+            SELECT skill_id AS "skillId", slug, title, description, source, capability,
+              project_id AS "projectId", imported_from AS "importedFrom",
+              active_version AS "activeVersion", enabled, created_at AS "createdAt",
+              updated_at AS "updatedAt"
+            FROM skills WHERE slug = ${slug} AND project_id IS NULL
+          `
+        : sql`
+            SELECT skill_id AS "skillId", slug, title, description, source, capability,
+              project_id AS "projectId", imported_from AS "importedFrom",
+              active_version AS "activeVersion", enabled, created_at AS "createdAt",
+              updated_at AS "updatedAt"
+            FROM skills
+            WHERE slug = ${slug} AND (project_id = ${projectId} OR project_id IS NULL)
+            ORDER BY project_id IS NOT NULL DESC
+            LIMIT 1
+          `,
   });
   const listVersionRows = SqlSchema.findAll({
     Request: Schema.Struct({ skillId: SkillId }),
@@ -133,8 +179,8 @@ const makeSkillRepository = Effect.gen(function* () {
     `,
   });
 
-  const list: SkillRepositoryShape["list"] = () =>
-    listRows().pipe(Effect.mapError(mapPersistenceError("SkillRepository.list")));
+  const list: SkillRepositoryShape["list"] = (options = {}) =>
+    listRows(options).pipe(Effect.mapError(mapPersistenceError("SkillRepository.list")));
 
   const getVersions: SkillRepositoryShape["getVersions"] = (skillId) =>
     listVersionRows({ skillId }).pipe(
@@ -169,8 +215,8 @@ const makeSkillRepository = Effect.gen(function* () {
       ),
     );
 
-  const getBySlug: SkillRepositoryShape["getBySlug"] = (slug) =>
-    getRowBySlug({ slug }).pipe(
+  const getBySlug: SkillRepositoryShape["getBySlug"] = (slug, options = {}) =>
+    getRowBySlug({ slug, ...options }).pipe(
       Effect.mapError(mapPersistenceError("SkillRepository.getBySlug")),
       Effect.flatMap(
         Option.match({
@@ -198,10 +244,11 @@ const makeSkillRepository = Effect.gen(function* () {
         yield* sql`
           INSERT INTO skills (
             skill_id, slug, title, description, source, capability, active_version,
-            enabled, created_at, updated_at
+            enabled, created_at, updated_at, project_id, imported_from
           ) VALUES (
             ${skillId}, ${input.slug}, ${input.title}, ${input.description ?? ""}, ${source},
-            ${input.capability ?? null}, 1, 1, ${timestamp}, ${timestamp}
+            ${input.capability ?? null}, 1, 1, ${timestamp}, ${timestamp},
+            ${input.projectId ?? null}, ${input.importedFrom ?? null}
           )
         `;
         yield* sql`
@@ -227,9 +274,9 @@ const makeSkillRepository = Effect.gen(function* () {
     insertSkill(input).pipe(
       Effect.catch((cause) => {
         if (isSkillError(cause)) return Effect.fail(cause);
-        const detail = String(cause);
         return Effect.fail(
-          detail.includes("UNIQUE")
+          (SqlError.isSqlError(cause) && cause.reason._tag === "UniqueViolation") ||
+            isUniqueViolation(cause)
             ? skillError("already_exists", `A skill with slug '${input.slug}' already exists.`)
             : mapPersistenceError("SkillRepository.create")(cause),
         );

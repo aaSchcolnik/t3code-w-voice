@@ -308,6 +308,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetResourceTelemetryHistory,
       staleTimeMs: 5_000,
     }),
+    computerUseStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:computer-use:status",
+      tag: WS_METHODS.computerUseGetStatus,
+      staleTimeMs: 30_000,
+    }),
     knowledgeListProjects: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:knowledge:projects",
       tag: WS_METHODS.knowledgeListProjects,
@@ -347,6 +352,10 @@ export function createServerEnvironmentAtoms<R, E>(
     skillsGet: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:skills:get",
       tag: WS_METHODS.skillsGet,
+    }),
+    skillsImportScan: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skills:import-scan",
+      tag: WS_METHODS.skillsImportScan,
     }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
@@ -450,6 +459,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.skillsRestoreDefaults,
       concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
+    skillsImport: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:import",
+      tag: WS_METHODS.skillsImport,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,
@@ -460,6 +474,14 @@ export function createServerEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId }) => environmentId,
+      },
+    }),
+    testComputerUse: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:computer-use:test",
+      tag: WS_METHODS.computerUseTest,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => `${environmentId}:${input.providerInstanceId}`,
       },
     }),
   };

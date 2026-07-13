@@ -151,9 +151,14 @@ import {
   SkillDetail,
   SkillError,
   SkillGetInput,
+  SkillImportInput,
+  SkillImportResult,
+  SkillImportScanInput,
+  SkillImportScanResult,
   SkillSaveVersionInput,
   SkillSetActiveVersionInput,
   SkillSummary,
+  SkillsListInput,
   SkillUpdateMetaInput,
   SkillVersionMutationResult,
 } from "./skills.ts";
@@ -210,6 +215,12 @@ import {
   KnowledgeUpdateProfileInput,
   KnowledgeUpsertInput,
 } from "./knowledge.ts";
+import {
+  ComputerUseStatusResult,
+  ComputerUseStatusInput,
+  ComputerUseTestInput,
+  ComputerUseTestResult,
+} from "./computerUse.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -287,6 +298,8 @@ export const WS_METHODS = {
   serverReportClientActivity: "server.reportClientActivity",
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
+  computerUseGetStatus: "computerUse.getStatus",
+  computerUseTest: "computerUse.test",
 
   knowledgeListProjects: "knowledge.listProjects",
   knowledgeListSkills: "knowledge.listSkills",
@@ -310,6 +323,8 @@ export const WS_METHODS = {
   skillsUpdateMeta: "skills.update-meta",
   skillsDelete: "skills.delete",
   skillsRestoreDefaults: "skills.restore-defaults",
+  skillsImportScan: "skills.import-scan",
+  skillsImport: "skills.import",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -457,6 +472,18 @@ export const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess,
   error: EnvironmentAuthorizationError,
 });
 
+export const WsComputerUseGetStatusRpc = Rpc.make(WS_METHODS.computerUseGetStatus, {
+  payload: ComputerUseStatusInput,
+  success: ComputerUseStatusResult,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsComputerUseTestRpc = Rpc.make(WS_METHODS.computerUseTest, {
+  payload: ComputerUseTestInput,
+  success: ComputerUseTestResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const knowledgeError = Schema.Union([KnowledgeError, EnvironmentAuthorizationError]);
 export const WsKnowledgeListProjectsRpc = Rpc.make(WS_METHODS.knowledgeListProjects, {
   payload: KnowledgeListProjectsInput,
@@ -526,7 +553,7 @@ export const WsKnowledgeDeleteCaseRpc = Rpc.make(WS_METHODS.knowledgeDeleteCase,
 
 const skillsError = Schema.Union([SkillError, EnvironmentAuthorizationError]);
 export const WsSkillsListRpc = Rpc.make(WS_METHODS.skillsList, {
-  payload: Schema.Struct({}),
+  payload: SkillsListInput,
   success: Schema.Array(SkillSummary),
   error: skillsError,
 });
@@ -563,6 +590,16 @@ export const WsSkillsDeleteRpc = Rpc.make(WS_METHODS.skillsDelete, {
 export const WsSkillsRestoreDefaultsRpc = Rpc.make(WS_METHODS.skillsRestoreDefaults, {
   payload: Schema.Struct({}),
   success: Schema.Array(SkillDetail),
+  error: skillsError,
+});
+export const WsSkillsImportScanRpc = Rpc.make(WS_METHODS.skillsImportScan, {
+  payload: SkillImportScanInput,
+  success: SkillImportScanResult,
+  error: skillsError,
+});
+export const WsSkillsImportRpc = Rpc.make(WS_METHODS.skillsImport, {
+  payload: SkillImportInput,
+  success: SkillImportResult,
   error: skillsError,
 });
 
@@ -1052,6 +1089,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,
+  WsComputerUseGetStatusRpc,
+  WsComputerUseTestRpc,
   WsKnowledgeListProjectsRpc,
   WsKnowledgeListSkillsRpc,
   WsKnowledgeQueryRpc,
@@ -1073,6 +1112,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSkillsUpdateMetaRpc,
   WsSkillsDeleteRpc,
   WsSkillsRestoreDefaultsRpc,
+  WsSkillsImportScanRpc,
+  WsSkillsImportRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsSourceControlLookupRepositoryRpc,

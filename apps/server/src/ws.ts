@@ -60,6 +60,7 @@ import {
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
@@ -82,6 +83,8 @@ import {
   observeRpcStreamEffect as instrumentRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderInstanceRegistry from "./provider/Services/ProviderInstanceRegistry.ts";
+import { collectComputerUseStatuses, testComputerUseInstance } from "./provider/computerUseRpc.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -143,6 +146,7 @@ import {
 import { workspaceCodebaseStats } from "./knowledge/bootstrapScan.ts";
 import { resolveKnowledgeScanConfiguration } from "./knowledge/scanAvailability.ts";
 import * as ProjectSkillScanner from "./knowledge/ProjectSkillScanner.ts";
+import * as SkillImportServiceModule from "./knowledge/skills/importService.ts";
 import { DEFAULT_SKILLS } from "./knowledge/skills/defaults.ts";
 import { resolveEffectiveMcpSettings } from "@t3tools/contracts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
@@ -391,6 +395,8 @@ const makeWsRpcLayer = (
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
+      const providerInstanceRegistry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+      const hostProcessPlatform = yield* HostProcessPlatform;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const config = yield* ServerConfig.ServerConfig;
@@ -439,6 +445,7 @@ const makeWsRpcLayer = (
       const relayClient = yield* RelayClient.RelayClient;
       const projectionProjects = yield* ProjectionProjectRepository;
       const projectSkillScanner = yield* ProjectSkillScanner.ProjectSkillScanner;
+      const skillImportService = yield* SkillImportServiceModule.SkillImportService;
       const skills = yield* SkillRepository;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1628,8 +1635,8 @@ const makeWsRpcLayer = (
             deleteCase(projectId, caseSlug).pipe(knowledgeFailure("delete-case")),
             { "rpc.aggregate": "knowledge" },
           ),
-        [WS_METHODS.skillsList]: (_input) =>
-          observeRpcEffect(WS_METHODS.skillsList, skills.list(), {
+        [WS_METHODS.skillsList]: ({ projectId }) =>
+          observeRpcEffect(WS_METHODS.skillsList, skills.list({ projectId }), {
             "rpc.aggregate": "skills",
           }),
         [WS_METHODS.skillsGet]: ({ skillId }) =>
@@ -1670,6 +1677,18 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.skillsRestoreDefaults,
             skills.restoreDefaults(DEFAULT_SKILLS),
+            { "rpc.aggregate": "skills" },
+          ),
+        [WS_METHODS.skillsImportScan]: ({ projectId, target }) =>
+          observeRpcEffect(
+            WS_METHODS.skillsImportScan,
+            skillImportService.scanCandidates(projectId, target),
+            { "rpc.aggregate": "skills" },
+          ),
+        [WS_METHODS.skillsImport]: ({ projectId, target, candidateIds }) =>
+          observeRpcEffect(
+            WS_METHODS.skillsImport,
+            skillImportService.importSelected(projectId, target, candidateIds),
             { "rpc.aggregate": "skills" },
           ),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
@@ -1747,6 +1766,36 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverGetBackgroundPolicy, backgroundPolicy.snapshot, {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.computerUseGetStatus]: ({ cwd }) =>
+          observeRpcEffect(
+            WS_METHODS.computerUseGetStatus,
+            Effect.gen(function* () {
+              const [providers, instances] = yield* Effect.all([
+                providerRegistry.getProviders,
+                providerInstanceRegistry.listInstances,
+              ]);
+              return yield* collectComputerUseStatuses({
+                providers,
+                instances,
+                platformSupported: hostProcessPlatform === "darwin",
+                ...(cwd ? { cwd } : {}),
+              });
+            }),
+            { "rpc.aggregate": "computer-use" },
+          ),
+        [WS_METHODS.computerUseTest]: ({ providerInstanceId, cwd }) =>
+          observeRpcEffect(
+            WS_METHODS.computerUseTest,
+            Effect.gen(function* () {
+              const instance = yield* providerInstanceRegistry.getInstance(providerInstanceId);
+              return yield* testComputerUseInstance({
+                providerInstanceId,
+                instance,
+                ...(cwd ? { cwd } : {}),
+              });
+            }),
+            { "rpc.aggregate": "computer-use" },
+          ),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) =>
           observeRpcEffect(WS_METHODS.cloudGetRelayClientStatus, relayClient.resolve, {
             "rpc.aggregate": "cloud",
@@ -2430,6 +2479,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           Effect.provide(
             makeWsRpcLayer(session, previewAutomationBroker).pipe(
               Layer.provide(ProjectKnowledgeStore.layer),
+              Layer.provide(SkillImportServiceModule.layer),
               Layer.provide(ProjectSkillScanner.layer),
               Layer.provide(
                 Layer.mergeAll(ProjectionProjectRepositoryLive, SkillRepositoryLive).pipe(

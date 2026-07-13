@@ -17,6 +17,17 @@ export const hasMissingBuiltinSkills = (skills: ReadonlyArray<SkillSummary>): bo
   return ENGINE_WORKFLOW_NAMES.some((slug) => !slugs.has(slug));
 };
 
+export const partitionSkillsByProject = (
+  skills: ReadonlyArray<SkillSummary>,
+  projectId: string,
+): {
+  readonly projectSkills: ReadonlyArray<SkillSummary>;
+  readonly globalSkills: ReadonlyArray<SkillSummary>;
+} => ({
+  projectSkills: skills.filter((skill) => skill.projectId === projectId),
+  globalSkills: skills.filter((skill) => skill.projectId === null),
+});
+
 const delegationRoleByLabel = {
   scout: "scout",
   worker: "worker",

@@ -20,6 +20,7 @@ interface SubagentsPanelProps {
   environmentId: EnvironmentId;
   threadId: ThreadId | null;
   cwd?: string | undefined;
+  workspaceRoot?: string | undefined;
 }
 
 interface SubagentRowIdentity {
@@ -106,9 +107,9 @@ function SubagentRow({
           displayName={providerLabel}
           accentColor={rowProvider?.accentColor}
           showBadge={rowProvider?.accentColor !== undefined}
-          badgeContent="none"
           className="size-5"
           iconClassName="size-4.5"
+          badgeClassName="h-3 min-w-3 px-0.5 text-[7px]"
           indicatorBackground="var(--background)"
         />
         {entry.status === "active" ? (
@@ -207,7 +208,16 @@ function SubagentSection({
 }
 
 export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanelProps) {
-  const { entries, provider, providers, fallbackDriverKind, environmentId, threadId, cwd } = props;
+  const {
+    entries,
+    provider,
+    providers,
+    fallbackDriverKind,
+    environmentId,
+    threadId,
+    cwd,
+    workspaceRoot,
+  } = props;
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // A selection belongs to one parent thread; switching threads must never
@@ -231,6 +241,7 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
         providerLabel={identity.providerLabel}
         accentColor={identity.rowProvider?.accentColor}
         cwd={cwd}
+        workspaceRoot={workspaceRoot}
         onBack={() => setSelectedId(null)}
       />
     );
