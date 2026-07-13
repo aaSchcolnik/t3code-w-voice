@@ -496,6 +496,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             workspaceRoot: event.payload.workspaceRoot,
             defaultModelSelection: event.payload.defaultModelSelection,
             scripts: event.payload.scripts,
+            mcpOverrides: event.payload.mcpOverrides ?? null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
             deletedAt: null,
@@ -519,6 +520,19 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               ? { defaultModelSelection: event.payload.defaultModelSelection }
               : {}),
             ...(event.payload.scripts !== undefined ? { scripts: event.payload.scripts } : {}),
+            updatedAt: event.payload.updatedAt,
+          });
+          return;
+        }
+
+        case "project.mcp-settings-updated": {
+          const existingRow = yield* projectionProjectRepository.getById({
+            projectId: event.payload.projectId,
+          });
+          if (Option.isNone(existingRow)) return;
+          yield* projectionProjectRepository.upsert({
+            ...existingRow.value,
+            mcpOverrides: event.payload.mcpOverrides,
             updatedAt: event.payload.updatedAt,
           });
           return;

@@ -512,4 +512,84 @@ describe("serverSettings helpers", () => {
 
     expect(resolved.pauseWhenOnBattery).toBe(false);
   });
+
+  it("replaces delegation skill overrides so deleted workflows stay deleted", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      mcp: {
+        ...DEFAULT_SERVER_SETTINGS.mcp,
+        engine: {
+          ...DEFAULT_SERVER_SETTINGS.mcp.engine,
+          delegation: {
+            ...DEFAULT_SERVER_SETTINGS.mcp.engine.delegation,
+            skillOverrides: {
+              plan: { scout: [{ provider: "cursor" as const, model: "composer-2.5" }] },
+            },
+          },
+        },
+      },
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        mcp: { engine: { delegation: { skillOverrides: {} } } },
+      }).mcp.engine.delegation.skillOverrides,
+    ).toEqual({});
+  });
+
+  it("replaces delegation roles so restoring an automatic role removes its customization", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      mcp: {
+        ...DEFAULT_SERVER_SETTINGS.mcp,
+        engine: {
+          ...DEFAULT_SERVER_SETTINGS.mcp.engine,
+          delegation: {
+            ...DEFAULT_SERVER_SETTINGS.mcp.engine.delegation,
+            roles: {
+              scout: [{ provider: "cursor" as const, model: "custom-scout" }],
+              worker: [{ provider: "codex" as const, model: "custom-worker" }],
+            },
+          },
+        },
+      },
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        mcp: {
+          engine: {
+            delegation: {
+              roles: { worker: [{ provider: "codex", model: "custom-worker" }] },
+            },
+          },
+        },
+      }).mcp.engine.delegation.roles,
+    ).toEqual({ worker: [{ provider: "codex", model: "custom-worker" }] });
+  });
+
+  it("deep-merges skill toggles while replacing disabled skill arrays", () => {
+    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      skills: {
+        providers: {
+          claudeAgent: { disableAll: true, disabledSkills: ["shadcn", "imagegen"] },
+        },
+      },
+    });
+
+    expect(
+      applyServerSettingsPatch(current, {
+        skills: {
+          disableAllProviders: true,
+          providers: { claudeAgent: { disabledSkills: [] } },
+        },
+      }).skills,
+    ).toEqual({
+      disableAllProviders: true,
+      providers: {
+        ...DEFAULT_SERVER_SETTINGS.skills.providers,
+        claudeAgent: { disableAll: true, disabledSkills: [] },
+      },
+    });
+  });
 });

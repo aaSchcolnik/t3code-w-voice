@@ -11,6 +11,7 @@ import {
   OrchestrationThread,
   OrchestrationThreadDetailSnapshot,
   ProjectScript,
+  ProjectMcpOverrides,
   TurnId,
   type OrchestrationCheckpointSummary,
   type OrchestrationLatestTurn,
@@ -66,6 +67,9 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
+    mcpOverrides: Schema.NullOr(Schema.fromJsonString(ProjectMcpOverrides)).pipe(
+      Schema.catchDecoding(() => Effect.succeed(Option.some(null))),
+    ),
   }),
 );
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
@@ -235,6 +239,7 @@ function mapProjectShellRow(
     repositoryIdentity,
     defaultModelSelection: row.defaultModelSelection,
     scripts: row.scripts,
+    mcpOverrides: row.mcpOverrides,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -308,6 +313,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
+          mcp_overrides_json AS "mcpOverrides",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -681,6 +687,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
+          mcp_overrides_json AS "mcpOverrides",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -703,6 +710,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
+          mcp_overrides_json AS "mcpOverrides",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -1184,6 +1192,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 repositoryIdentity: repositoryIdentities.get(row.projectId) ?? null,
                 defaultModelSelection: row.defaultModelSelection,
                 scripts: row.scripts,
+                mcpOverrides: row.mcpOverrides,
                 createdAt: row.createdAt,
                 updatedAt: row.updatedAt,
                 deletedAt: row.deletedAt,
@@ -1310,6 +1319,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   workspaceRoot: row.workspaceRoot,
                   defaultModelSelection: row.defaultModelSelection,
                   scripts: row.scripts,
+                  mcpOverrides: row.mcpOverrides,
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                   deletedAt: row.deletedAt,
@@ -1758,6 +1768,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                     repositoryIdentity,
                     defaultModelSelection: option.value.defaultModelSelection,
                     scripts: option.value.scripts,
+                    mcpOverrides: option.value.mcpOverrides,
                     createdAt: option.value.createdAt,
                     updatedAt: option.value.updatedAt,
                     deletedAt: option.value.deletedAt,

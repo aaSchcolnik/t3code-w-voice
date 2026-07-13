@@ -30,6 +30,7 @@ type CommandInput<T extends CommandType> = Omit<
 
 export type CreateProjectInput = CommandInput<"project.create">;
 export type UpdateProjectInput = CommandInput<"project.meta.update">;
+export type UpdateProjectMcpSettingsInput = CommandInput<"project.update-mcp-settings">;
 export type DeleteProjectInput = CommandInput<"project.delete">;
 export type CreateThreadInput = CommandInput<"thread.create">;
 export type DeleteThreadInput = CommandInput<"thread.delete">;
@@ -104,6 +105,15 @@ export const updateProject: (input: UpdateProjectInput) => CommandEffect = Effec
     commandId: yield* commandId(input),
   });
 });
+
+export const updateProjectMcpSettings: (input: UpdateProjectMcpSettingsInput) => CommandEffect =
+  Effect.fn("EnvironmentCommands.updateProjectMcpSettings")(function* (input) {
+    return yield* dispatch({
+      ...input,
+      type: "project.update-mcp-settings",
+      commandId: yield* commandId(input),
+    });
+  });
 
 export const deleteProject: (input: DeleteProjectInput) => CommandEffect = Effect.fn(
   "EnvironmentCommands.deleteProject",

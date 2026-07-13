@@ -1,0 +1,66 @@
+[
+  {
+    "rule_id": "GEN-001",
+    "tier": 1,
+    "severity": "high",
+    "description": "Untrusted input crosses a trust boundary without validation.",
+    "detection_hint": "Trace request, file, environment, and tool input into commands, SQL, HTML, paths, or deserialization.",
+    "fix_guidance": "Validate at the boundary and use parameterized or escaped APIs."
+  },
+  {
+    "rule_id": "GEN-002",
+    "tier": 1,
+    "severity": "high",
+    "description": "Failures are swallowed or converted into misleading success.",
+    "detection_hint": "Find empty catch blocks, broad ignore handlers, and fallback values on write or security paths.",
+    "fix_guidance": "Preserve typed failure context and recover only where a correct fallback exists."
+  },
+  {
+    "rule_id": "GEN-003",
+    "tier": 1,
+    "severity": "high",
+    "description": "Resource lifetime is not scoped to acquisition.",
+    "detection_hint": "Inspect files, sockets, processes, subscriptions, timers, and database handles for all exit paths.",
+    "fix_guidance": "Use acquire/use/release or a scoped resource abstraction."
+  },
+  {
+    "rule_id": "GEN-004",
+    "tier": 1,
+    "severity": "medium",
+    "description": "Shared mutable state can race under concurrent work.",
+    "detection_hint": "Locate read-modify-write sequences and mutable maps used across requests, streams, or fibers.",
+    "fix_guidance": "Serialize mutations, use atomic primitives, or move ownership behind a service."
+  },
+  {
+    "rule_id": "GEN-005",
+    "tier": 2,
+    "severity": "medium",
+    "description": "A function or module combines unrelated responsibilities.",
+    "detection_hint": "Look for modules with many reasons to change, unrelated imports, or orchestration mixed with persistence details.",
+    "fix_guidance": "Extract cohesive services at stable architectural boundaries."
+  },
+  {
+    "rule_id": "GEN-006",
+    "tier": 2,
+    "severity": "medium",
+    "description": "Repeated work scales with input size or render frequency.",
+    "detection_hint": "Look for nested scans, repeated parsing, queries in loops, and recomputation in hot paths.",
+    "fix_guidance": "Index, batch, cache with explicit invalidation, or move work outside the loop."
+  },
+  {
+    "rule_id": "GEN-007",
+    "tier": 2,
+    "severity": "low",
+    "description": "Dead or duplicate logic obscures the active behavior.",
+    "detection_hint": "Find unused exports, unreachable branches, parallel implementations, and stale feature flags.",
+    "fix_guidance": "Remove dead paths and centralize shared runtime logic."
+  },
+  {
+    "rule_id": "GEN-008",
+    "tier": 2,
+    "severity": "medium",
+    "description": "Tests assert implementation details instead of behavior and failure semantics.",
+    "detection_hint": "Review mocks and assertions for coupling to internal calls while edge cases and recovery paths are absent.",
+    "fix_guidance": "Test observable contracts, boundaries, retries, and partial-failure behavior."
+  }
+]

@@ -6,11 +6,13 @@ import {
   FlaskConicalIcon,
   GitBranchIcon,
   KeyboardIcon,
+  LibraryBigIcon,
   Link2Icon,
   Mic2Icon,
   PaletteIcon,
   PlugZapIcon,
   Settings2Icon,
+  SparklesIcon,
 } from "lucide-react";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 
@@ -24,6 +26,10 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { T3ConnectSidebarAvatar, T3ConnectSidebarSignIn } from "../clerk/T3ConnectSidebarSignIn";
+import { Badge } from "../ui/badge";
+import { serverEnvironment } from "../../state/server";
+import { usePrimaryEnvironment } from "../../state/environments";
+import { useEnvironmentQuery } from "../../state/query";
 
 export type SettingsSectionPath =
   | "/settings/general"
@@ -35,6 +41,8 @@ export type SettingsSectionPath =
   | "/settings/voice"
   | "/settings/beta"
   | "/settings/mcp"
+  | "/settings/knowledge"
+  | "/settings/skills"
   | "/settings/archived";
 
 export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
@@ -47,6 +55,8 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   { label: "Keybindings", to: "/settings/keybindings", icon: KeyboardIcon },
   { label: "Providers", to: "/settings/providers", icon: BotIcon },
   { label: "MCP", to: "/settings/mcp", icon: PlugZapIcon },
+  { label: "Skills", to: "/settings/skills", icon: SparklesIcon },
+  { label: "Knowledge", to: "/settings/knowledge", icon: LibraryBigIcon },
   { label: "Source Control", to: "/settings/source-control", icon: GitBranchIcon },
   { label: "Connections", to: "/settings/connections", icon: Link2Icon },
   { label: "Voice", to: "/settings/voice", icon: Mic2Icon },
@@ -58,6 +68,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile } = useSidebar();
+  const environmentId = usePrimaryEnvironment()?.environmentId ?? null;
+  const knowledgeProjects = useEnvironmentQuery(
+    environmentId ? serverEnvironment.knowledgeListProjects({ environmentId, input: {} }) : null,
+  );
+  const pendingKnowledgeCount = (knowledgeProjects.data ?? []).reduce(
+    (total, project) => total + project.pendingCount,
+    0,
+  );
   const handleSectionClick = useCallback(
     (to: SettingsSectionPath) => {
       if (isMobile) {
@@ -94,6 +112,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   >
                     <Icon />
                     <span className="truncate">{item.label}</span>
+                    {item.to === "/settings/knowledge" && pendingKnowledgeCount > 0 ? (
+                      <Badge size="sm" variant="warning" className="ml-auto">
+                        {pendingKnowledgeCount}
+                      </Badge>
+                    ) : null}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               );

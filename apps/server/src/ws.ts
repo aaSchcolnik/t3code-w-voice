@@ -16,6 +16,8 @@ import {
   AuthSessionId,
   CommandId,
   DelegatedRunError,
+  KnowledgeError,
+  SkillError,
   type DiscoveredLocalServerList,
   EventId,
   type OrchestrationCommand,
@@ -121,6 +123,28 @@ import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
+import { ProjectionProjectRepository } from "./persistence/Services/ProjectionProjects.ts";
+import { ProjectionProjectRepositoryLive } from "./persistence/Layers/ProjectionProjects.ts";
+import { SkillRepositoryLive } from "./persistence/Layers/Skills.ts";
+import { SkillRepository } from "./persistence/Services/Skills.ts";
+import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
+import { ProjectKnowledgeStore } from "./knowledge/ProjectKnowledgeStore.ts";
+import {
+  deleteCase,
+  deleteKnowledgeRow,
+  getArtifact,
+  getKnowledge,
+  listArtifacts,
+  queryKnowledge,
+  saveKnowledge,
+  setKnowledgeStatus,
+  knowledgeStatus,
+} from "./knowledge/KnowledgeRepository.ts";
+import { workspaceCodebaseStats } from "./knowledge/bootstrapScan.ts";
+import { resolveKnowledgeScanConfiguration } from "./knowledge/scanAvailability.ts";
+import * as ProjectSkillScanner from "./knowledge/ProjectSkillScanner.ts";
+import { DEFAULT_SKILLS } from "./knowledge/skills/defaults.ts";
+import { resolveEffectiveMcpSettings } from "@t3tools/contracts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as RelayClient from "@t3tools/shared/relayClient";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
@@ -294,6 +318,7 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 const isServerVoiceModelError = Schema.is(ServerVoiceModelError);
+const isKnowledgeError = Schema.is(KnowledgeError);
 
 // When a resuming client's cursor is more than this many events behind the
 // current head, skip the per-event catch-up replay and send a fresh shell
@@ -412,6 +437,9 @@ const makeWsRpcLayer = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const relayClient = yield* RelayClient.RelayClient;
+      const projectionProjects = yield* ProjectionProjectRepository;
+      const projectSkillScanner = yield* ProjectSkillScanner.ProjectSkillScanner;
+      const skills = yield* SkillRepository;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
           message: `The authenticated token is missing required scope: ${requiredScope}.`,
@@ -553,6 +581,7 @@ const makeWsRpcLayer = (
         switch (event.type) {
           case "project.created":
           case "project.meta-updated":
+          case "project.mcp-settings-updated":
             return projectUpsertOrRemove(event.payload.projectId, event.sequence);
           case "project.deleted":
             return Effect.succeed(
@@ -1027,6 +1056,15 @@ const makeWsRpcLayer = (
         vcsStatusBroadcaster
           .refreshStatus(cwd)
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
+      const knowledgeFailure = (operation: string) =>
+        Effect.mapError((cause: unknown) =>
+          isKnowledgeError(cause)
+            ? cause
+            : new KnowledgeError({
+                operation,
+                message: cause instanceof Error ? cause.message : String(cause),
+              }),
+        );
 
       return WsRpcGroup.of({
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
@@ -1423,6 +1461,216 @@ const makeWsRpcLayer = (
             {
               "rpc.aggregate": "server",
             },
+          ),
+        [WS_METHODS.knowledgeListProjects]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeListProjects,
+            Effect.gen(function* () {
+              const projects = yield* projectionProjects
+                .listAll()
+                .pipe(knowledgeFailure("list-projects"));
+              return yield* Effect.forEach(
+                projects.filter((project) => project.deletedAt === null),
+                (project) =>
+                  Effect.gen(function* () {
+                    let pendingCount = 0;
+                    for (const table of [
+                      "project_profile",
+                      "reusable_components",
+                      "lessons_learned",
+                      "rules",
+                      "audit_rules",
+                      "features",
+                    ] as const) {
+                      const result = yield* queryKnowledge(project.projectId, {
+                        table,
+                        status: "proposed",
+                        limit: 1,
+                      }).pipe(knowledgeFailure("list-projects"));
+                      pendingCount += result.total;
+                    }
+                    return {
+                      projectId: project.projectId,
+                      title: project.title,
+                      workspaceRoot: project.workspaceRoot,
+                      pendingCount,
+                    };
+                  }),
+                { concurrency: 4 },
+              );
+            }),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeQuery]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeQuery,
+            queryKnowledge(input.projectId, input).pipe(knowledgeFailure("query")),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeListSkills]: ({ projectId }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeListSkills,
+            Effect.gen(function* () {
+              const project = yield* projectionProjects
+                .getById({ projectId })
+                .pipe(knowledgeFailure("list-skills"));
+              if (Option.isNone(project)) {
+                return {
+                  skills: [],
+                  agentFiles: { claudeMd: false, agentsMd: false },
+                  scannedRoot: null,
+                };
+              }
+              return yield* projectSkillScanner.scan(project.value.workspaceRoot);
+            }),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeScanAvailability]: ({ projectId }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeScanAvailability,
+            Effect.gen(function* () {
+              const project = yield* projectionProjects
+                .getById({ projectId })
+                .pipe(knowledgeFailure("scan-availability"));
+              if (Option.isNone(project)) {
+                return yield* new KnowledgeError({
+                  operation: "scan-availability",
+                  message: "The selected project no longer exists.",
+                });
+              }
+              const [settings, providers, status] = yield* Effect.all([
+                serverSettings.getSettings.pipe(knowledgeFailure("scan-availability")),
+                providerRegistry.getProviders,
+                knowledgeStatus(projectId).pipe(knowledgeFailure("scan-availability")),
+              ]);
+              const effectiveMcp = resolveEffectiveMcpSettings(
+                settings.mcp,
+                project.value.mcpOverrides ?? undefined,
+              );
+              const codebase = workspaceCodebaseStats(project.value.workspaceRoot);
+              const configuration = resolveKnowledgeScanConfiguration({
+                mcp: effectiveMcp,
+                providers,
+                projectDefaultModel: project.value.defaultModelSelection ?? undefined,
+              });
+              const lastScan = status.bootstrap.find((entry) => entry.phase === "knowledge-scan");
+              const lastScanStats =
+                lastScan && typeof lastScan.stats === "object" && lastScan.stats !== null
+                  ? (lastScan.stats as Record<string, unknown>)
+                  : undefined;
+              return {
+                ...configuration,
+                ...codebase,
+                knowledgePopulated: !status.needsBootstrap,
+                ...(typeof lastScan?.completed_at === "string"
+                  ? { lastScanAt: lastScan.completed_at }
+                  : {}),
+                ...(typeof lastScanStats?.reportCount === "number"
+                  ? { lastScanReportCount: lastScanStats.reportCount }
+                  : {}),
+              };
+            }),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeUpsert]: ({ projectId, table, rows, confirmed }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeUpsert,
+            saveKnowledge(projectId, table, rows, confirmed).pipe(knowledgeFailure("upsert")),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeSetStatus]: ({ projectId, table, ids, status }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeSetStatus,
+            setKnowledgeStatus(projectId, table, ids, status).pipe(knowledgeFailure("set-status")),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeDeleteRow]: ({ projectId, table, id }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeDeleteRow,
+            deleteKnowledgeRow(projectId, table, id).pipe(knowledgeFailure("delete-row")),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeGetProfile]: ({ projectId }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeGetProfile,
+            getKnowledge(projectId, "project_profile", 1).pipe(knowledgeFailure("get-profile")),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeUpdateProfile]: ({ projectId, profile }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeUpdateProfile,
+            saveKnowledge(projectId, "project_profile", [profile], true).pipe(
+              knowledgeFailure("update-profile"),
+            ),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeListCases]: ({ projectId }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeListCases,
+            listArtifacts(projectId).pipe(knowledgeFailure("list-cases")),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeListArtifacts]: ({ projectId, caseSlug }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeListArtifacts,
+            listArtifacts(projectId, caseSlug).pipe(knowledgeFailure("list-artifacts")),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeGetArtifact]: ({ projectId, id }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeGetArtifact,
+            getArtifact(projectId, { id }).pipe(knowledgeFailure("get-artifact")),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.knowledgeDeleteCase]: ({ projectId, caseSlug }) =>
+          observeRpcEffect(
+            WS_METHODS.knowledgeDeleteCase,
+            deleteCase(projectId, caseSlug).pipe(knowledgeFailure("delete-case")),
+            { "rpc.aggregate": "knowledge" },
+          ),
+        [WS_METHODS.skillsList]: (_input) =>
+          observeRpcEffect(WS_METHODS.skillsList, skills.list(), {
+            "rpc.aggregate": "skills",
+          }),
+        [WS_METHODS.skillsGet]: ({ skillId }) =>
+          observeRpcEffect(
+            WS_METHODS.skillsGet,
+            skills.get(skillId).pipe(
+              Effect.flatMap(
+                Option.match({
+                  onNone: () =>
+                    new SkillError({ reason: "not_found", message: "Skill not found." }),
+                  onSome: Effect.succeed,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "skills" },
+          ),
+        [WS_METHODS.skillsCreate]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsCreate, skills.create(input), {
+            "rpc.aggregate": "skills",
+          }),
+        [WS_METHODS.skillsSaveVersion]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsSaveVersion, skills.addVersion(input, "user"), {
+            "rpc.aggregate": "skills",
+          }),
+        [WS_METHODS.skillsSetActiveVersion]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsSetActiveVersion, skills.setActiveVersion(input), {
+            "rpc.aggregate": "skills",
+          }),
+        [WS_METHODS.skillsUpdateMeta]: (input) =>
+          observeRpcEffect(WS_METHODS.skillsUpdateMeta, skills.updateMeta(input), {
+            "rpc.aggregate": "skills",
+          }),
+        [WS_METHODS.skillsDelete]: ({ skillId }) =>
+          observeRpcEffect(WS_METHODS.skillsDelete, skills.delete(skillId), {
+            "rpc.aggregate": "skills",
+          }),
+        [WS_METHODS.skillsRestoreDefaults]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.skillsRestoreDefaults,
+            skills.restoreDefaults(DEFAULT_SKILLS),
+            { "rpc.aggregate": "skills" },
           ),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
           observeRpcEffect(
@@ -2181,6 +2429,13 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         }).pipe(
           Effect.provide(
             makeWsRpcLayer(session, previewAutomationBroker).pipe(
+              Layer.provide(ProjectKnowledgeStore.layer),
+              Layer.provide(ProjectSkillScanner.layer),
+              Layer.provide(
+                Layer.mergeAll(ProjectionProjectRepositoryLive, SkillRepositoryLive).pipe(
+                  Layer.provide(SqlitePersistenceLayerLive),
+                ),
+              ),
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),

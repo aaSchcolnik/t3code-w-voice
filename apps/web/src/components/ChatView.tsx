@@ -1614,6 +1614,14 @@ function ChatViewContent(props: ChatViewProps) {
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
+  const knowledgeScanAvailability = useEnvironmentQuery(
+    routeKind === "draft" && activeProject
+      ? serverEnvironment.knowledgeScanAvailability({
+          environmentId,
+          input: { projectId: activeProject.id },
+        })
+      : null,
+  );
   const activeEnvironmentShell = useEnvironmentQuery(
     activeThread ? environmentShell.stateAtom(activeThread.environmentId) : null,
   );
@@ -5988,6 +5996,7 @@ function ChatViewContent(props: ChatViewProps) {
                             }
                             activeThreadModelSelection={activeThread?.modelSelection}
                             activeThreadActivities={activeThread?.activities}
+                            knowledgeScanAvailability={knowledgeScanAvailability.data}
                             resolvedTheme={resolvedTheme}
                             settings={settings}
                             keybindings={keybindings}

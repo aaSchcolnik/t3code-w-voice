@@ -146,6 +146,18 @@ import {
 } from "./resourceTelemetry.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
+  SkillCreateInput,
+  SkillDeleteInput,
+  SkillDetail,
+  SkillError,
+  SkillGetInput,
+  SkillSaveVersionInput,
+  SkillSetActiveVersionInput,
+  SkillSummary,
+  SkillUpdateMetaInput,
+  SkillVersionMutationResult,
+} from "./skills.ts";
+import {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
   SourceControlDiscoveryResult,
@@ -177,6 +189,27 @@ import {
   ServerVoiceModelTarget,
 } from "./voice-models.ts";
 import { VcsError } from "./vcs.ts";
+import {
+  KnowledgeDeleteCaseInput,
+  KnowledgeDeleteRowInput,
+  KnowledgeError,
+  KnowledgeGetArtifactRpcInput,
+  KnowledgeListArtifactsInput,
+  KnowledgeListProjectsInput,
+  KnowledgeListSkillsInput,
+  KnowledgeProfileResult,
+  KnowledgeProjectInput,
+  KnowledgeProjectList,
+  KnowledgeQueryInput,
+  KnowledgeScanAvailabilityInput,
+  KnowledgeScanAvailabilityResult,
+  KnowledgeRecords,
+  KnowledgeRowsResult,
+  KnowledgeSetStatusInput,
+  KnowledgeSkillsResult,
+  KnowledgeUpdateProfileInput,
+  KnowledgeUpsertInput,
+} from "./knowledge.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -254,6 +287,29 @@ export const WS_METHODS = {
   serverReportClientActivity: "server.reportClientActivity",
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
+
+  knowledgeListProjects: "knowledge.listProjects",
+  knowledgeListSkills: "knowledge.listSkills",
+  knowledgeQuery: "knowledge.query",
+  knowledgeScanAvailability: "knowledge.scanAvailability",
+  knowledgeUpsert: "knowledge.upsert",
+  knowledgeSetStatus: "knowledge.setStatus",
+  knowledgeDeleteRow: "knowledge.deleteRow",
+  knowledgeGetProfile: "knowledge.getProfile",
+  knowledgeUpdateProfile: "knowledge.updateProfile",
+  knowledgeListCases: "knowledge.listCases",
+  knowledgeListArtifacts: "knowledge.listArtifacts",
+  knowledgeGetArtifact: "knowledge.getArtifact",
+  knowledgeDeleteCase: "knowledge.deleteCase",
+
+  skillsList: "skills.list",
+  skillsGet: "skills.get",
+  skillsCreate: "skills.create",
+  skillsSaveVersion: "skills.save-version",
+  skillsSetActiveVersion: "skills.set-active-version",
+  skillsUpdateMeta: "skills.update-meta",
+  skillsDelete: "skills.delete",
+  skillsRestoreDefaults: "skills.restore-defaults",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -399,6 +455,115 @@ export const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess,
   payload: ServerSignalProcessInput,
   success: ServerSignalProcessResult,
   error: EnvironmentAuthorizationError,
+});
+
+const knowledgeError = Schema.Union([KnowledgeError, EnvironmentAuthorizationError]);
+export const WsKnowledgeListProjectsRpc = Rpc.make(WS_METHODS.knowledgeListProjects, {
+  payload: KnowledgeListProjectsInput,
+  success: KnowledgeProjectList,
+  error: knowledgeError,
+});
+export const WsKnowledgeListSkillsRpc = Rpc.make(WS_METHODS.knowledgeListSkills, {
+  payload: KnowledgeListSkillsInput,
+  success: KnowledgeSkillsResult,
+  error: knowledgeError,
+});
+export const WsKnowledgeQueryRpc = Rpc.make(WS_METHODS.knowledgeQuery, {
+  payload: KnowledgeQueryInput,
+  success: KnowledgeRowsResult,
+  error: knowledgeError,
+});
+export const WsKnowledgeScanAvailabilityRpc = Rpc.make(WS_METHODS.knowledgeScanAvailability, {
+  payload: KnowledgeScanAvailabilityInput,
+  success: KnowledgeScanAvailabilityResult,
+  error: knowledgeError,
+});
+export const WsKnowledgeUpsertRpc = Rpc.make(WS_METHODS.knowledgeUpsert, {
+  payload: KnowledgeUpsertInput,
+  success: Schema.Array(Schema.Union([Schema.Number, Schema.String])),
+  error: knowledgeError,
+});
+export const WsKnowledgeSetStatusRpc = Rpc.make(WS_METHODS.knowledgeSetStatus, {
+  payload: KnowledgeSetStatusInput,
+  success: Schema.Number,
+  error: knowledgeError,
+});
+export const WsKnowledgeDeleteRowRpc = Rpc.make(WS_METHODS.knowledgeDeleteRow, {
+  payload: KnowledgeDeleteRowInput,
+  success: Schema.Boolean,
+  error: knowledgeError,
+});
+export const WsKnowledgeGetProfileRpc = Rpc.make(WS_METHODS.knowledgeGetProfile, {
+  payload: KnowledgeProjectInput,
+  success: KnowledgeProfileResult,
+  error: knowledgeError,
+});
+export const WsKnowledgeUpdateProfileRpc = Rpc.make(WS_METHODS.knowledgeUpdateProfile, {
+  payload: KnowledgeUpdateProfileInput,
+  success: Schema.Array(Schema.Union([Schema.Number, Schema.String])),
+  error: knowledgeError,
+});
+export const WsKnowledgeListCasesRpc = Rpc.make(WS_METHODS.knowledgeListCases, {
+  payload: KnowledgeProjectInput,
+  success: KnowledgeRecords,
+  error: knowledgeError,
+});
+export const WsKnowledgeListArtifactsRpc = Rpc.make(WS_METHODS.knowledgeListArtifacts, {
+  payload: KnowledgeListArtifactsInput,
+  success: KnowledgeRecords,
+  error: knowledgeError,
+});
+export const WsKnowledgeGetArtifactRpc = Rpc.make(WS_METHODS.knowledgeGetArtifact, {
+  payload: KnowledgeGetArtifactRpcInput,
+  success: KnowledgeProfileResult,
+  error: knowledgeError,
+});
+export const WsKnowledgeDeleteCaseRpc = Rpc.make(WS_METHODS.knowledgeDeleteCase, {
+  payload: KnowledgeDeleteCaseInput,
+  success: Schema.Boolean,
+  error: knowledgeError,
+});
+
+const skillsError = Schema.Union([SkillError, EnvironmentAuthorizationError]);
+export const WsSkillsListRpc = Rpc.make(WS_METHODS.skillsList, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(SkillSummary),
+  error: skillsError,
+});
+export const WsSkillsGetRpc = Rpc.make(WS_METHODS.skillsGet, {
+  payload: SkillGetInput,
+  success: SkillDetail,
+  error: skillsError,
+});
+export const WsSkillsCreateRpc = Rpc.make(WS_METHODS.skillsCreate, {
+  payload: SkillCreateInput,
+  success: SkillDetail,
+  error: skillsError,
+});
+export const WsSkillsSaveVersionRpc = Rpc.make(WS_METHODS.skillsSaveVersion, {
+  payload: SkillSaveVersionInput,
+  success: SkillVersionMutationResult,
+  error: skillsError,
+});
+export const WsSkillsSetActiveVersionRpc = Rpc.make(WS_METHODS.skillsSetActiveVersion, {
+  payload: SkillSetActiveVersionInput,
+  success: SkillDetail,
+  error: skillsError,
+});
+export const WsSkillsUpdateMetaRpc = Rpc.make(WS_METHODS.skillsUpdateMeta, {
+  payload: SkillUpdateMetaInput,
+  success: SkillSummary,
+  error: skillsError,
+});
+export const WsSkillsDeleteRpc = Rpc.make(WS_METHODS.skillsDelete, {
+  payload: SkillDeleteInput,
+  success: Schema.Void,
+  error: skillsError,
+});
+export const WsSkillsRestoreDefaultsRpc = Rpc.make(WS_METHODS.skillsRestoreDefaults, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(SkillDetail),
+  error: skillsError,
 });
 
 export const WsCloudGetRelayClientStatusRpc = Rpc.make(WS_METHODS.cloudGetRelayClientStatus, {
@@ -887,6 +1052,27 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,
+  WsKnowledgeListProjectsRpc,
+  WsKnowledgeListSkillsRpc,
+  WsKnowledgeQueryRpc,
+  WsKnowledgeScanAvailabilityRpc,
+  WsKnowledgeUpsertRpc,
+  WsKnowledgeSetStatusRpc,
+  WsKnowledgeDeleteRowRpc,
+  WsKnowledgeGetProfileRpc,
+  WsKnowledgeUpdateProfileRpc,
+  WsKnowledgeListCasesRpc,
+  WsKnowledgeListArtifactsRpc,
+  WsKnowledgeGetArtifactRpc,
+  WsKnowledgeDeleteCaseRpc,
+  WsSkillsListRpc,
+  WsSkillsGetRpc,
+  WsSkillsCreateRpc,
+  WsSkillsSaveVersionRpc,
+  WsSkillsSetActiveVersionRpc,
+  WsSkillsUpdateMetaRpc,
+  WsSkillsDeleteRpc,
+  WsSkillsRestoreDefaultsRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsSourceControlLookupRepositoryRpc,

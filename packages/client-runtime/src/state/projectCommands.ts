@@ -12,9 +12,11 @@ import {
   type CreateProjectInput,
   type DeleteProjectInput,
   type UpdateProjectInput,
+  type UpdateProjectMcpSettingsInput,
   createProject,
   deleteProject,
   updateProject,
+  updateProjectMcpSettings,
 } from "../operations/commands.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 
@@ -22,6 +24,7 @@ export type {
   CreateProjectInput,
   DeleteProjectInput,
   UpdateProjectInput,
+  UpdateProjectMcpSettingsInput,
 } from "../operations/commands.ts";
 
 export interface OptimisticProjectFile {
@@ -83,6 +86,12 @@ export function createProjectEnvironmentAtoms<R, E>(
     update: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:update",
       execute: (input: UpdateProjectInput) => updateProject(input),
+      scheduler: projectScheduler,
+      concurrency: projectConcurrency,
+    }),
+    updateMcpSettings: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:project:update-mcp-settings",
+      execute: (input: UpdateProjectMcpSettingsInput) => updateProjectMcpSettings(input),
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
     }),

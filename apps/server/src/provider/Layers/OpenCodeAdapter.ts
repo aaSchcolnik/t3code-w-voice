@@ -28,6 +28,7 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import {
@@ -567,6 +568,7 @@ export function makeOpenCodeAdapter(
   return Effect.gen(function* () {
     const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("opencode");
     const serverConfig = yield* ServerConfig;
+    const serverSettings = yield* ServerSettingsService;
     const openCodeRuntime = yield* OpenCodeRuntime;
     const crypto = yield* Crypto.Crypto;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -1215,6 +1217,18 @@ export function makeOpenCodeAdapter(
                 ...(server.external && serverPassword ? { serverPassword } : {}),
               });
               const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+              const currentSkillSettings = yield* serverSettings.getSettings.pipe(
+                Effect.map((currentSettings) => currentSettings.skills),
+                Effect.mapError(
+                  (cause) =>
+                    new ProviderAdapterProcessError({
+                      provider: PROVIDER,
+                      threadId: input.threadId,
+                      detail: "Failed to read OpenCode skill settings.",
+                      cause,
+                    }),
+                ),
+              );
               if (mcpSession && !server.external) {
                 yield* runOpenCodeSdk("mcp.add", () =>
                   client.mcp.add({
@@ -1262,7 +1276,10 @@ export function makeOpenCodeAdapter(
                   yield* runOpenCodeSdk("session.update", () =>
                     client.session.update({
                       sessionID: reusable.id,
-                      permission: buildOpenCodePermissionRules(input.runtimeMode),
+                      permission: buildOpenCodePermissionRules(
+                        input.runtimeMode,
+                        currentSkillSettings,
+                      ),
                     }),
                   );
                   return { openCodeSession: reusable, created: false };
@@ -1289,7 +1306,10 @@ export function makeOpenCodeAdapter(
                   yield* runOpenCodeSdk("session.update", () =>
                     client.session.update({
                       sessionID: forked.id,
-                      permission: buildOpenCodePermissionRules(input.runtimeMode),
+                      permission: buildOpenCodePermissionRules(
+                        input.runtimeMode,
+                        currentSkillSettings,
+                      ),
                     }),
                   );
                   return { openCodeSession: forked, created: true };
@@ -1302,7 +1322,11 @@ export function makeOpenCodeAdapter(
                 }
                 const createdSession = yield* runOpenCodeSdk("session.create", () =>
                   client.session.create({
-                    permission: buildOpenCodePermissionRules(input.runtimeMode),
+                    title: `T3 Code ${input.threadId}`,
+                    permission: buildOpenCodePermissionRules(
+                      input.runtimeMode,
+                      currentSkillSettings,
+                    ),
                   }),
                 );
                 if (!createdSession.data) {
@@ -1313,7 +1337,6 @@ export function makeOpenCodeAdapter(
                 }
                 return { openCodeSession: createdSession.data, created: true };
               });
-
               return {
                 sessionScope,
                 server,

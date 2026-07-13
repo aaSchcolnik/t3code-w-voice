@@ -1,9 +1,17 @@
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { EnvironmentId, PreviewTabId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  PreviewTabId,
+  ProjectId,
+  type ProjectMcpOverrides,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
@@ -18,6 +26,25 @@ import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { ProjectKnowledgeStore } from "../knowledge/ProjectKnowledgeStore.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
+import {
+  ProjectionProjectRepository,
+  type ProjectionProject,
+  type ProjectionProjectRepositoryShape,
+} from "../persistence/Services/ProjectionProjects.ts";
+import { SkillRepository } from "../persistence/Services/Skills.ts";
+import { SkillRepositoryLive } from "../persistence/Layers/Skills.ts";
+import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { SkillDefaultsSeederLive } from "../knowledge/skills/seed.ts";
+
+const SkillRepositoryTestLive = SkillRepositoryLive.pipe(
+  Layer.provideMerge(SqlitePersistenceMemory),
+);
+const SkillTestLayer = Layer.mergeAll(
+  SkillRepositoryTestLive,
+  SkillDefaultsSeederLive.pipe(Layer.provide(SkillRepositoryTestLive)),
+);
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -26,6 +53,8 @@ const alternateTabId = PreviewTabId.make("tab-mcp-alternate");
 const invocation = {
   environmentId,
   threadId,
+  projectId: ProjectId.make("project-mcp-test"),
+  worktreePath: "/tmp/project-mcp-test",
   providerSessionId: "provider-session-mcp-test",
   providerInstanceId: ProviderInstanceId.make("codex"),
   capabilities: new Set(["preview"] as const),
@@ -45,13 +74,57 @@ const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
 );
 
-const AllToolkitTestLayer = Layer.mergeAll(
-  McpHttpServer.PreviewToolkitRegistrationLive,
-  McpHttpServer.CodexAgentToolkitRegistrationLive,
-  McpHttpServer.CursorAgentToolkitRegistrationLive,
-).pipe(
-  Layer.provideMerge(McpServer.McpServer.layer),
-  Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+const makeAllToolkitTestLayer = (
+  getById: ProjectionProjectRepositoryShape["getById"] = () =>
+    Effect.succeed(Option.none<ProjectionProject>()),
+) =>
+  Layer.mergeAll(
+    McpHttpServer.PreviewToolkitRegistrationLive,
+    McpHttpServer.CodexAgentToolkitRegistrationLive,
+    McpHttpServer.CursorAgentToolkitRegistrationLive,
+    McpHttpServer.EngineKnowledgeToolkitRegistrationLive,
+    McpHttpServer.EngineToolkitRegistrationLive,
+    Layer.succeed(
+      ProjectionProjectRepository,
+      ProjectionProjectRepository.of({
+        getById,
+        upsert: () => Effect.void,
+        listAll: () => Effect.succeed([]),
+        deleteById: () => Effect.void,
+      }),
+    ),
+  ).pipe(
+    Layer.provideMerge(SkillTestLayer),
+    Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+    Layer.provideMerge(ServerSettingsService.layerTest()),
+    Layer.provideMerge(
+      ProjectKnowledgeStore.layer.pipe(
+        Layer.provideMerge(
+          ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-knowledge-test-" }),
+        ),
+        Layer.provideMerge(NodeServices.layer),
+      ),
+    ),
+  );
+
+const AllToolkitTestLayer = makeAllToolkitTestLayer();
+
+const overridesRef: { current: ProjectMcpOverrides | null } = { current: null };
+const ProjectOverridesToolkitTestLayer = makeAllToolkitTestLayer(({ projectId }) =>
+  Effect.succeed(
+    Option.some<ProjectionProject>({
+      projectId,
+      title: "Project overrides",
+      workspaceRoot: "/tmp/project-mcp-test",
+      defaultModelSelection: null,
+      scripts: [],
+      mcpOverrides: overridesRef.current,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      deletedAt: null,
+    }),
+  ),
 );
 
 it.effect("registers the built-in delegation toolkits", () =>
@@ -70,8 +143,345 @@ it.effect("registers the built-in delegation toolkits", () =>
         "cursor_result",
         "cursor_cancel",
         "cursor_respond",
+        "engine_knowledge_status",
+        "engine_knowledge_search",
+        "engine_knowledge_get",
+        "engine_knowledge_save",
+        "engine_knowledge_bootstrap",
+        "engine_case_open",
+        "engine_artifact_save",
+        "engine_artifact_get",
+        "engine_artifact_list",
+        "engine_delegation_get",
+        "engine_delegation_set",
+        "engine_plan_brief",
+        "engine_plan",
+        "engine_consensus",
+        "engine_enrich",
+        "engine_implement",
+        "engine_quality_audit",
+        "engine_quality_quick",
+        "engine_quality_pr",
+        "engine_hot_loops",
+        "engine_typescript",
+        "engine_chunks_next",
+        "engine_chunks_update",
+        "engine_report_render",
+        "engine_skill_list",
+        "engine_skill_run",
+        "engine_skill_save",
       ]),
     );
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("rejects engine knowledge calls without the capability", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({
+        name: "engine_knowledge_status",
+        arguments: {},
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(result.isError).toBe(true);
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("serves hydrated engine workflows when the capability is granted", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({
+        name: "engine_plan",
+        arguments: {
+          task: "add reliable reconnect handling",
+          lane: "focused",
+          caseSlug: "reconnect",
+        },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...invocation,
+          capabilities: new Set(["engine-planning", "engine-knowledge"] as const),
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(result.isError).toBe(false);
+    expect(result.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("decision-complete"),
+        }),
+      ]),
+    );
+    expect(result.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("No tracked subagents are available"),
+        }),
+      ]),
+    );
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("hydrates engine workflows with session-available tracked delegation", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({
+        name: "engine_plan",
+        arguments: { task: "trace reconnect owners", lane: "focused" },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...invocation,
+          capabilities: new Set(["engine-planning", "engine-knowledge", "cursor-agent"] as const),
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+
+    expect(result.isError).toBe(false);
+    expect(result.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "text",
+          text: expect.stringContaining("`cursor_start`"),
+        }),
+      ]),
+    );
+    expect(result.content[0]?.type === "text" ? result.content[0].text : "").toContain(
+      "composer-2.5",
+    );
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("creates, lists, and runs a versioned custom skill", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const scope = {
+      ...invocation,
+      capabilities: new Set(["engine-knowledge"] as const),
+    };
+    const call = (name: string, args: Record<string, unknown>) =>
+      server
+        .callTool({ name, arguments: args })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+
+    const saved = yield* call("engine_skill_save", {
+      slug: "release-readiness",
+      title: "Release readiness",
+      description: "Check release readiness",
+      content: "# Release readiness\n\nInspect {{CONSENSUS_MODE_PROTOCOL}} for {{TASK}}.",
+    });
+    expect(saved.isError).toBe(false);
+
+    const listed = yield* call("engine_skill_list", {});
+    const listText = listed.content[0]?.type === "text" ? listed.content[0].text : "";
+    expect(listText).toContain("release-readiness");
+
+    const run = yield* call("engine_skill_run", {
+      slug: "release-readiness",
+      task: "ship version 1.0",
+    });
+    const runText = run.content[0]?.type === "text" ? run.content[0].text : "";
+    expect(run.isError).toBe(false);
+    expect(runText).toContain("Release readiness");
+    expect(runText).toContain("ship version 1.0");
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("blocks skills disabled for the project by mcpOverrides", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const scope = {
+      ...invocation,
+      capabilities: new Set(["engine-knowledge", "engine-planning"] as const),
+    };
+    const call = (name: string, args: Record<string, unknown>) =>
+      server
+        .callTool({ name, arguments: args })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+
+    const saved = yield* call("engine_skill_save", {
+      slug: "project-scoped",
+      title: "Project scoped",
+      description: "Toggled off per project",
+      content: "# Project scoped\n\nDo {{TASK}}.",
+    });
+    expect(saved.isError).toBe(false);
+
+    const skills = yield* SkillRepository;
+    const custom = yield* skills.getBySlug("project-scoped");
+    const plan = yield* skills.getBySlug("plan");
+    expect(Option.isSome(custom)).toBe(true);
+    expect(Option.isSome(plan)).toBe(true);
+    if (Option.isNone(custom) || Option.isNone(plan)) return;
+
+    overridesRef.current = {
+      skills: {
+        [custom.value.skill.skillId]: false,
+        [plan.value.skill.skillId]: false,
+      },
+    };
+
+    const blockedRun = yield* call("engine_skill_run", {
+      slug: "project-scoped",
+      task: "anything",
+    });
+    expect(blockedRun.isError).toBe(true);
+    expect(blockedRun.content[0]?.type === "text" ? blockedRun.content[0].text : "").toContain(
+      "disabled for this project",
+    );
+
+    const blockedPlan = yield* call("engine_plan", { task: "anything", lane: "focused" });
+    expect(blockedPlan.isError).toBe(true);
+
+    const listed = yield* call("engine_skill_list", {});
+    expect(listed.content[0]?.type === "text" ? listed.content[0].text : "").not.toContain(
+      "project-scoped",
+    );
+
+    overridesRef.current = { skills: { [custom.value.skill.skillId]: true } };
+    const allowedRun = yield* call("engine_skill_run", {
+      slug: "project-scoped",
+      task: "anything",
+    });
+    expect(allowedRun.isError).toBe(false);
+  }).pipe(Effect.provide(ProjectOverridesToolkitTestLayer)),
+);
+
+it.effect("hydrates decision consensus with an artifact pointer and zero-panel fallback", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({
+        name: "engine_consensus",
+        arguments: {
+          task: "choose the reconnect strategy",
+          mode: "decision",
+          subjectArtifact: { kind: "plan", seq: 0 },
+        },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...invocation,
+          capabilities: new Set(["engine-consensus", "engine-knowledge"] as const),
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+
+    const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+    expect(result.isError).toBe(false);
+    expect(text).toContain("Maintainability");
+    expect(text).toContain("pre-mortem");
+    expect(text).toContain("PROCEED WITH CAUTION");
+    expect(text).toContain("`engine_artifact_get`");
+    expect(text).toContain("external consensus was unavailable");
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("reads, persists, and immediately applies delegation workflow overrides", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const scopedInvocation = {
+      ...invocation,
+      capabilities: new Set([
+        "engine-knowledge",
+        "engine-planning",
+        "engine-quality",
+        "engine-consensus",
+        "codex-agent",
+        "cursor-agent",
+      ] as const),
+    };
+    const call = (name: string, args: Record<string, unknown>) =>
+      server
+        .callTool({ name, arguments: args })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, scopedInvocation),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+
+    const initial = yield* call("engine_delegation_get", {});
+    expect(initial.isError).toBe(false);
+    const initialText = initial.content[0]?.type === "text" ? initial.content[0].text : "";
+    expect(initialText).toContain('"model":"gpt-5.6-sol"');
+    expect(initialText).toContain('"model":"grok-4.5"');
+    expect(initialText).toContain('"provider":"inline"');
+
+    const updated = yield* call("engine_delegation_set", {
+      role: "consensus",
+      scope: "global",
+      workflow: "consensus",
+      chain: [
+        { provider: "codex", model: "panel-a", focus: "risk" },
+        { provider: "cursor", model: "panel-b", focus: "architecture" },
+        { provider: "cursor", model: "panel-c", focus: "edge cases" },
+      ],
+    });
+    expect(updated.isError).toBe(false);
+    const updatedText = updated.content[0]?.type === "text" ? updated.content[0].text : "";
+    expect(updatedText).toContain("panel-a");
+    expect(updatedText).toContain('"model":"gpt-5.5"');
+    expect(updatedText).toContain('"model":"gpt-5.6-terra"');
+
+    const plan = yield* call("engine_consensus", { task: "analyze a reconnect fix" });
+    const planText = plan.content[0]?.type === "text" ? plan.content[0].text : "";
+    expect(planText).toContain("panel-a");
+    expect(planText).toContain("panel-b");
+    expect(planText).toContain("panel-c");
+    expect(planText).toContain("Focus lens: risk");
+
+    const deleted = yield* call("engine_delegation_set", {
+      role: "consensus",
+      scope: "global",
+      workflow: "consensus",
+      chain: [],
+    });
+    expect(deleted.isError).toBe(false);
+    const resetPlan = yield* call("engine_consensus", { task: "analyze after override deletion" });
+    const resetPlanText = resetPlan.content[0]?.type === "text" ? resetPlan.content[0].text : "";
+    expect(resetPlanText).not.toContain('"model":"panel-a"');
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("gates hydrated implementation preview verification on session capability", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const call = (capabilities: McpInvocationContext.McpInvocationScope["capabilities"]) =>
+      server.callTool({ name: "engine_implement", arguments: { task: "update settings UI" } }).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...invocation,
+          capabilities,
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+
+    const withPreview = yield* call(
+      new Set(["engine-implement", "engine-knowledge", "preview"] as const),
+    );
+    const withPreviewText =
+      withPreview.content[0]?.type === "text" ? withPreview.content[0].text : "";
+    expect(withPreviewText).toContain("Credentials gate — before any clicking");
+    expect(withPreviewText).toContain("preview_status");
+
+    const withoutPreview = yield* call(new Set(["engine-implement", "engine-knowledge"] as const));
+    const withoutPreviewText =
+      withoutPreview.content[0]?.type === "text" ? withoutPreview.content[0].text : "";
+    expect(withoutPreviewText).not.toContain("Credentials gate");
+    expect(withoutPreviewText).toContain("preview capability");
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
 

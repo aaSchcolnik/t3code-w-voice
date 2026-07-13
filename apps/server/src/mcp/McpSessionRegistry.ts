@@ -1,9 +1,15 @@
-import { ProviderDriverKind, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+  resolveEffectiveMcpSettings,
+} from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import { HttpServer } from "effect/unstable/http";
 
@@ -12,6 +18,8 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "./McpProviderSession.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
+import { ProjectionProjectRepository } from "../persistence/Services/ProjectionProjects.ts";
+import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
 
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
@@ -74,6 +82,15 @@ export interface McpSessionRegistryOptions {
  */
 const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
+const parentThreadByDelegatedThread = new Map<ThreadId, ThreadId>();
+
+export const registerDelegatedMcpProjectContext = (
+  delegatedThreadId: ThreadId,
+  parentThreadId: ThreadId,
+): void => {
+  parentThreadByDelegatedThread.set(delegatedThreadId, parentThreadId);
+};
+
 const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
@@ -97,6 +114,8 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const serverSettings = yield* ServerSettingsService;
   const providerRegistry = yield* ProviderRegistry;
+  const projects = yield* ProjectionProjectRepository;
+  const threads = yield* ProjectionThreadRepository;
   const environmentId = yield* environment.getEnvironmentId;
   const httpServer = yield* HttpServer.HttpServer;
   const state = yield* SynchronizedRef.make<RegistryState>({ records: new Map() });
@@ -124,7 +143,29 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const issue: McpSessionRegistryShape["issue"] = Effect.fn("McpSessionRegistry.issue")(
     function* (request) {
       const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      const lookupThreadId =
+        parentThreadByDelegatedThread.get(request.threadId) ?? request.threadId;
+      const thread = yield* threads.getById({ threadId: lookupThreadId }).pipe(Effect.orDie);
+      if (Option.isNone(thread)) {
+        return yield* Effect.die(
+          new Error(`Cannot issue an MCP credential for unknown thread '${request.threadId}'.`),
+        );
+      }
+      const project = yield* projects
+        .getById({ projectId: thread.value.projectId })
+        .pipe(Effect.orDie);
+      if (Option.isNone(project)) {
+        return yield* Effect.die(
+          new Error(
+            `Cannot issue an MCP credential for thread '${request.threadId}': project '${thread.value.projectId}' was not found.`,
+          ),
+        );
+      }
       const providers = yield* providerRegistry.getProviders;
+      const effectiveMcp = resolveEffectiveMcpSettings(
+        settings.mcp,
+        project.value.mcpOverrides ?? undefined,
+      );
       const providerAvailable = (driver: string) =>
         providers.some(
           (provider) =>
@@ -135,12 +176,27 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         );
       const capabilities = new Set<McpInvocationContext.McpCapability>();
       const delegatedSession = String(request.threadId).startsWith("delegated-");
-      if (settings.mcp.preview) capabilities.add("preview");
-      if (!delegatedSession && settings.mcp.codexAgent && providerAvailable("codex")) {
+      if (effectiveMcp.preview) capabilities.add("preview");
+      if (!delegatedSession && effectiveMcp.codexAgent && providerAvailable("codex")) {
         capabilities.add("codex-agent");
       }
-      if (!delegatedSession && settings.mcp.cursorAgent && providerAvailable("cursor")) {
+      if (!delegatedSession && effectiveMcp.cursorAgent && providerAvailable("cursor")) {
         capabilities.add("cursor-agent");
+      }
+      const engineCapabilities = [
+        ["planning", "engine-planning"],
+        ["consensus", "engine-consensus"],
+        ["enrich", "engine-enrich"],
+        ["implement", "engine-implement"],
+        ["quality", "engine-quality"],
+        ["performance", "engine-performance"],
+        ["typescript", "engine-typescript"],
+      ] as const;
+      for (const [setting, capability] of engineCapabilities) {
+        if (effectiveMcp.engine[setting]) capabilities.add(capability);
+      }
+      if (engineCapabilities.some(([setting]) => effectiveMcp.engine[setting])) {
+        capabilities.add("engine-knowledge");
       }
       const delegatedProviderInstances = providers
         .filter(
@@ -168,9 +224,20 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
+        projectId: thread.value.projectId,
+        worktreePath: thread.value.worktreePath ?? project.value.workspaceRoot,
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
         capabilities,
+        effectiveMcp,
+        ...(providers.find((provider) => provider.instanceId === request.providerInstanceId)
+          ?.driver === undefined
+          ? {}
+          : {
+              providerDriver: providers.find(
+                (provider) => provider.instanceId === request.providerInstanceId,
+              )!.driver,
+            }),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {

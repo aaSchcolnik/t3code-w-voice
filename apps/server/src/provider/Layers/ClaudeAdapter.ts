@@ -39,6 +39,7 @@ import {
   type ThreadTokenUsageSnapshot,
   type ProviderUserInputAnswers,
   type RuntimeContentStreamKind,
+  type SkillToggleSettings,
   RuntimeItemId,
   RuntimeRequestId,
   RuntimeTaskId,
@@ -69,10 +70,11 @@ import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   detectUntrackedDelegationAttempt,
-  trackedDelegationInstructions,
+  mcpSessionInstructions,
   untrackedDelegationDenialMessage,
 } from "../../mcp/delegationPolicy.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
@@ -109,6 +111,21 @@ type ClaudeSdkEffort = NonNullable<ClaudeQueryOptions["effort"]>;
 function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   const result = encodeUnknownJsonStringExit(input);
   return Exit.isSuccess(result) ? result.value : undefined;
+}
+
+export function buildClaudeSkillDisallowedTools(
+  settings: SkillToggleSettings,
+  existing: ReadonlyArray<string> = [],
+): Array<string> {
+  const provider = settings.providers.claudeAgent;
+  const skillRestrictions =
+    settings.disableAllProviders || provider.disableAll
+      ? ["Skill"]
+      : provider.disabledSkills
+          .map((skillId) => skillId.trim())
+          .filter((skillId) => skillId.length > 0)
+          .map((skillId) => `Skill(${skillId})`);
+  return [...new Set([...existing, ...skillRestrictions])];
 }
 
 type PromptQueueItem =
@@ -1372,6 +1389,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig;
+  const serverSettings = yield* ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, options?.environment).pipe(
     Effect.provideService(Path.Path, path),
@@ -3826,8 +3844,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       };
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
       const delegationInstructions = mcpSession
-        ? trackedDelegationInstructions(mcpSession.capabilities)
+        ? mcpSessionInstructions(mcpSession.capabilities)
         : undefined;
+      const currentSkillSettings = yield* serverSettings.getSettings.pipe(
+        Effect.map((currentSettings) => currentSettings.skills),
+        Effect.mapError(
+          (cause) =>
+            new ProviderAdapterProcessError({
+              provider: PROVIDER,
+              threadId,
+              detail: "Failed to read Claude skill settings.",
+              cause,
+            }),
+        ),
+      );
+      const disallowedTools = buildClaudeSkillDisallowedTools(currentSkillSettings);
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -3850,6 +3881,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ? { allowDangerouslySkipPermissions: true }
           : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
+        ...(disallowedTools.length > 0 ? { disallowedTools } : {}),
         ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
@@ -3893,6 +3925,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         "claude.query.additional_directories": input.cwd ? [input.cwd] : [],
         "claude.query.setting_sources": [...CLAUDE_SETTING_SOURCES],
         "claude.query.settings_json": encodeJsonStringForDiagnostics(settings) ?? "",
+        "claude.query.disallowed_tools": disallowedTools,
         "claude.query.extra_args_json": encodeJsonStringForDiagnostics(extraArgs) ?? "",
         "claude.query.path_to_executable": claudeBinaryPath,
       });

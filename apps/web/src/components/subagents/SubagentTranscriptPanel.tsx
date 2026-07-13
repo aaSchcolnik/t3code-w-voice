@@ -86,6 +86,7 @@ export function SubagentTranscriptPanel({
       providerLabel={providerLabel}
       accentColor={accentColor}
       model={entry.model}
+      reasoningEffort={entry.reasoningEffort}
       onBack={onBack}
       onCancel={onCancel}
       cancelling={cancelling}

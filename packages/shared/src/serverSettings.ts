@@ -126,6 +126,8 @@ export function applyServerSettingsPatch(
   patch: ServerSettingsPatch,
 ): ServerSettings {
   const selectionPatch = patch.textGenerationModelSelection;
+  const delegationPatch = patch.mcp?.engine?.delegation;
+  const skillProviderPatches = patch.skills?.providers;
   const {
     automaticGitFetchInterval,
     providerHealthRefreshInterval,
@@ -205,6 +207,42 @@ export function applyServerSettingsPatch(
     automaticGitFetchInterval: resolvedBackgroundActivity.automaticGitFetchInterval,
     providerHealthRefreshInterval: resolvedBackgroundActivity.providerHealthRefreshInterval,
     backgroundActivityProfile: resolvedBackgroundActivity.profile,
+    ...(skillProviderPatches === undefined
+      ? {}
+      : {
+          skills: {
+            ...next.skills,
+            providers: Object.fromEntries(
+              Object.entries(next.skills.providers).map(([providerId, providerSettings]) => {
+                const providerPatch =
+                  skillProviderPatches[providerId as keyof typeof skillProviderPatches];
+                return [
+                  providerId,
+                  providerPatch?.disabledSkills === undefined
+                    ? providerSettings
+                    : { ...providerSettings, disabledSkills: providerPatch.disabledSkills },
+                ];
+              }),
+            ) as ServerSettings["skills"]["providers"],
+          },
+        }),
+    ...(delegationPatch?.roles !== undefined || delegationPatch?.skillOverrides !== undefined
+      ? {
+          mcp: {
+            ...next.mcp,
+            engine: {
+              ...next.mcp.engine,
+              delegation: {
+                ...next.mcp.engine.delegation,
+                ...(delegationPatch.roles === undefined ? {} : { roles: delegationPatch.roles }),
+                ...(delegationPatch.skillOverrides === undefined
+                  ? {}
+                  : { skillOverrides: delegationPatch.skillOverrides }),
+              },
+            },
+          },
+        }
+      : {}),
   };
   if (!selectionPatch) {
     return nextWithReplacements;

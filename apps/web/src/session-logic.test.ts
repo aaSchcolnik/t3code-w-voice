@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applySubagentTranscriptEvent,
+  createKnowledgeScanDraftSeed,
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
   derivePendingApprovals,
@@ -25,6 +26,18 @@ import {
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
 } from "./session-logic";
+
+it("creates a scan draft seed with the server-resolved model", () => {
+  const modelSelection = {
+    instanceId: "claudeAgent" as never,
+    model: "claude-opus-4-8",
+    options: [{ id: "effort", value: "max" }],
+  };
+  expect(createKnowledgeScanDraftSeed(modelSelection)).toEqual({
+    prompt: expect.stringContaining("engine_knowledge_bootstrap"),
+    modelSelection,
+  });
+});
 
 let nextActivityId = 0;
 
@@ -752,6 +765,7 @@ describe("deriveSubagentEntries", () => {
         source: "native",
         providerDriver: null,
         model: null,
+        reasoningEffort: null,
         agentType: null,
         transcriptId: "subagent-1",
       },
@@ -832,7 +846,41 @@ describe("deriveSubagentEntries", () => {
       providerDriver: "cursor",
       providerInstanceId: "cursor",
       model: "composer-2.5",
+      reasoningEffort: null,
       transcriptId: "run-1",
+    });
+  });
+
+  it("derives the resolved reasoning effort only when the delegated run has one", () => {
+    const [entry] = deriveSubagentEntries([
+      makeActivity({
+        id: "delegated-reasoning-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Review architecture",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          data: {
+            toolCallId: "delegated:run-reasoning",
+            delegatedRun: {
+              id: "run-reasoning",
+              provider: "codex",
+              resolvedModel: "gpt-5.5",
+              resolvedOptions: [
+                { id: "reasoningEffort", value: "high" },
+                { id: "fastMode", value: true },
+              ],
+            },
+          },
+        },
+      }),
+    ]);
+
+    expect(entry).toMatchObject({
+      model: "gpt-5.5",
+      reasoningEffort: "high",
     });
   });
 

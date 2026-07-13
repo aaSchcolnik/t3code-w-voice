@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { ProviderDriverKind } from "./providerInstance.ts";
+import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 
 export const ProviderOptionDescriptorType = Schema.Literals(["select", "boolean"]);
 export type ProviderOptionDescriptorType = typeof ProviderOptionDescriptorType.Type;
@@ -92,6 +92,50 @@ export const ProviderOptionSelections = Schema.Union([
   ProviderOptionSelectionsFromLegacyObject,
 ]);
 export type ProviderOptionSelections = typeof ProviderOptionSelections.Type;
+
+const ModelSelectionWire = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+  options: Schema.optionalKey(ProviderOptionSelections),
+});
+
+const ModelSelectionSource = Schema.Struct({
+  provider: Schema.optional(Schema.Unknown),
+  instanceId: Schema.optional(Schema.Unknown),
+  model: Schema.Unknown,
+  options: Schema.optional(Schema.Unknown),
+});
+
+export const ModelSelection = ModelSelectionSource.pipe(
+  Schema.decodeTo(
+    ModelSelectionWire,
+    SchemaTransformation.transformOrFail({
+      decode: (raw) => {
+        const instanceIdSource =
+          raw.instanceId !== undefined
+            ? raw.instanceId
+            : typeof raw.provider === "string"
+              ? raw.provider
+              : undefined;
+        const base: Record<string, unknown> = {
+          instanceId: instanceIdSource,
+          model: raw.model,
+        };
+        if (raw.options !== undefined) base.options = raw.options;
+        return Effect.succeed(base as typeof ModelSelectionWire.Encoded);
+      },
+      encode: (value) => {
+        const base: Record<string, unknown> = {
+          model: value.model,
+          instanceId: value.instanceId,
+        };
+        if (value.options !== undefined) base.options = value.options;
+        return Effect.succeed(base as typeof ModelSelectionSource.Encoded);
+      },
+    }),
+  ),
+);
+export type ModelSelection = typeof ModelSelection.Type;
 
 function coerceLegacyOptionsObjectToArray(
   record: Record<string, unknown>,

@@ -20,6 +20,26 @@ export function trackedDelegationInstructions(
     : undefined;
 }
 
+const IMPLEMENTATION_ENGINE_INSTRUCTIONS = `## T3 Code Implementation Engine
+
+Implementation Engine tools are available for project-aware planning, consensus analysis, implementation, audits, performance analysis, and TypeScript work. Before coding tasks, call \`engine_knowledge_status\`. Use \`engine_plan\`, \`engine_consensus\`, \`engine_enrich\`, \`engine_implement\`, and the matching quality/performance tools when their structured workflow fits the task. \`engine_consensus\` can analyze any subject with a multi-agent panel. Store workflow output with the engine case/artifact tools; do not create engine temp directories in the repository. When the user asks to create or modify a T3 Code skill, use \`engine_skill_save\`; skills are globally stored and versioned in T3 Code's database, not written into project files. Delegation defaults are configurable per project: call \`engine_delegation_get\` to inspect global, project, effective, and resolved chains. \`engine_delegation_set\` changes the current project by default; pass scope=\`global\` only when the user explicitly asks to change every inheriting project. Consensus members, models, reasoning options, and focus lenses can be changed through role \`consensus\` and take effect on the next hydration.`;
+
+export function implementationEngineInstructions(
+  capabilities: ReadonlySet<McpCapability>,
+): string | undefined {
+  return capabilities.has("engine-knowledge") ? IMPLEMENTATION_ENGINE_INSTRUCTIONS : undefined;
+}
+
+export function mcpSessionInstructions(
+  capabilities: ReadonlySet<McpCapability>,
+): string | undefined {
+  const sections = [
+    trackedDelegationInstructions(capabilities),
+    implementationEngineInstructions(capabilities),
+  ].filter((section): section is string => section !== undefined);
+  return sections.length > 0 ? sections.join("\n\n") : undefined;
+}
+
 export interface UntrackedDelegationAttempt {
   readonly provider: "codex" | "cursor";
   readonly trackedTool: "codex_start" | "cursor_start";

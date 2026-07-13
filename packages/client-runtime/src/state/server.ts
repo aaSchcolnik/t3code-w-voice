@@ -308,6 +308,46 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetResourceTelemetryHistory,
       staleTimeMs: 5_000,
     }),
+    knowledgeListProjects: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:knowledge:projects",
+      tag: WS_METHODS.knowledgeListProjects,
+    }),
+    knowledgeListSkills: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:knowledge:skills",
+      tag: WS_METHODS.knowledgeListSkills,
+    }),
+    knowledgeQuery: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:knowledge:query",
+      tag: WS_METHODS.knowledgeQuery,
+    }),
+    knowledgeScanAvailability: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:knowledge:scan-availability",
+      tag: WS_METHODS.knowledgeScanAvailability,
+    }),
+    knowledgeGetProfile: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:knowledge:profile",
+      tag: WS_METHODS.knowledgeGetProfile,
+    }),
+    knowledgeListCases: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:knowledge:cases",
+      tag: WS_METHODS.knowledgeListCases,
+    }),
+    knowledgeListArtifacts: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:knowledge:artifacts",
+      tag: WS_METHODS.knowledgeListArtifacts,
+    }),
+    knowledgeGetArtifact: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:knowledge:artifact",
+      tag: WS_METHODS.knowledgeGetArtifact,
+    }),
+    skillsList: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skills:list",
+      tag: WS_METHODS.skillsList,
+    }),
+    skillsGet: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:skills:get",
+      tag: WS_METHODS.skillsGet,
+    }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",
@@ -354,6 +394,61 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverUpdateSettings,
       scheduler: configScheduler,
       concurrency: configConcurrency,
+    }),
+    knowledgeUpsert: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:knowledge:upsert",
+      tag: WS_METHODS.knowledgeUpsert,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    knowledgeSetStatus: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:knowledge:set-status",
+      tag: WS_METHODS.knowledgeSetStatus,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    knowledgeDeleteRow: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:knowledge:delete-row",
+      tag: WS_METHODS.knowledgeDeleteRow,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    knowledgeUpdateProfile: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:knowledge:update-profile",
+      tag: WS_METHODS.knowledgeUpdateProfile,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    knowledgeDeleteCase: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:knowledge:delete-case",
+      tag: WS_METHODS.knowledgeDeleteCase,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    skillsCreate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:create",
+      tag: WS_METHODS.skillsCreate,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    skillsSaveVersion: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:save-version",
+      tag: WS_METHODS.skillsSaveVersion,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    skillsSetActiveVersion: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:set-active-version",
+      tag: WS_METHODS.skillsSetActiveVersion,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    skillsUpdateMeta: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:update-meta",
+      tag: WS_METHODS.skillsUpdateMeta,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    skillsDelete: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:delete",
+      tag: WS_METHODS.skillsDelete,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
+    }),
+    skillsRestoreDefaults: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:skills:restore-defaults",
+      tag: WS_METHODS.skillsRestoreDefaults,
+      concurrency: { mode: "serial", key: ({ environmentId }) => environmentId },
     }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",

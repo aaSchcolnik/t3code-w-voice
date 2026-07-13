@@ -14,6 +14,7 @@ import {
   ProjectCreatedPayload,
   ProjectDeletedPayload,
   ProjectMetaUpdatedPayload,
+  ProjectMcpSettingsUpdatedPayload,
   ThreadActivityAppendedPayload,
   ThreadArchivedPayload,
   ThreadCreatedPayload,
@@ -212,6 +213,7 @@ export function projectEvent(
             workspaceRoot: payload.workspaceRoot,
             defaultModelSelection: payload.defaultModelSelection,
             scripts: payload.scripts,
+            mcpOverrides: payload.mcpOverrides ?? null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
             deletedAt: null,
@@ -226,6 +228,27 @@ export function projectEvent(
               : [...nextBase.projects, nextProject],
           };
         }),
+      );
+
+    case "project.mcp-settings-updated":
+      return decodeForEvent(
+        ProjectMcpSettingsUpdatedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          projects: nextBase.projects.map((project) =>
+            project.id === payload.projectId
+              ? {
+                  ...project,
+                  mcpOverrides: payload.mcpOverrides,
+                  updatedAt: payload.updatedAt,
+                }
+              : project,
+          ),
+        })),
       );
 
     case "project.meta-updated":

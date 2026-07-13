@@ -14,12 +14,14 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
   type RuntimeMode,
   ThreadId,
   ProviderInstanceId,
+  type SkillToggleSettings,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { assert, describe, it } from "@effect/vitest";
@@ -37,7 +39,11 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
-import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import {
+  buildClaudeSkillDisallowedTools,
+  makeClaudeAdapter,
+  type ClaudeAdapterLiveOptions,
+} from "./ClaudeAdapter.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
@@ -156,6 +162,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly skillSettings?: SkillToggleSettings;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -197,7 +204,11 @@ function makeHarness(config?: {
           config?.baseDir ?? "/tmp",
         ),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(
+        ServerSettingsService.layerTest(
+          config?.skillSettings === undefined ? {} : { skills: config.skillSettings },
+        ),
+      ),
       Layer.provideMerge(NodeServices.layer),
     ),
     query,
@@ -268,6 +279,86 @@ const THREAD_ID = ThreadId.make("thread-claude-1");
 const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
 
 describe("ClaudeAdapterLive", () => {
+  it.effect("disallows every Claude skill when the master switch is on", () => {
+    const harness = makeHarness({
+      skillSettings: { ...DEFAULT_SERVER_SETTINGS.skills, disableAllProviders: true },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.disallowedTools, ["Skill"]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("disallows every Claude skill when its provider switch is on", () => {
+    const harness = makeHarness({
+      skillSettings: {
+        ...DEFAULT_SERVER_SETTINGS.skills,
+        providers: {
+          ...DEFAULT_SERVER_SETTINGS.skills.providers,
+          claudeAgent: { disableAll: true, disabledSkills: [] },
+        },
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.disallowedTools, ["Skill"]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("disallows selected Claude skills and preserves other restrictions", () => {
+    const skillSettings: SkillToggleSettings = {
+      ...DEFAULT_SERVER_SETTINGS.skills,
+      providers: {
+        ...DEFAULT_SERVER_SETTINGS.skills.providers,
+        claudeAgent: {
+          disableAll: false,
+          disabledSkills: ["shadcn", "imagegen", "shadcn"],
+        },
+      },
+    };
+    const harness = makeHarness({ skillSettings });
+    assert.deepEqual(buildClaudeSkillDisallowedTools(skillSettings, ["WebFetch"]), [
+      "WebFetch",
+      "Skill(shadcn)",
+      "Skill(imagegen)",
+    ]);
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      assert.deepEqual(harness.getLastCreateQueryInput()?.options.disallowedTools, [
+        "Skill(shadcn)",
+        "Skill(imagegen)",
+      ]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("ignores command lifecycle messages but warns for unknown SDK messages", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

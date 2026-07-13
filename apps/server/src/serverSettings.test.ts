@@ -22,6 +22,7 @@ import * as ServerSettingsModule from "./serverSettings.ts";
 
 const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
+const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 
 const makeServerSettingsLayer = () =>
   ServerSettingsModule.layer.pipe(
@@ -135,6 +136,13 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         {
           providers: { codex: { binaryPath: "/tmp/codex" } },
         },
+      );
+
+      assert.deepEqual(
+        yield* decodeSettingsPatch({
+          mcp: { engine: { planning: true, quality: false } },
+        }),
+        { mcp: { engine: { planning: true, quality: false } } },
       );
 
       assert.deepEqual(
@@ -262,6 +270,40 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         );
       }),
     ).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("persists engine delegation chains in restart-decodable settings", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      yield* serverSettings.updateSettings({
+        mcp: {
+          engine: {
+            delegation: {
+              roles: {
+                scout: [{ provider: "codex", model: "persisted-scout" }],
+                worker: [{ provider: "cursor", model: "persisted-worker" }],
+              },
+              skillOverrides: {
+                implement: { worker: [{ provider: "codex", model: "implement-worker" }] },
+              },
+            },
+          },
+        },
+      });
+
+      const persisted = yield* fileSystem
+        .readFileString(serverConfig.settingsPath)
+        .pipe(Effect.flatMap(decodeServerSettingsJson));
+      assert.deepEqual(persisted.mcp.engine.delegation.roles.scout, [
+        { provider: "codex", model: "persisted-scout" },
+      ]);
+      assert.deepEqual(persisted.mcp.engine.delegation.skillOverrides.implement?.worker, [
+        { provider: "codex", model: "implement-worker" },
+      ]);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
   it.effect("preserves model when switching providers via textGenerationModelSelection", () =>
@@ -725,6 +767,34 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         roundTripped.providerInstances[instanceId]?.environment?.[0]?.value,
         "sk-or-secret",
       );
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("persists and round-trips per-provider skill toggles", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      const next = yield* serverSettings.updateSettings({
+        skills: {
+          providers: {
+            claudeAgent: { disabledSkills: ["shadcn"] },
+            codex: { disableAll: true },
+          },
+        },
+      });
+      assert.deepEqual(next.skills.providers.claudeAgent.disabledSkills, ["shadcn"]);
+      assert.equal(next.skills.providers.codex.disableAll, true);
+
+      const persisted = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.include(persisted, '"shadcn"');
+
+      const cleared = yield* serverSettings.updateSettings({
+        skills: { providers: { claudeAgent: { disabledSkills: [] } } },
+      });
+      assert.deepEqual(cleared.skills.providers.claudeAgent.disabledSkills, []);
+      assert.equal(cleared.skills.providers.codex.disableAll, true);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 });

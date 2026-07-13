@@ -293,6 +293,29 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "project.update-mcp-settings": {
+      yield* requireProject({
+        readModel,
+        command,
+        projectId: command.projectId,
+      });
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "project",
+          aggregateId: command.projectId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "project.mcp-settings-updated",
+        payload: {
+          projectId: command.projectId,
+          mcpOverrides: command.mcpOverrides,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
     case "project.delete": {
       yield* requireProject({
         readModel,

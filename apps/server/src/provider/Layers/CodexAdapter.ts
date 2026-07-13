@@ -18,6 +18,7 @@ import {
   type ProviderRequestKind,
   type ThreadTokenUsageSnapshot,
   type ProviderUserInputAnswers,
+  type SkillToggleSettings,
   RuntimeItemId,
   RuntimeRequestId,
   ProviderApprovalDecision,
@@ -52,6 +53,8 @@ import {
 import { type CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { make as makeProjectSkillScanner } from "../../knowledge/ProjectSkillScanner.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   CodexResumeCursorSchema,
   CodexSessionRuntimeThreadIdMissingError,
@@ -70,6 +73,26 @@ const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
 const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
 
 const PROVIDER = ProviderDriverKind.make("codex");
+
+export function buildCodexSkillConfigArgs(
+  settings: SkillToggleSettings,
+  discoveredSkillIds: ReadonlyArray<string> = [],
+): Array<string> {
+  const provider = settings.providers.codex;
+  const skillIds =
+    settings.disableAllProviders || provider.disableAll
+      ? discoveredSkillIds
+      : provider.disabledSkills;
+  const normalizedSkillIds = [...new Set(skillIds.map((skillId) => skillId.trim()))]
+    .filter((skillId) => skillId.length > 0)
+    .sort();
+  if (normalizedSkillIds.length === 0) return [];
+
+  const config = normalizedSkillIds
+    .map((skillId) => `{name=${JSON.stringify(skillId)},enabled=false}`)
+    .join(",");
+  return ["-c", `skills.config=[${config}]`];
+}
 
 export interface CodexAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
@@ -1391,6 +1414,8 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const crypto = yield* Crypto.Crypto;
   const serverConfig = yield* Effect.service(ServerConfig);
+  const serverSettings = yield* ServerSettingsService;
+  const projectSkillScanner = yield* makeProjectSkillScanner;
   const nativeEventLogger =
     options?.nativeEventLogger ??
     (options?.nativeEventLogPath !== undefined
@@ -1424,10 +1449,39 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? getCodexServiceTierOptionValue(input.modelSelection)
             : undefined;
         const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+        const cwd = input.cwd ?? process.cwd();
+        const currentSkillSettings = yield* serverSettings.getSettings.pipe(
+          Effect.map((currentSettings) => currentSettings.skills),
+          Effect.mapError(
+            (cause) =>
+              new ProviderAdapterProcessError({
+                provider: PROVIDER,
+                threadId: input.threadId,
+                detail: "Failed to read Codex skill settings.",
+                cause,
+              }),
+          ),
+        );
+        const codexSkillSettings = currentSkillSettings.providers.codex;
+        const disableAllSkills =
+          currentSkillSettings.disableAllProviders || codexSkillSettings.disableAll;
+        const discoveredSkillIds = disableAllSkills
+          ? (yield* projectSkillScanner.scan(cwd)).skills.map((skill) => skill.skillId)
+          : [];
+        const skillConfigArgs = buildCodexSkillConfigArgs(currentSkillSettings, discoveredSkillIds);
+        const mcpArgs = mcpSession
+          ? [
+              "-c",
+              `mcp_servers.t3-code.url=${mcpSession.endpoint}`,
+              "-c",
+              'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+            ]
+          : [];
+        const appServerArgs = [...skillConfigArgs, ...mcpArgs];
         const runtimeInput: CodexSessionRuntimeOptions = {
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
-          cwd: input.cwd ?? process.cwd(),
+          cwd,
           binaryPath: codexConfig.binaryPath,
           launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, options?.environment),
           ...(options?.environment ? { environment: options.environment } : {}),
@@ -1440,18 +1494,13 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { model: input.modelSelection.model }
             : {}),
           ...(serviceTier ? { serviceTier } : {}),
+          ...(appServerArgs.length > 0 ? { appServerArgs } : {}),
           ...(mcpSession
             ? {
                 environment: {
                   ...(options?.environment ?? process.env),
                   T3_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
                 },
-                appServerArgs: [
-                  "-c",
-                  `mcp_servers.t3-code.url=${mcpSession.endpoint}`,
-                  "-c",
-                  'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
-                ],
               }
             : {}),
         };

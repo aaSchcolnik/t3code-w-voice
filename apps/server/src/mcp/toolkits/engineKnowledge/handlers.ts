@@ -1,0 +1,405 @@
+import {
+  CommandId,
+  type EngineDelegationSettings,
+  type EngineDelegationTarget,
+  KnowledgeError,
+  ProjectMcpOverrides,
+  type ProjectEngineDelegationOverrides,
+  resolveDelegationRoles,
+  resolveEffectiveMcpSettings,
+} from "@t3tools/contracts";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
+import {
+  getArtifact,
+  getKnowledge,
+  importAuditPacks,
+  knowledgeStatus,
+  listArtifacts,
+  openCase,
+  saveArtifact,
+  saveKnowledge,
+  recordKnowledgeScan,
+  searchKnowledge,
+} from "../../../knowledge/KnowledgeRepository.ts";
+import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import { EngineKnowledgeToolkit } from "./tools.ts";
+import { ServerSettingsService } from "../../../serverSettings.ts";
+import type { McpCapability } from "../../McpInvocationContext.ts";
+import { ProjectionProjectRepository } from "../../../persistence/Services/ProjectionProjects.ts";
+import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
+import { mergeScannerReports } from "../../../knowledge/mergeScannerReports.ts";
+import { selectBootstrapWorkflow, workspaceHasCodebase } from "../../../knowledge/bootstrapScan.ts";
+
+const fail = (operation: string) =>
+  Effect.mapError(
+    (cause: unknown) =>
+      new KnowledgeError({
+        operation,
+        message: cause instanceof Error ? cause.message : String(cause),
+      }),
+  );
+
+const requireCapability = McpInvocationContext.requireMcpCapability("engine-knowledge").pipe(
+  Effect.mapError(
+    () =>
+      new KnowledgeError({
+        operation: "authorize",
+        message: "This session does not grant the Implementation Engine knowledge capability.",
+      }),
+  ),
+);
+const decodeProjectMcpOverrides = Schema.decodeEffect(ProjectMcpOverrides);
+
+const bootstrapWorkflow = `# Implementation Engine knowledge bootstrap
+
+1. Read the project's package manifests and framework/compiler/build configuration. Identify language, framework, package manager, test runner, async model, state management, styling, i18n, and default branch.
+2. Read lint configuration plus CONTRIBUTING, README, AGENTS, and equivalent project guidance. Extract conventions; do not infer rules from a single example.
+3. Map source layers, path aliases, file suffixes, and allowed import directions. Verify the matrix against actual imports.
+4. Inventory reusable components, hooks, directives, utilities, services, and stores. Rank them by import consumers and record when each should be reused.
+5. Search recurring fixes and tests for lessons, gotchas, and high-risk rules.
+6. Save discoveries with engine_knowledge_save as proposed. Present the proposed profile and important rules to the user. Only after explicit approval, save them again with confirmed=true.
+
+Keep evidence in summaries. Do not write bootstrap files into the repository.`;
+
+const providerCapability = {
+  codex: "codex-agent",
+  cursor: "cursor-agent",
+} as const;
+
+const targetAvailable = (
+  target: EngineDelegationTarget,
+  capabilities: ReadonlySet<McpCapability>,
+): boolean => target.provider === "inline" || capabilities.has(providerCapability[target.provider]);
+
+const availableDelegationProviders = (capabilities: ReadonlySet<McpCapability>) => {
+  const providers = new Set<EngineDelegationTarget["provider"]>(["inline"]);
+  if (capabilities.has("codex-agent")) providers.add("codex");
+  if (capabilities.has("cursor-agent")) providers.add("cursor");
+  return providers;
+};
+
+const resolveTargets = (
+  chain: ReadonlyArray<EngineDelegationTarget>,
+  capabilities: ReadonlySet<McpCapability>,
+) =>
+  chain.map((target) => {
+    const capability =
+      target.provider === "inline" ? undefined : providerCapability[target.provider];
+    const available = capability === undefined || capabilities.has(capability);
+    return {
+      target,
+      available,
+      ...(available ? {} : { reason: `Session capability '${capability}' is unavailable.` }),
+    };
+  });
+
+const delegationConfiguration = (
+  settings: EngineDelegationSettings,
+  capabilities: ReadonlySet<McpCapability>,
+) => {
+  const roles = resolveDelegationRoles(settings, availableDelegationProviders(capabilities));
+  return {
+    roles,
+    skillOverrides: settings.skillOverrides,
+    resolved: {
+      roles: {
+        scout: resolveTargets(roles.scout, capabilities),
+        worker: resolveTargets(roles.worker, capabilities),
+        consensus: resolveTargets(roles.consensus, capabilities),
+        scanner: resolveTargets(roles.scanner, capabilities),
+      },
+      skillOverrides: Object.fromEntries(
+        Object.entries(settings.skillOverrides).map(([workflow, override]) => [
+          workflow,
+          {
+            ...(override.scout === undefined
+              ? {}
+              : { scout: resolveTargets(override.scout, capabilities) }),
+            ...(override.worker === undefined
+              ? {}
+              : { worker: resolveTargets(override.worker, capabilities) }),
+            ...(override.consensus === undefined
+              ? {}
+              : { consensus: resolveTargets(override.consensus, capabilities) }),
+            ...(override.scanner === undefined
+              ? {}
+              : { scanner: resolveTargets(override.scanner, capabilities) }),
+          },
+        ]),
+      ),
+    },
+  };
+};
+
+const updateDelegation = (
+  delegation: EngineDelegationSettings,
+  input: {
+    readonly role: "scout" | "worker" | "consensus" | "scanner";
+    readonly workflow?: string | undefined;
+    readonly chain: ReadonlyArray<EngineDelegationTarget>;
+    readonly emptyMeansDelete: boolean;
+  },
+): EngineDelegationSettings => {
+  if (input.workflow === undefined) {
+    const roles = { ...delegation.roles };
+    if (input.emptyMeansDelete && input.chain.length === 0) delete roles[input.role];
+    else roles[input.role] = input.chain;
+    return { ...delegation, roles };
+  }
+  const existing = delegation.skillOverrides[input.workflow] ?? {};
+  const updated = { ...existing };
+  if (input.chain.length === 0) delete updated[input.role];
+  else updated[input.role] = input.chain;
+  const skillOverrides = { ...delegation.skillOverrides };
+  if (
+    updated.scout === undefined &&
+    updated.worker === undefined &&
+    updated.consensus === undefined &&
+    updated.scanner === undefined
+  ) {
+    delete skillOverrides[input.workflow];
+  } else {
+    skillOverrides[input.workflow] = updated;
+  }
+  return { ...delegation, skillOverrides };
+};
+
+const configurationResult = (input: {
+  readonly scope: "project" | "global";
+  readonly global: EngineDelegationSettings;
+  readonly projectOverrides?: ProjectEngineDelegationOverrides | undefined;
+  readonly effective: EngineDelegationSettings;
+  readonly capabilities: ReadonlySet<McpCapability>;
+}) => ({
+  scope: input.scope,
+  global: input.global,
+  ...(input.projectOverrides === undefined ? {} : { projectOverrides: input.projectOverrides }),
+  effective: input.effective,
+  ...delegationConfiguration(input.effective, input.capabilities),
+});
+
+const normalizeProjectDelegation = (
+  delegation: ProjectEngineDelegationOverrides | undefined,
+): EngineDelegationSettings => ({
+  roles: delegation?.roles ?? {},
+  skillOverrides: delegation?.skillOverrides ?? {},
+});
+
+export const EngineKnowledgeToolkitHandlersLive = EngineKnowledgeToolkit.toLayer({
+  engine_knowledge_status: () =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      return { data: yield* knowledgeStatus(scope.projectId!).pipe(fail("status")) };
+    }),
+  engine_knowledge_search: (input) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      return { data: yield* searchKnowledge(scope.projectId!, input).pipe(fail("search")) };
+    }),
+  engine_knowledge_get: ({ table, id }) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      return { data: yield* getKnowledge(scope.projectId!, table, id).pipe(fail("get")) };
+    }),
+  engine_knowledge_save: ({ table, rows, confirmed }) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      return {
+        data: {
+          ids: yield* saveKnowledge(scope.projectId!, table, rows, confirmed).pipe(fail("save")),
+        },
+      };
+    }),
+  engine_knowledge_bootstrap: ({ packs }) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      const selected = packs ?? ["generic"];
+      const imported = yield* importAuditPacks(scope.projectId!, selected).pipe(fail("bootstrap"));
+      const projects = yield* ProjectionProjectRepository;
+      const project = yield* projects
+        .getById({ projectId: scope.projectId! })
+        .pipe(fail("bootstrap"));
+      if (Option.isNone(project) || !workspaceHasCodebase(project.value.workspaceRoot)) {
+        return {
+          data: {
+            workflow: selectBootstrapWorkflow({
+              hasCodebase: false,
+              scanners: [],
+              legacyWorkflow: bootstrapWorkflow,
+            }),
+            importedRules: imported,
+            packs: selected,
+          },
+        };
+      }
+      const serverSettings = yield* ServerSettingsService;
+      const settings = yield* serverSettings.getSettings.pipe(fail("bootstrap"));
+      const effective = resolveEffectiveMcpSettings(
+        settings.mcp,
+        project.value.mcpOverrides ?? undefined,
+      );
+      const scanners = resolveDelegationRoles(
+        effective.engine.delegation,
+        availableDelegationProviders(scope.capabilities),
+      ).scanner.filter((target) => targetAvailable(target, scope.capabilities));
+      return {
+        data: {
+          workflow: selectBootstrapWorkflow({
+            hasCodebase: true,
+            scanners,
+            legacyWorkflow: bootstrapWorkflow,
+          }),
+          importedRules: imported,
+          packs: selected,
+        },
+      };
+    }),
+  engine_knowledge_merge_reports: ({ reports }) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      const merged = mergeScannerReports(reports);
+      yield* recordKnowledgeScan(scope.projectId!, {
+        reportCount: reports.length,
+        conflictCount: merged.conflicts.length,
+        failureCount: merged.failures.length,
+      }).pipe(fail("merge-reports"));
+      return { data: merged };
+    }),
+  engine_case_open: (input) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      return { data: yield* openCase(scope.projectId!, input).pipe(fail("case-open")) };
+    }),
+  engine_artifact_save: (input) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      return { data: yield* saveArtifact(scope.projectId!, input).pipe(fail("artifact-save")) };
+    }),
+  engine_artifact_get: (input) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      return { data: yield* getArtifact(scope.projectId!, input).pipe(fail("artifact-get")) };
+    }),
+  engine_artifact_list: ({ caseSlug }) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      return { data: yield* listArtifacts(scope.projectId!, caseSlug).pipe(fail("artifact-list")) };
+    }),
+  engine_delegation_get: () =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      const serverSettings = yield* ServerSettingsService;
+      const settings = yield* serverSettings.getSettings.pipe(fail("delegation-get"));
+      const projects = yield* ProjectionProjectRepository;
+      const project = yield* projects
+        .getById({ projectId: scope.projectId! })
+        .pipe(fail("delegation-get"));
+      const projectOverrides = Option.isSome(project)
+        ? project.value.mcpOverrides?.engine?.delegation
+        : undefined;
+      const effective = resolveEffectiveMcpSettings(
+        settings.mcp,
+        Option.isSome(project) ? (project.value.mcpOverrides ?? undefined) : undefined,
+      ).engine.delegation;
+      return {
+        data: configurationResult({
+          scope: projectOverrides === undefined ? "global" : "project",
+          global: settings.mcp.engine.delegation,
+          projectOverrides,
+          effective,
+          capabilities: scope.capabilities,
+        }),
+      };
+    }),
+  engine_delegation_set: ({ scope: requestedScope, role, workflow, chain }) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      if (role === undefined) {
+        return yield* new KnowledgeError({
+          operation: "delegation-set",
+          message: "A Scout, Worker, Consensus, or Scanner role is required.",
+        });
+      }
+      const serverSettings = yield* ServerSettingsService;
+      const current = yield* serverSettings.getSettings.pipe(fail("delegation-set"));
+      const targetScope = requestedScope ?? "project";
+      if (targetScope === "global") {
+        const next = updateDelegation(current.mcp.engine.delegation, {
+          role,
+          workflow,
+          chain,
+          emptyMeansDelete: false,
+        });
+        const persistedNext = {
+          ...next,
+          roles: {
+            ...(next.roles.scout === undefined ? {} : { scout: next.roles.scout }),
+            ...(next.roles.worker === undefined ? {} : { worker: next.roles.worker }),
+            ...(next.roles.consensus === undefined ? {} : { consensus: next.roles.consensus }),
+            ...(next.roles.scanner === undefined ? {} : { scanner: next.roles.scanner }),
+          },
+        };
+        const updatedSettings = yield* serverSettings
+          .updateSettings({ mcp: { engine: { delegation: persistedNext } } })
+          .pipe(fail("delegation-set"));
+        return {
+          data: configurationResult({
+            scope: "global",
+            global: updatedSettings.mcp.engine.delegation,
+            effective: updatedSettings.mcp.engine.delegation,
+            capabilities: scope.capabilities,
+          }),
+        };
+      }
+      const projects = yield* ProjectionProjectRepository;
+      const project = yield* projects
+        .getById({ projectId: scope.projectId! })
+        .pipe(fail("delegation-set"));
+      if (Option.isNone(project)) {
+        return yield* new KnowledgeError({
+          operation: "delegation-set",
+          message: "The current project no longer exists.",
+        });
+      }
+      const existingOverrides = project.value.mcpOverrides ?? {};
+      const existingDelegation = normalizeProjectDelegation(existingOverrides.engine?.delegation);
+      const nextDelegation = updateDelegation(existingDelegation, {
+        role,
+        workflow,
+        chain,
+        emptyMeansDelete: true,
+      });
+      const nextOverrides = yield* decodeProjectMcpOverrides({
+        ...existingOverrides,
+        engine: {
+          ...existingOverrides.engine,
+          delegation: nextDelegation,
+        },
+      }).pipe(fail("delegation-set"));
+      const orchestration = yield* OrchestrationEngineService;
+      const crypto = yield* Crypto.Crypto;
+      const commandId = yield* crypto.randomUUIDv4.pipe(Effect.map(CommandId.make), Effect.orDie);
+      yield* orchestration
+        .dispatch({
+          type: "project.update-mcp-settings",
+          commandId,
+          projectId: scope.projectId!,
+          mcpOverrides: nextOverrides,
+        })
+        .pipe(fail("delegation-set"));
+      const effective = resolveEffectiveMcpSettings(current.mcp, nextOverrides).engine.delegation;
+      return {
+        data: configurationResult({
+          scope: "project",
+          global: current.mcp.engine.delegation,
+          projectOverrides: nextDelegation,
+          effective,
+          capabilities: scope.capabilities,
+        }),
+      };
+    }),
+});

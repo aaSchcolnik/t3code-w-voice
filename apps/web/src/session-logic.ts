@@ -4,6 +4,7 @@ import {
   ApprovalRequestId,
   isToolLifecycleItemType,
   type OrchestrationLatestTurn,
+  type ModelSelection,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
   ProviderDriverKind,
@@ -26,6 +27,19 @@ import type {
 } from "./types";
 
 export type ProviderPickerKind = ProviderDriverKind;
+
+export const KNOWLEDGE_SCAN_PROMPT =
+  "Scan this codebase to build or refresh the project knowledge base. Call engine_knowledge_bootstrap and follow the returned workflow completely. Run every configured scanner, merge and reconcile the reports, save all findings as proposed bootstrap knowledge, and leave final confirmation to the user.";
+
+export function createKnowledgeScanDraftSeed(selectedModel?: ModelSelection | undefined): {
+  readonly prompt: string;
+  readonly modelSelection?: ModelSelection | undefined;
+} {
+  return {
+    prompt: KNOWLEDGE_SCAN_PROMPT,
+    ...(selectedModel === undefined ? {} : { modelSelection: selectedModel }),
+  };
+}
 
 export const PROVIDER_OPTIONS: Array<{
   value: ProviderPickerKind;
@@ -103,6 +117,8 @@ export interface SubagentEntry {
   providerDriver: ProviderDriverKind | null;
   /** Resolved model for delegated entries when known. */
   model: string | null;
+  /** Resolved reasoning effort for delegated entries when explicitly selected. */
+  reasoningEffort: string | null;
   /** Native agent type (e.g. `Explore`) when the provider reports one. */
   agentType: string | null;
   /** Identifier of the child transcript when one exists. */
@@ -856,6 +872,16 @@ export function deriveSubagentEntries(
       asTrimmedString(delegatedRun?.model) ??
       previous?.model ??
       null;
+    const resolvedOptions = Array.isArray(delegatedRun?.resolvedOptions)
+      ? delegatedRun.resolvedOptions
+      : [];
+    const reasoningEffort =
+      resolvedOptions.flatMap((option) => {
+        const selection = asRecord(option);
+        return selection?.id === "reasoningEffort" ? [asTrimmedString(selection.value)] : [];
+      })[0] ??
+      previous?.reasoningEffort ??
+      null;
     const transcriptId =
       asTrimmedString(delegatedRun?.id) ?? previous?.transcriptId ?? toolCallId ?? null;
     // A later activity can carry the completed tool input, so upgrade names
@@ -887,6 +913,7 @@ export function deriveSubagentEntries(
         ? ProviderDriverKind.make(delegatedDriver)
         : (previous?.providerDriver ?? null),
       model,
+      reasoningEffort,
       agentType,
       transcriptId,
     });

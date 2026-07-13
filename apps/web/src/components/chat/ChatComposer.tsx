@@ -44,6 +44,7 @@ import {
   shouldSubmitComposerOnEnter,
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
+import { createKnowledgeScanDraftSeed } from "../../session-logic";
 import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
@@ -91,6 +92,7 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { Badge } from "../ui/badge";
 import { MicButton } from "./MicButton";
 import { useVoiceDictationSession } from "./useVoiceDictationSession";
 import { useVoiceAvailability } from "./useVoiceAvailability";
@@ -172,7 +174,16 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
   );
 }
 import { Button } from "../ui/button";
-import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import {
@@ -184,6 +195,7 @@ import {
   LockIcon,
   LockOpenIcon,
   PenLineIcon,
+  ScanSearchIcon,
   SparklesIcon,
   XIcon,
 } from "lucide-react";
@@ -580,6 +592,14 @@ export interface ChatComposerProps {
 
   // Context window
   activeThreadActivities: Thread["activities"] | undefined;
+  knowledgeScanAvailability: {
+    readonly engineKnowledgeEnabled: boolean;
+    readonly hasCodebase: boolean;
+    readonly knowledgePopulated: boolean;
+    readonly availableScanners: ReadonlyArray<string>;
+    readonly sourceFileCount: number;
+    readonly selectedModel?: ModelSelection | undefined;
+  } | null;
 
   // Misc
   resolvedTheme: "light" | "dark";
@@ -673,6 +693,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     activeThreadActivities,
+    knowledgeScanAvailability,
     resolvedTheme,
     settings,
     keybindings,
@@ -988,6 +1009,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     key: 0,
     active: false,
   });
+  const [confirmLargeScan, setConfirmLargeScan] = useState(false);
   const isMobileViewport = useMediaQuery("max-sm");
   const isComposerCollapsedMobile =
     isMobileViewport && !forceExpandedOnMobile && !isComposerFocused;
@@ -2002,6 +2024,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       shouldBlurMobileComposerOnSubmit,
     ],
   );
+  const executeKnowledgeScan = useCallback(() => {
+    const seed = createKnowledgeScanDraftSeed(knowledgeScanAvailability?.selectedModel);
+    promptRef.current = seed.prompt;
+    setComposerDraftPrompt(composerDraftTarget, seed.prompt);
+    if (seed.modelSelection !== undefined) {
+      useComposerDraftStore.getState().setModelSelection(composerDraftTarget, seed.modelSelection);
+    }
+    window.setTimeout(() => submitComposer(), 0);
+  }, [
+    composerDraftTarget,
+    knowledgeScanAvailability?.selectedModel,
+    promptRef,
+    setComposerDraftPrompt,
+    submitComposer,
+  ]);
+  const startKnowledgeScan = useCallback(() => {
+    if ((knowledgeScanAvailability?.sourceFileCount ?? 0) > 1_000) {
+      setConfirmLargeScan(true);
+      return;
+    }
+    executeKnowledgeScan();
+  }, [executeKnowledgeScan, knowledgeScanAvailability?.sourceFileCount]);
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
       window.cancelAnimationFrame(composerBlurFrameRef.current);
@@ -2809,12 +2853,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
 
   return (
-    <form
-      ref={composerFormRef}
-      onSubmit={submitComposer}
-      className="mx-auto w-full min-w-0 max-w-3xl"
-      data-chat-composer-form="true"
-    >
+    <>
+      <form
+        ref={composerFormRef}
+        onSubmit={submitComposer}
+        className="mx-auto w-full min-w-0 max-w-3xl"
+        data-chat-composer-form="true"
+      >
       {showTopModelPicker ? (
         <div
           data-chat-composer-top-model-picker="true"
@@ -3301,9 +3346,42 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 isComposerFooterCompact ? "gap-1.5" : "gap-2 sm:gap-0",
                 showMobilePendingAnswerActions && "hidden sm:flex",
               )}
-            >
-              <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {showTopModelPicker ? null : renderProviderModelPicker(isComposerFooterCompact)}
+              >
+                <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {_isLocalDraftThread && knowledgeScanAvailability !== null ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              !knowledgeScanAvailability.engineKnowledgeEnabled ||
+                              !knowledgeScanAvailability.hasCodebase ||
+                              isSendBusy ||
+                              isConnecting
+                            }
+                            onClick={startKnowledgeScan}
+                          />
+                        }
+                      >
+                        <ScanSearchIcon data-icon="inline-start" />
+                        Scan codebase
+                        {knowledgeScanAvailability.knowledgePopulated ? (
+                          <Badge size="sm" variant="secondary">
+                            Re-scan
+                          </Badge>
+                        ) : null}
+                      </TooltipTrigger>
+                      <TooltipPopup>
+                        {knowledgeScanAvailability.knowledgePopulated
+                          ? "Knowledge base already populated — re-scan the entire codebase to refresh reusable components, rules, conventions, and lessons."
+                          : "Performs a lookup of the entire codebase to generate a knowledge base for this project (reusable components, rules, conventions, lessons)."}
+                      </TooltipPopup>
+                    </Tooltip>
+                  ) : null}
+                  {showTopModelPicker ? null : renderProviderModelPicker(isComposerFooterCompact)}
 
                 {isComposerFooterCompact ? (
                   <CompactComposerControlsMenu
@@ -3390,5 +3468,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onDecline={() => void declineLocalConsent()}
       />
     </form>
+    <AlertDialog open={confirmLargeScan} onOpenChange={setConfirmLargeScan}>
+      <AlertDialogPopup>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Scan this large codebase?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This repository contains {knowledgeScanAvailability?.sourceFileCount ?? 0} source files.
+            The scan runs every configured model across the whole codebase and can consume
+            substantial time and tokens.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+          <Button
+            onClick={() => {
+              setConfirmLargeScan(false);
+              executeKnowledgeScan();
+            }}
+          >
+            Start scan
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogPopup>
+    </AlertDialog>
+  </>
   );
 });

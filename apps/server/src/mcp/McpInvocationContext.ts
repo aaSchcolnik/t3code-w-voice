@@ -1,20 +1,38 @@
 import {
   type EnvironmentId,
+  type ProjectId,
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
+  type ProviderDriverKind,
+  type McpSettings,
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability = "preview" | "codex-agent" | "cursor-agent";
+export type McpCapability =
+  | "preview"
+  | "codex-agent"
+  | "cursor-agent"
+  | "engine-planning"
+  | "engine-consensus"
+  | "engine-enrich"
+  | "engine-implement"
+  | "engine-quality"
+  | "engine-performance"
+  | "engine-typescript"
+  | "engine-knowledge";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
+  readonly projectId?: ProjectId;
+  readonly worktreePath?: string;
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
   readonly capabilities: ReadonlySet<McpCapability>;
+  readonly effectiveMcp?: McpSettings;
+  readonly providerDriver?: ProviderDriverKind;
   readonly issuedAt: number;
 }
 

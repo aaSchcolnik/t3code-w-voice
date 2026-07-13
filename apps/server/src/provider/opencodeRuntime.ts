@@ -1,6 +1,11 @@
 import * as NodeURL from "node:url";
 
-import type { ChatAttachment, ProviderApprovalDecision, RuntimeMode } from "@t3tools/contracts";
+import type {
+  ChatAttachment,
+  ProviderApprovalDecision,
+  RuntimeMode,
+  SkillToggleSettings,
+} from "@t3tools/contracts";
 import {
   createOpencodeClient,
   type Agent,
@@ -325,21 +330,40 @@ export function toOpenCodeFileParts(input: {
   return parts;
 }
 
-export function buildOpenCodePermissionRules(runtimeMode: RuntimeMode): PermissionRuleset {
-  if (runtimeMode === "full-access") {
-    return [{ permission: "*", pattern: "*", action: "allow" }];
-  }
+export function buildOpenCodePermissionRules(
+  runtimeMode: RuntimeMode,
+  skillSettings?: SkillToggleSettings,
+): PermissionRuleset {
+  const runtimeRules: PermissionRuleset =
+    runtimeMode === "full-access"
+      ? [{ permission: "*", pattern: "*", action: "allow" }]
+      : [
+          { permission: "*", pattern: "*", action: "ask" },
+          { permission: "bash", pattern: "*", action: "ask" },
+          { permission: "edit", pattern: "*", action: "ask" },
+          { permission: "webfetch", pattern: "*", action: "ask" },
+          { permission: "websearch", pattern: "*", action: "ask" },
+          { permission: "codesearch", pattern: "*", action: "ask" },
+          { permission: "external_directory", pattern: "*", action: "ask" },
+          { permission: "doom_loop", pattern: "*", action: "ask" },
+          { permission: "question", pattern: "*", action: "allow" },
+        ];
+  if (skillSettings === undefined) return runtimeRules;
 
+  const provider = skillSettings.providers.opencode;
+  if (skillSettings.disableAllProviders || provider.disableAll) {
+    return [...runtimeRules, { permission: "skill", pattern: "*", action: "deny" }];
+  }
+  const disabledSkills = [...new Set(provider.disabledSkills.map((skillId) => skillId.trim()))]
+    .filter((skillId) => skillId.length > 0)
+    .sort();
   return [
-    { permission: "*", pattern: "*", action: "ask" },
-    { permission: "bash", pattern: "*", action: "ask" },
-    { permission: "edit", pattern: "*", action: "ask" },
-    { permission: "webfetch", pattern: "*", action: "ask" },
-    { permission: "websearch", pattern: "*", action: "ask" },
-    { permission: "codesearch", pattern: "*", action: "ask" },
-    { permission: "external_directory", pattern: "*", action: "ask" },
-    { permission: "doom_loop", pattern: "*", action: "ask" },
-    { permission: "question", pattern: "*", action: "allow" },
+    ...runtimeRules,
+    ...disabledSkills.map((skillId) => ({
+      permission: "skill",
+      pattern: skillId,
+      action: "deny" as const,
+    })),
   ];
 }
 

@@ -45,6 +45,7 @@ import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../config.ts";
 import { writeFileStringAtomically } from "../atomicWrite.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
+import { registerDelegatedMcpProjectContext } from "../mcp/McpSessionRegistry.ts";
 
 const MAX_CONCURRENT_RUNS_PER_PARENT = 4;
 const MAX_SUMMARY_CHARS = 4_000;
@@ -632,6 +633,7 @@ const make = Effect.gen(function* () {
         ),
       );
       const providerThreadId = ThreadId.make(`delegated-${runId}`);
+      registerDelegatedMcpProjectContext(providerThreadId, input.parentThreadId);
       const now = DateTime.formatIso(yield* DateTime.now);
       const run: DelegatedRun = {
         id: runId,

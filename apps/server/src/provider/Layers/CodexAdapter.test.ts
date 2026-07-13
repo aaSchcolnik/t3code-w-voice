@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  DEFAULT_SERVER_SETTINGS,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -45,8 +46,52 @@ import {
   type CodexSessionRuntimeShape,
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
-import { makeCodexAdapter } from "./CodexAdapter.ts";
+import { buildCodexSkillConfigArgs, makeCodexAdapter } from "./CodexAdapter.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
+
+it("builds deterministic Codex per-skill config overrides", () => {
+  NodeAssert.deepStrictEqual(
+    buildCodexSkillConfigArgs({
+      ...DEFAULT_SERVER_SETTINGS.skills,
+      providers: {
+        ...DEFAULT_SERVER_SETTINGS.skills.providers,
+        codex: {
+          disableAll: false,
+          disabledSkills: ["shadcn", "imagegen", "shadcn"],
+        },
+      },
+    }),
+    ["-c", 'skills.config=[{name="imagegen",enabled=false},{name="shadcn",enabled=false}]'],
+  );
+});
+
+it("enumerates discovered skills for Codex master and provider disable-all settings", () => {
+  const discovered = ["shadcn", "imagegen"];
+  NodeAssert.deepStrictEqual(
+    buildCodexSkillConfigArgs(
+      { ...DEFAULT_SERVER_SETTINGS.skills, disableAllProviders: true },
+      discovered,
+    ),
+    ["-c", 'skills.config=[{name="imagegen",enabled=false},{name="shadcn",enabled=false}]'],
+  );
+  NodeAssert.deepStrictEqual(
+    buildCodexSkillConfigArgs(
+      {
+        ...DEFAULT_SERVER_SETTINGS.skills,
+        providers: {
+          ...DEFAULT_SERVER_SETTINGS.skills.providers,
+          codex: { disableAll: true, disabledSkills: [] },
+        },
+      },
+      discovered,
+    ),
+    ["-c", 'skills.config=[{name="imagegen",enabled=false},{name="shadcn",enabled=false}]'],
+  );
+});
+
+it("omits the Codex config override when no skills are disabled", () => {
+  NodeAssert.deepStrictEqual(buildCodexSkillConfigArgs(DEFAULT_SERVER_SETTINGS.skills), []);
+});
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
 class CodexAdapter extends Context.Service<CodexAdapter, CodexAdapterShape>()(
@@ -218,6 +263,43 @@ const providerSessionDirectoryTestLayer = Layer.succeed(ProviderSessionDirectory
   getBinding: () => Effect.succeed(Option.none()),
   listThreadIds: () => Effect.succeed([]),
   listBindings: () => Effect.succeed([]),
+});
+
+it.effect("passes Codex skill overrides to the app-server runtime", () => {
+  const runtimeFactory = makeRuntimeFactory();
+  const skillSettings = {
+    ...DEFAULT_SERVER_SETTINGS.skills,
+    providers: {
+      ...DEFAULT_SERVER_SETTINGS.skills.providers,
+      codex: { disableAll: false, disabledSkills: ["shadcn"] },
+    },
+  };
+  const layer = Layer.effect(
+    CodexAdapter,
+    Effect.gen(function* () {
+      return yield* makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: runtimeFactory.factory,
+      });
+    }),
+  ).pipe(
+    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+    Layer.provideMerge(ServerSettingsService.layerTest({ skills: skillSettings })),
+    Layer.provideMerge(providerSessionDirectoryTestLayer),
+    Layer.provideMerge(NodeServices.layer),
+  );
+
+  return Effect.gen(function* () {
+    const adapter = yield* CodexAdapter;
+    yield* adapter.startSession({
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-skills"),
+      runtimeMode: "full-access",
+    });
+    NodeAssert.deepStrictEqual(runtimeFactory.lastRuntime?.options.appServerArgs, [
+      "-c",
+      'skills.config=[{name="shadcn",enabled=false}]',
+    ]);
+  }).pipe(Effect.provide(layer));
 });
 
 const validationRuntimeFactory = makeRuntimeFactory();

@@ -1,17 +1,97 @@
 import { useAtomValue } from "@effect/atom-react";
+import { type ProjectMcpOverrides } from "@t3tools/contracts";
 import { BotIcon, Code2Icon, MonitorSmartphoneIcon } from "lucide-react";
+import { useState } from "react";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { primaryServerProvidersAtom } from "../../state/server";
+import { useProjects } from "../../state/entities";
+import { projectEnvironment } from "../../state/projects";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { Field, FieldDescription, FieldLabel } from "../ui/field";
+import {
+  Select,
+  SelectGroup,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+
+type McpBooleanKey = "preview" | "codexAgent" | "cursorAgent";
+
+export function McpBooleanControl({
+  projectScoped,
+  globalValue,
+  projectValue,
+  label,
+  disabled,
+  onGlobalChange,
+  onProjectChange,
+}: {
+  projectScoped: boolean;
+  globalValue: boolean;
+  projectValue: boolean | undefined;
+  label: string;
+  disabled?: boolean;
+  onGlobalChange: (value: boolean) => void;
+  onProjectChange: (value: boolean | undefined) => void;
+}) {
+  if (!projectScoped) {
+    return (
+      <Switch
+        checked={globalValue}
+        disabled={disabled}
+        onCheckedChange={(checked) => onGlobalChange(Boolean(checked))}
+        aria-label={label}
+      />
+    );
+  }
+  return (
+    <div className="flex items-center gap-2">
+      {projectValue === undefined ? <Badge variant="secondary">Inherited</Badge> : null}
+      <Select
+        items={[
+          { value: "inherit", label: `Inherit (${globalValue ? "On" : "Off"})` },
+          { value: "on", label: "On" },
+          { value: "off", label: "Off" },
+        ]}
+        value={projectValue === undefined ? "inherit" : projectValue ? "on" : "off"}
+        disabled={disabled}
+        onValueChange={(value) => onProjectChange(value === "inherit" ? undefined : value === "on")}
+      >
+        <SelectTrigger className="w-36" aria-label={label}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectPopup>
+          <SelectGroup>
+            <SelectItem value="inherit">Inherit ({globalValue ? "On" : "Off"})</SelectItem>
+            <SelectItem value="on">On</SelectItem>
+            <SelectItem value="off">Off</SelectItem>
+          </SelectGroup>
+        </SelectPopup>
+      </Select>
+    </div>
+  );
+}
 
 export function McpSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const providers = useAtomValue(primaryServerProvidersAtom);
   const providerEntries = deriveProviderInstanceEntries(providers);
+  const projects = useProjects();
+  const [scope, setScope] = useState("global");
+  const updateProjectMcp = useAtomCommand(projectEnvironment.updateMcpSettings);
+  const selectedProject = projects.find(
+    (project) => `${project.environmentId}:${project.id}` === scope,
+  );
+  const projectOverrides = selectedProject?.mcpOverrides ?? undefined;
   const codexAvailable = providerEntries.some(
     (entry) =>
       entry.driverKind === "codex" && entry.enabled && entry.installed && entry.isAvailable,
@@ -23,6 +103,27 @@ export function McpSettingsPanel() {
 
   const updateMcp = (patch: Partial<typeof settings.mcp>) =>
     updateSettings({ mcp: { ...settings.mcp, ...patch } });
+  const persistProjectOverrides = (next: ProjectMcpOverrides) => {
+    if (selectedProject === undefined) return;
+    void updateProjectMcp({
+      environmentId: selectedProject.environmentId,
+      input: { projectId: selectedProject.id, mcpOverrides: next },
+    });
+  };
+  const updateProjectBoolean = (key: McpBooleanKey, value: boolean | undefined) => {
+    const next: Record<string, unknown> = { ...projectOverrides };
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+    persistProjectOverrides(next as ProjectMcpOverrides);
+  };
+
+  const scopeItems = [
+    { value: "global", label: "Global defaults" },
+    ...projects.map((project) => ({
+      value: `${project.environmentId}:${project.id}`,
+      label: project.title,
+    })),
+  ];
 
   return (
     <SettingsPageContainer>
@@ -33,6 +134,44 @@ export function McpSettingsPanel() {
           session starts.
         </p>
       </div>
+      <Field>
+        <FieldLabel>Settings scope</FieldLabel>
+        <FieldDescription>
+          Project settings inherit global defaults until you explicitly override them.
+        </FieldDescription>
+        <div className="flex items-center gap-2">
+          <Select
+            items={scopeItems}
+            value={scope}
+            onValueChange={(value) => value && setScope(value)}
+          >
+            <SelectTrigger className="max-w-md">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectGroup>
+                {scopeItems.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectPopup>
+          </Select>
+          {selectedProject !== undefined ? (
+            <Button
+              variant="outline"
+              onClick={() =>
+                persistProjectOverrides(
+                  projectOverrides?.skills === undefined ? {} : { skills: projectOverrides.skills },
+                )
+              }
+            >
+              Reset all to global
+            </Button>
+          ) : null}
+        </div>
+      </Field>
       <SettingsSection title="T3 Code MCP">
         <SettingsRow
           title={
@@ -43,10 +182,13 @@ export function McpSettingsPanel() {
           }
           description="Lets agents open, inspect, and drive the in-app browser preview."
           control={
-            <Switch
-              checked={settings.mcp.preview}
-              onCheckedChange={(checked) => updateMcp({ preview: Boolean(checked) })}
-              aria-label="Enable Browser Preview MCP toolkit"
+            <McpBooleanControl
+              projectScoped={selectedProject !== undefined}
+              globalValue={settings.mcp.preview}
+              projectValue={projectOverrides?.preview}
+              label="Enable Browser Preview MCP toolkit"
+              onGlobalChange={(preview) => updateMcp({ preview })}
+              onProjectChange={(preview) => updateProjectBoolean("preview", preview)}
             />
           }
         />
@@ -64,11 +206,14 @@ export function McpSettingsPanel() {
               : "Not available: configure and enable a Codex provider under Providers."
           }
           control={
-            <Switch
-              checked={settings.mcp.codexAgent}
+            <McpBooleanControl
+              projectScoped={selectedProject !== undefined}
+              globalValue={settings.mcp.codexAgent}
+              projectValue={projectOverrides?.codexAgent}
               disabled={!codexAvailable}
-              onCheckedChange={(checked) => updateMcp({ codexAgent: Boolean(checked) })}
-              aria-label="Enable Codex Agent MCP toolkit"
+              label="Enable Codex Agent MCP toolkit"
+              onGlobalChange={(codexAgent) => updateMcp({ codexAgent })}
+              onProjectChange={(codexAgent) => updateProjectBoolean("codexAgent", codexAgent)}
             />
           }
         />
@@ -86,11 +231,14 @@ export function McpSettingsPanel() {
               : "Not available: configure and enable a Cursor provider under Providers."
           }
           control={
-            <Switch
-              checked={settings.mcp.cursorAgent}
+            <McpBooleanControl
+              projectScoped={selectedProject !== undefined}
+              globalValue={settings.mcp.cursorAgent}
+              projectValue={projectOverrides?.cursorAgent}
               disabled={!cursorAvailable}
-              onCheckedChange={(checked) => updateMcp({ cursorAgent: Boolean(checked) })}
-              aria-label="Enable Cursor Agent MCP toolkit"
+              label="Enable Cursor Agent MCP toolkit"
+              onGlobalChange={(cursorAgent) => updateMcp({ cursorAgent })}
+              onProjectChange={(cursorAgent) => updateProjectBoolean("cursorAgent", cursorAgent)}
             />
           }
         />

@@ -1,6 +1,7 @@
 "use client";
 
 import { Field as FieldPrimitive } from "@base-ui/react/field";
+import type * as React from "react";
 
 import { cn } from "~/lib/utils";
 
@@ -11,6 +12,12 @@ function Field({ className, ...props }: FieldPrimitive.Root.Props) {
       data-slot="field"
       {...props}
     />
+  );
+}
+
+function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div className={cn("flex flex-col gap-4", className)} data-slot="field-group" {...props} />
   );
 }
 
@@ -56,4 +63,13 @@ function FieldError({ className, ...props }: FieldPrimitive.Error.Props) {
 const FieldControl = FieldPrimitive.Control;
 const FieldValidity = FieldPrimitive.Validity;
 
-export { Field, FieldLabel, FieldDescription, FieldError, FieldControl, FieldItem, FieldValidity };
+export {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldDescription,
+  FieldError,
+  FieldControl,
+  FieldItem,
+  FieldValidity,
+};

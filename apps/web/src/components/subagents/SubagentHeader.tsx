@@ -5,6 +5,7 @@ import type { SubagentEntry } from "../../session-logic";
 import { cn } from "../../lib/utils";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
+import { reasoningEffortLabel } from "./subagentMetadata";
 
 interface SubagentHeaderProps {
   entry: SubagentEntry;
@@ -12,6 +13,7 @@ interface SubagentHeaderProps {
   providerLabel: string;
   accentColor?: string | undefined;
   model: string | null;
+  reasoningEffort: string | null;
   onBack: () => void;
   onCancel?: (() => void) | undefined;
   cancelling?: boolean;
@@ -35,12 +37,14 @@ export function SubagentHeader({
   providerLabel,
   accentColor,
   model,
+  reasoningEffort,
   onBack,
   onCancel,
   cancelling = false,
 }: SubagentHeaderProps) {
   const status = statusLabel(entry);
   const detail = model ?? entry.agentType;
+  const reasoningLabel = reasoningEffortLabel(reasoningEffort);
 
   return (
     <header className="flex items-center gap-2 border-b border-border/60 px-3 py-2.5">
@@ -70,6 +74,9 @@ export function SubagentHeader({
         <p className="truncate text-[11px] text-muted-foreground/80">
           {providerLabel}
           {detail ? <span className="text-muted-foreground/60"> · {detail}</span> : null}
+          {reasoningLabel ? (
+            <span className="text-muted-foreground/60"> · {reasoningLabel}</span>
+          ) : null}
         </p>
       </div>
       <span

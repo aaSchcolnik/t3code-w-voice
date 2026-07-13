@@ -1,0 +1,50 @@
+[
+  {
+    "rule_id": "ANG-001",
+    "tier": 1,
+    "severity": "high",
+    "description": "Signals are read outside the reactive context that should track them.",
+    "detection_hint": "Inspect signal reads cached in plain fields or performed before computed/effect/template evaluation.",
+    "fix_guidance": "Read the signal inside the tracked computation or pass the current value explicitly."
+  },
+  {
+    "rule_id": "ANG-002",
+    "tier": 1,
+    "severity": "high",
+    "description": "An effect writes signals without a justified synchronization boundary.",
+    "detection_hint": "Find effect bodies that call signal set/update or indirectly mutate reactive state.",
+    "fix_guidance": "Prefer computed state or explicit event-driven updates; document unavoidable synchronization."
+  },
+  {
+    "rule_id": "ANG-003",
+    "tier": 1,
+    "severity": "high",
+    "description": "Observable or output subscriptions outlive their owner.",
+    "detection_hint": "Find subscribe calls without takeUntilDestroyed, AsyncPipe, toSignal, or explicit scoped cleanup.",
+    "fix_guidance": "Bind subscriptions to DestroyRef or use framework-managed reactive interop."
+  },
+  {
+    "rule_id": "ANG-004",
+    "tier": 1,
+    "severity": "medium",
+    "description": "OnPush inputs or signal-backed collections are mutated in place.",
+    "detection_hint": "Look for push/splice/property assignment on input values or signal values.",
+    "fix_guidance": "Create a new immutable value and update through the owning boundary."
+  },
+  {
+    "rule_id": "ANG-005",
+    "tier": 2,
+    "severity": "medium",
+    "description": "Template control flow lacks stable tracking or repeats expensive expressions.",
+    "detection_hint": "Inspect loops without stable track keys and method calls or pipes repeated in templates.",
+    "fix_guidance": "Track by stable identity and precompute expensive derived values."
+  },
+  {
+    "rule_id": "ANG-006",
+    "tier": 2,
+    "severity": "medium",
+    "description": "Dependency injection uses an inconsistent or inheritance-fragile pattern.",
+    "detection_hint": "Find constructor injection mixed with inject(), especially in base classes or field initialization ordering.",
+    "fix_guidance": "Follow the project convention and keep injection timing explicit."
+  }
+]

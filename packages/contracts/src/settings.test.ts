@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
+import { EngineConsensusInput } from "./knowledge.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
   ClientSettingsPatch,
+  CONSENSUS_DEFAULTS,
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_KNOWLEDGE_SCAN_MAIN_THREAD_MODEL_PREFERENCE,
+  EngineDelegationSettings,
+  ProjectMcpOverrides,
+  SCANNER_DEFAULTS,
+  SCOUT_DEFAULTS,
   ServerSettings,
   ServerSettingsPatch,
+  WORKER_DEFAULTS,
+  deriveDefaultDelegationRoles,
+  resolveDelegationRoles,
+  resolveEffectiveMcpSettings,
 } from "./settings.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
@@ -15,6 +26,8 @@ const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
+const decodeEngineDelegationSettings = Schema.decodeUnknownSync(EngineDelegationSettings);
+const decodeProjectMcpOverrides = Schema.decodeUnknownSync(ProjectMcpOverrides);
 
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
@@ -316,6 +329,289 @@ describe("ServerSettings.sourceControlWritingStyle", () => {
       mode: "custom",
       customInstructions: "Prefer concise wording.",
     });
+  });
+});
+
+describe("ServerSettings skill toggles", () => {
+  it("decodes disabled-by-default settings for every built-in provider", () => {
+    expect(decodeServerSettings({}).skills).toEqual({
+      disableAllProviders: false,
+      providers: {
+        claudeAgent: { disableAll: false, disabledSkills: [] },
+        codex: { disableAll: false, disabledSkills: [] },
+        opencode: { disableAll: false, disabledSkills: [] },
+        cursor: { disableAll: false, disabledSkills: [] },
+        grok: { disableAll: false, disabledSkills: [] },
+      },
+    });
+  });
+
+  it("round-trips sparse nested provider patches", () => {
+    const patch = {
+      skills: {
+        disableAllProviders: true,
+        providers: {
+          claudeAgent: { disabledSkills: ["shadcn"] },
+          codex: { disableAll: true },
+        },
+      },
+    };
+
+    expect(decodeServerSettingsPatch(patch)).toEqual(patch);
+  });
+});
+
+describe("ServerSettings MCP engine", () => {
+  it("defaults every Implementation Engine ability on with delegation roles left automatic", () => {
+    expect(decodeServerSettings({}).mcp.engine).toEqual({
+      planning: true,
+      consensus: false,
+      enrich: true,
+      implement: true,
+      quality: true,
+      performance: true,
+      typescript: true,
+      delegation: {
+        roles: {},
+        skillOverrides: {},
+      },
+      knowledgeScan: {
+        mainThreadModelPreference: DEFAULT_KNOWLEDGE_SCAN_MAIN_THREAD_MODEL_PREFERENCE,
+      },
+    });
+  });
+
+  it("round-trips partial engine patches", () => {
+    expect(
+      decodeServerSettingsPatch({ mcp: { engine: { planning: true, typescript: true } } }),
+    ).toEqual({ mcp: { engine: { planning: true, typescript: true } } });
+  });
+
+  it("round-trips custom delegation chains and workflow overrides", () => {
+    const input = {
+      mcp: {
+        engine: {
+          delegation: {
+            roles: {
+              scout: [{ provider: "codex" as const, model: "gpt-5.4-mini" }],
+              worker: [{ provider: "cursor" as const, providerInstanceId: "cursor_work" }],
+              consensus: [
+                {
+                  provider: "codex" as const,
+                  model: "gpt-5.6-terra",
+                  options: [{ id: "reasoningEffort", value: "high" }],
+                },
+              ],
+              scanner: [
+                { provider: "inline" as const, model: "claude-opus-4-8" },
+                { provider: "cursor" as const, model: "glm-5.2" },
+              ],
+            },
+            skillOverrides: {
+              plan: { scout: [], consensus: [{ provider: "cursor" as const, model: "grok-4.5" }] },
+              implement: {
+                worker: [
+                  {
+                    provider: "codex" as const,
+                    model: "gpt-5.4",
+                    options: [{ id: "reasoningEffort", value: "xhigh" }],
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    expect(decodeServerSettingsPatch(input)).toEqual(input);
+  });
+
+  it("rejects unknown delegation providers and workflow override keys", () => {
+    expect(() =>
+      decodeServerSettingsPatch({
+        mcp: { engine: { delegation: { roles: { scout: [{ provider: "claude" }] } } } },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        mcp: {
+          engine: {
+            delegation: { skillOverrides: { "not-a-workflow": { scout: [] } } },
+          },
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("normalizes legacy auditor settings and preserves focus lenses", () => {
+    const decoded = decodeEngineDelegationSettings({
+      roles: {
+        auditor: [{ provider: "codex", model: "gpt-5.6-sol", focus: "hidden risks" }],
+      },
+      skillOverrides: {
+        consensus: { auditor: [{ provider: "cursor", model: "grok-4.5" }] },
+      },
+    });
+
+    expect(decoded.roles.consensus).toEqual([
+      { provider: "codex", model: "gpt-5.6-sol", focus: "hidden risks" },
+    ]);
+    expect(decoded.skillOverrides.consensus?.consensus).toEqual([
+      { provider: "cursor", model: "grok-4.5" },
+    ]);
+    expect(decoded.roles).not.toHaveProperty("auditor");
+  });
+
+  it("validates consensus mode and artifact sequence", () => {
+    const decodeConsensus = Schema.decodeUnknownSync(EngineConsensusInput);
+    expect(decodeConsensus({ task: "audit", mode: "decision" }).mode).toBe("decision");
+    expect(() => decodeConsensus({ task: "audit", mode: "unknown" })).toThrow();
+    expect(() =>
+      decodeConsensus({ task: "audit", subjectArtifact: { kind: "plan", seq: -1 } }),
+    ).toThrow();
+  });
+});
+
+describe("per-project MCP settings", () => {
+  it("decodes an empty override as inherit-all", () => {
+    expect(decodeProjectMcpOverrides({})).toEqual({});
+  });
+
+  it("resolves sparse booleans, role replacement, and per-workflow overrides", () => {
+    const global = decodeServerSettings({
+      mcp: {
+        preview: false,
+        engine: {
+          quality: true,
+          delegation: {
+            roles: { scout: [{ provider: "cursor", model: "global-scout" }] },
+            skillOverrides: {
+              plan: { scout: [{ provider: "codex", model: "global-plan" }] },
+              implement: { worker: [{ provider: "codex", model: "global-worker" }] },
+            },
+          },
+        },
+      },
+    }).mcp;
+
+    const effective = resolveEffectiveMcpSettings(global, {
+      preview: true,
+      engine: {
+        quality: false,
+        delegation: {
+          roles: { scout: [] },
+          skillOverrides: {
+            plan: { scout: [{ provider: "cursor", model: "project-plan" }] },
+          },
+        },
+      },
+    });
+
+    expect(effective.preview).toBe(true);
+    expect(effective.engine.quality).toBe(false);
+    expect(effective.engine.planning).toBe(true);
+    expect(effective.engine.delegation.roles.scout).toEqual([]);
+    expect(effective.engine.delegation.skillOverrides).toEqual({
+      plan: { scout: [{ provider: "cursor", model: "project-plan" }] },
+      implement: { worker: [{ provider: "codex", model: "global-worker" }] },
+    });
+  });
+
+  it.each([
+    {
+      providers: ["codex", "cursor"] as const,
+      scout: ["cursor", "codex"],
+      worker: ["codex", "codex", "cursor"],
+      consensus: ["codex", "cursor"],
+      scanner: ["codex", "cursor", "cursor"],
+    },
+    {
+      providers: ["codex"] as const,
+      scout: ["codex"],
+      worker: ["codex", "codex"],
+      consensus: ["codex"],
+      scanner: ["codex"],
+    },
+    {
+      providers: ["cursor"] as const,
+      scout: ["cursor"],
+      worker: ["cursor"],
+      consensus: ["cursor"],
+      scanner: ["cursor", "cursor"],
+    },
+    { providers: ["inline"] as const, scout: [], worker: [], consensus: [], scanner: ["inline"] },
+    { providers: [] as const, scout: [], worker: [], consensus: [], scanner: [] },
+  ])(
+    "derives delegation roles for $providers",
+    ({ providers, scout, worker, consensus, scanner }) => {
+      const roles = deriveDefaultDelegationRoles(new Set(providers));
+      expect(roles.scout?.map((target) => target.provider)).toEqual(scout);
+      expect(roles.worker?.map((target) => target.provider)).toEqual(worker);
+      expect(roles.consensus?.map((target) => target.provider)).toEqual(consensus);
+      expect(roles.scanner?.map((target) => target.provider)).toEqual(scanner);
+    },
+  );
+
+  it("materializes automatic delegation defaults while preserving explicit empty roles", () => {
+    const automatic = resolveDelegationRoles(
+      decodeEngineDelegationSettings({}),
+      new Set(["codex", "cursor", "inline"]),
+    );
+    expect(automatic.scout).toEqual(SCOUT_DEFAULTS);
+    expect(automatic.worker).toEqual(WORKER_DEFAULTS);
+    expect(automatic.consensus).toEqual(CONSENSUS_DEFAULTS);
+    expect(automatic.scanner).toEqual(SCANNER_DEFAULTS);
+
+    const disabledScout = resolveDelegationRoles(
+      decodeEngineDelegationSettings({ roles: { scout: [] } }),
+      new Set(["codex", "cursor", "inline"]),
+    );
+    expect(disabledScout.scout).toEqual([]);
+    expect(disabledScout.worker).toEqual(WORKER_DEFAULTS);
+  });
+
+  it("materializes only defaults supported by the supplied providers", () => {
+    const resolved = resolveDelegationRoles(
+      decodeEngineDelegationSettings({}),
+      new Set(["codex", "inline"]),
+    );
+    expect(resolved.scout.map((target) => target.provider)).toEqual(["codex"]);
+    expect(resolved.consensus.map((target) => target.provider)).toEqual(["codex"]);
+    expect(resolved.scanner.map((target) => target.provider)).toEqual(["inline", "codex"]);
+  });
+
+  it("round-trips scan thread model preferences", () => {
+    const input = {
+      mcp: {
+        engine: {
+          knowledgeScan: {
+            mainThreadModelPreference: [
+              {
+                instanceId: "claudeAgent",
+                model: "claude-opus-4-8",
+                options: [{ id: "effort", value: "max" }],
+              },
+              { instanceId: "codex", model: "gpt-5.6-terra" },
+            ],
+          },
+        },
+      },
+    };
+    expect(decodeServerSettingsPatch(input)).toEqual(input);
+  });
+
+  it("preserves legacy persisted role chains as explicit customization", () => {
+    const decoded = decodeServerSettings({
+      mcp: {
+        engine: {
+          delegation: { roles: { scout: [{ provider: "codex", model: "legacy" }] } },
+        },
+      },
+    });
+    expect(decoded.mcp.engine.delegation.roles.scout).toEqual([
+      { provider: "codex", model: "legacy" },
+    ]);
   });
 });
 

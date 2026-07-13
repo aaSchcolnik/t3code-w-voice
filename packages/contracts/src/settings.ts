@@ -6,7 +6,9 @@ import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { DEFAULT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
-import { DelegationProfile } from "./delegatedRun.ts";
+import { ProjectMcpOverrides } from "./projectMcpOverrides.ts";
+export { ProjectEngineDelegationOverrides, ProjectMcpOverrides } from "./projectMcpOverrides.ts";
+import { DelegatedRunProvider, DelegationProfile } from "./delegatedRun.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -66,11 +68,295 @@ export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationM
 export const VoiceInferenceMode = Schema.Literals(["auto", "local", "server"]);
 export type VoiceInferenceMode = typeof VoiceInferenceMode.Type;
 
-const McpSettings = Schema.Struct({
+export const ENGINE_WORKFLOW_NAMES = [
+  "plan-brief",
+  "plan",
+  "consensus",
+  "enrich",
+  "implement",
+  "quality-audit",
+  "quality-quick",
+  "quality-pr",
+  "hot-loops",
+  "typescript",
+] as const;
+export const EngineWorkflowNameSchema = Schema.Literals(ENGINE_WORKFLOW_NAMES);
+export type EngineWorkflowName = typeof EngineWorkflowNameSchema.Type;
+
+export const EngineDelegationTarget = Schema.Struct({
+  provider: Schema.Union([DelegatedRunProvider, Schema.Literal("inline")]),
+  providerInstanceId: Schema.optional(ProviderInstanceId),
+  model: Schema.optional(TrimmedNonEmptyString),
+  options: Schema.optional(ProviderOptionSelections),
+  focus: Schema.optional(TrimmedNonEmptyString),
+});
+export type EngineDelegationTarget = typeof EngineDelegationTarget.Type;
+
+export const EngineDelegationRole = Schema.Literals(["scout", "worker", "consensus", "scanner"]);
+export type EngineDelegationRole = typeof EngineDelegationRole.Type;
+
+export const SCOUT_DEFAULTS: ReadonlyArray<EngineDelegationTarget> = [
+  { provider: "cursor", model: "composer-2.5" },
+  {
+    provider: "codex",
+    model: "gpt-5.5",
+    options: [{ id: "reasoningEffort", value: "low" }],
+  },
+];
+
+export const WORKER_DEFAULTS: ReadonlyArray<EngineDelegationTarget> = [
+  {
+    provider: "codex",
+    model: "gpt-5.6-terra",
+    options: [{ id: "reasoningEffort", value: "high" }],
+  },
+  {
+    provider: "codex",
+    model: "gpt-5.6-sol",
+    options: [{ id: "reasoningEffort", value: "medium" }],
+  },
+  { provider: "cursor", model: "composer-2.5" },
+];
+
+// Consensus panel, not a fallback chain: every available entry runs in parallel.
+export const CONSENSUS_DEFAULTS: ReadonlyArray<EngineDelegationTarget> = [
+  {
+    provider: "codex",
+    model: "gpt-5.6-sol",
+    options: [{ id: "reasoningEffort", value: "high" }],
+  },
+  { provider: "cursor", model: "grok-4.5" },
+];
+
+// Scanner panel, not a fallback chain: every available delegated entry runs and the
+// inline entry represents the Judge's own Claude pass.
+export const SCANNER_DEFAULTS: ReadonlyArray<EngineDelegationTarget> = [
+  {
+    provider: "inline",
+    model: "claude-opus-4-8",
+    options: [{ id: "effort", value: "max" }],
+    focus: "Run the complete codebase scan inline as the Judge's Claude lane.",
+  },
+  {
+    provider: "codex",
+    model: "gpt-5.6-terra",
+    options: [{ id: "reasoningEffort", value: "xhigh" }],
+  },
+  { provider: "cursor", model: "grok-4.5" },
+  { provider: "cursor", model: "glm-5.2" },
+];
+
+export const DEFAULT_KNOWLEDGE_SCAN_MAIN_THREAD_MODEL_PREFERENCE: ReadonlyArray<ModelSelection> = [
+  {
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    model: "claude-opus-4-8",
+    options: [{ id: "effort", value: "max" }],
+  },
+  {
+    instanceId: ProviderInstanceId.make("codex"),
+    model: "gpt-5.6-terra",
+    options: [{ id: "reasoningEffort", value: "xhigh" }],
+  },
+  { instanceId: ProviderInstanceId.make("cursor"), model: "grok-4.5" },
+];
+
+const EngineDelegationSkillOverrideCanonical = Schema.Struct({
+  scout: Schema.optional(Schema.Array(EngineDelegationTarget)),
+  worker: Schema.optional(Schema.Array(EngineDelegationTarget)),
+  consensus: Schema.optional(Schema.Array(EngineDelegationTarget)),
+  scanner: Schema.optional(Schema.Array(EngineDelegationTarget)),
+});
+
+export const EngineDelegationSkillOverride = Schema.Struct({
+  scout: Schema.optional(Schema.Unknown),
+  worker: Schema.optional(Schema.Unknown),
+  consensus: Schema.optional(Schema.Unknown),
+  scanner: Schema.optional(Schema.Unknown),
+  auditor: Schema.optional(Schema.Unknown),
+}).pipe(
+  Schema.decodeTo(
+    EngineDelegationSkillOverrideCanonical,
+    SchemaTransformation.transformOrFail({
+      decode: (input) => {
+        const { auditor, consensus, ...override } = input as Record<string, unknown>;
+        return Effect.succeed({
+          ...override,
+          ...((consensus ?? auditor) === undefined ? {} : { consensus: consensus ?? auditor }),
+        });
+      },
+      // The encoded side widens branded provider instance ids back to strings.
+      encode: (override) => Effect.succeed(override as any),
+    }) as any,
+  ),
+);
+export type EngineDelegationSkillOverride = typeof EngineDelegationSkillOverride.Type;
+
+const engineWorkflowNameSet = new Set<string>(ENGINE_WORKFLOW_NAMES);
+export const EngineDelegationSkillOverrides = Schema.Record(
+  Schema.String,
+  EngineDelegationSkillOverride,
+).check(
+  Schema.makeFilter((overrides) => {
+    const invalidKey = Object.keys(overrides).find((key) => !engineWorkflowNameSet.has(key));
+    return invalidKey === undefined
+      ? undefined
+      : { path: [invalidKey], issue: `Unknown engine workflow '${invalidKey}'.` };
+  }),
+);
+
+const EngineDelegationRolesCanonical = Schema.Struct({
+  scout: Schema.optional(Schema.Array(EngineDelegationTarget)),
+  worker: Schema.optional(Schema.Array(EngineDelegationTarget)),
+  consensus: Schema.optional(Schema.Array(EngineDelegationTarget)),
+  scanner: Schema.optional(Schema.Array(EngineDelegationTarget)),
+});
+
+const EngineDelegationRoles = Schema.Struct({
+  scout: Schema.optional(Schema.Unknown),
+  worker: Schema.optional(Schema.Unknown),
+  consensus: Schema.optional(Schema.Unknown),
+  scanner: Schema.optional(Schema.Unknown),
+  auditor: Schema.optional(Schema.Unknown),
+}).pipe(
+  Schema.decodeTo(
+    EngineDelegationRolesCanonical,
+    SchemaTransformation.transformOrFail({
+      decode: (input) => {
+        const { auditor, consensus, ...roles } = input as Record<string, unknown>;
+        return Effect.succeed({
+          ...roles,
+          ...((consensus ?? auditor) === undefined ? {} : { consensus: consensus ?? auditor }),
+        });
+      },
+      // The encoded side widens branded provider instance ids back to strings.
+      encode: (roles) => Effect.succeed(roles as any),
+    }) as any,
+  ),
+);
+
+export const EngineDelegationSettings = Schema.Struct({
+  roles: EngineDelegationRoles.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  skillOverrides: EngineDelegationSkillOverrides.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+});
+export type EngineDelegationSettings = typeof EngineDelegationSettings.Type;
+
+export const KnowledgeScanSettings = Schema.Struct({
+  mainThreadModelPreference: Schema.Array(ModelSelection).pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed([...DEFAULT_KNOWLEDGE_SCAN_MAIN_THREAD_MODEL_PREFERENCE]),
+    ),
+  ),
+});
+export type KnowledgeScanSettings = typeof KnowledgeScanSettings.Type;
+
+export const McpEngineSettings = Schema.Struct({
+  planning: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  consensus: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  enrich: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  implement: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  quality: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  performance: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  typescript: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  delegation: EngineDelegationSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  knowledgeScan: KnowledgeScanSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+});
+export type McpEngineSettings = typeof McpEngineSettings.Type;
+
+export const McpSettings = Schema.Struct({
   preview: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   codexAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   cursorAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  engine: McpEngineSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
+export type McpSettings = typeof McpSettings.Type;
+
+export const DELEGATION_SUBAGENT_MODEL_BY_PROVIDER = {
+  codex: "gpt-5.5",
+  cursor: "composer-2.5",
+} as const;
+
+export const NATIVE_SUBAGENT_MODEL_BY_DRIVER = {
+  claudeAgent: "claude-sonnet-5",
+  codex: "gpt-5.5",
+} as const;
+
+export function deriveDefaultDelegationRoles(
+  availableProviders: ReadonlySet<DelegatedRunProvider | "inline">,
+): EngineDelegationSettings["roles"] {
+  const available = (target: EngineDelegationTarget) =>
+    target.provider === "inline"
+      ? availableProviders.has("inline")
+      : availableProviders.has(target.provider);
+  return {
+    scout: SCOUT_DEFAULTS.filter(available),
+    worker: WORKER_DEFAULTS.filter(available),
+    consensus: CONSENSUS_DEFAULTS.filter(available),
+    scanner: SCANNER_DEFAULTS.filter(available),
+  };
+}
+
+export interface ResolvedEngineDelegationRoles {
+  readonly scout: ReadonlyArray<EngineDelegationTarget>;
+  readonly worker: ReadonlyArray<EngineDelegationTarget>;
+  readonly consensus: ReadonlyArray<EngineDelegationTarget>;
+  readonly scanner: ReadonlyArray<EngineDelegationTarget>;
+}
+
+/**
+ * Materializes automatic role defaults without losing the distinction between
+ * an omitted role (automatic) and an explicit empty chain (disabled).
+ */
+export function resolveDelegationRoles(
+  settings: EngineDelegationSettings,
+  availableProviders: ReadonlySet<DelegatedRunProvider | "inline">,
+): ResolvedEngineDelegationRoles {
+  const defaults = deriveDefaultDelegationRoles(availableProviders);
+  return {
+    scout: settings.roles.scout ?? defaults.scout ?? [],
+    worker: settings.roles.worker ?? defaults.worker ?? [],
+    consensus: settings.roles.consensus ?? defaults.consensus ?? [],
+    scanner: settings.roles.scanner ?? defaults.scanner ?? [],
+  };
+}
+
+export function resolveEffectiveMcpSettings(
+  global: McpSettings,
+  overrides: ProjectMcpOverrides | undefined,
+): McpSettings {
+  if (overrides === undefined) return global;
+
+  const engineOverrides = overrides.engine;
+  const delegationOverrides = engineOverrides?.delegation;
+  const globalDelegation = global.engine.delegation;
+
+  return {
+    preview: overrides.preview ?? global.preview,
+    codexAgent: overrides.codexAgent ?? global.codexAgent,
+    cursorAgent: overrides.cursorAgent ?? global.cursorAgent,
+    engine: {
+      planning: engineOverrides?.planning ?? global.engine.planning,
+      consensus: engineOverrides?.consensus ?? global.engine.consensus,
+      enrich: engineOverrides?.enrich ?? global.engine.enrich,
+      implement: engineOverrides?.implement ?? global.engine.implement,
+      quality: engineOverrides?.quality ?? global.engine.quality,
+      performance: engineOverrides?.performance ?? global.engine.performance,
+      typescript: engineOverrides?.typescript ?? global.engine.typescript,
+      knowledgeScan: global.engine.knowledgeScan,
+      delegation: {
+        roles: {
+          ...globalDelegation.roles,
+          ...delegationOverrides?.roles,
+        },
+        skillOverrides: {
+          ...globalDelegation.skillOverrides,
+          ...delegationOverrides?.skillOverrides,
+        },
+      },
+    },
+  };
+}
 
 export const ClientSettingsSchema = Schema.Struct({
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -505,6 +791,34 @@ export const VoiceSettings = Schema.Struct({
 });
 export type VoiceSettings = typeof VoiceSettings.Type;
 
+export const SKILL_TOGGLE_PROVIDER_IDS = [
+  "claudeAgent",
+  "codex",
+  "opencode",
+  "cursor",
+  "grok",
+] as const;
+export const SkillToggleProviderId = Schema.Literals(SKILL_TOGGLE_PROVIDER_IDS);
+export type SkillToggleProviderId = typeof SkillToggleProviderId.Type;
+
+export const SkillProviderToggles = Schema.Struct({
+  disableAll: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  disabledSkills: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+});
+export type SkillProviderToggles = typeof SkillProviderToggles.Type;
+
+export const SkillToggleSettings = Schema.Struct({
+  disableAllProviders: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  providers: Schema.Struct({
+    claudeAgent: SkillProviderToggles.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    codex: SkillProviderToggles.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    opencode: SkillProviderToggles.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    cursor: SkillProviderToggles.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    grok: SkillProviderToggles.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+});
+export type SkillToggleSettings = typeof SkillToggleSettings.Type;
+
 export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(30);
 export const DEFAULT_PROVIDER_HEALTH_REFRESH_INTERVAL = Duration.minutes(5);
 
@@ -611,6 +925,7 @@ export const ServerSettings = Schema.Struct({
   ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   voice: VoiceSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  skills: SkillToggleSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   mcp: McpSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   delegationProfiles: Schema.Array(DelegationProfile).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -708,6 +1023,11 @@ const OpenCodeSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const SkillProviderTogglesPatch = Schema.Struct({
+  disableAll: Schema.optionalKey(Schema.Boolean),
+  disabledSkills: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
@@ -765,11 +1085,54 @@ export const ServerSettingsPatch = Schema.Struct({
       engine: Schema.optionalKey(VoiceEngine),
     }),
   ),
+  skills: Schema.optionalKey(
+    Schema.Struct({
+      disableAllProviders: Schema.optionalKey(Schema.Boolean),
+      providers: Schema.optionalKey(
+        Schema.Struct({
+          claudeAgent: Schema.optionalKey(SkillProviderTogglesPatch),
+          codex: Schema.optionalKey(SkillProviderTogglesPatch),
+          opencode: Schema.optionalKey(SkillProviderTogglesPatch),
+          cursor: Schema.optionalKey(SkillProviderTogglesPatch),
+          grok: Schema.optionalKey(SkillProviderTogglesPatch),
+        }),
+      ),
+    }),
+  ),
   mcp: Schema.optionalKey(
     Schema.Struct({
       preview: Schema.optionalKey(Schema.Boolean),
       codexAgent: Schema.optionalKey(Schema.Boolean),
       cursorAgent: Schema.optionalKey(Schema.Boolean),
+      engine: Schema.optionalKey(
+        Schema.Struct({
+          planning: Schema.optionalKey(Schema.Boolean),
+          consensus: Schema.optionalKey(Schema.Boolean),
+          enrich: Schema.optionalKey(Schema.Boolean),
+          implement: Schema.optionalKey(Schema.Boolean),
+          quality: Schema.optionalKey(Schema.Boolean),
+          performance: Schema.optionalKey(Schema.Boolean),
+          typescript: Schema.optionalKey(Schema.Boolean),
+          delegation: Schema.optionalKey(
+            Schema.Struct({
+              roles: Schema.optionalKey(
+                Schema.Struct({
+                  scout: Schema.optionalKey(Schema.Array(EngineDelegationTarget)),
+                  worker: Schema.optionalKey(Schema.Array(EngineDelegationTarget)),
+                  consensus: Schema.optionalKey(Schema.Array(EngineDelegationTarget)),
+                  scanner: Schema.optionalKey(Schema.Array(EngineDelegationTarget)),
+                }),
+              ),
+              skillOverrides: Schema.optionalKey(EngineDelegationSkillOverrides),
+            }),
+          ),
+          knowledgeScan: Schema.optionalKey(
+            Schema.Struct({
+              mainThreadModelPreference: Schema.optionalKey(Schema.Array(ModelSelection)),
+            }),
+          ),
+        }),
+      ),
     }),
   ),
   delegationProfiles: Schema.optionalKey(Schema.Array(DelegationProfile)),

@@ -10,6 +10,7 @@ import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { useRelativeTimeTick } from "./settings/settingsLayout";
 import { ScrollArea } from "./ui/scroll-area";
 import { SubagentTranscriptPanel } from "./subagents/SubagentTranscriptPanel";
+import { reasoningEffortLabel } from "./subagents/subagentMetadata";
 
 interface SubagentsPanelProps {
   entries: ReadonlyArray<SubagentEntry>;
@@ -85,12 +86,13 @@ function SubagentRow({
     fallbackDriverKind,
   );
   const detailLabel = entry.source === "delegated" ? entry.model : entry.agentType;
+  const reasoningLabel = reasoningEffortLabel(entry.reasoningEffort);
 
   return (
     <button
       type="button"
       onClick={() => onOpen(entry)}
-      aria-label={`${providerLabel} subagent “${entry.name}” — ${subagentStatusLabel(entry)}. Open transcript.`}
+      aria-label={`${providerLabel} subagent “${entry.name}”${reasoningLabel ? ` using ${reasoningLabel.toLowerCase()}` : ""} — ${subagentStatusLabel(entry)}. Open transcript.`}
       aria-current={selected || undefined}
       className={cn(
         "group flex w-full gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
@@ -141,6 +143,9 @@ function SubagentRow({
         <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
           {providerLabel}
           {detailLabel ? <span className="text-muted-foreground/60"> · {detailLabel}</span> : null}
+          {reasoningLabel ? (
+            <span className="text-muted-foreground/60"> · {reasoningLabel}</span>
+          ) : null}
         </p>
         {entry.lastMessage ? (
           <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">

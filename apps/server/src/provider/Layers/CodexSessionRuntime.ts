@@ -40,7 +40,7 @@ import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
-import { trackedDelegationInstructions } from "../../mcp/delegationPolicy.ts";
+import { mcpSessionInstructions } from "../../mcp/delegationPolicy.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -1302,7 +1302,7 @@ export const makeCodexSessionRuntime = (
           );
           const mcpSession = McpProviderSession.readMcpProviderSession(options.threadId);
           const delegationInstructions = mcpSession
-            ? trackedDelegationInstructions(mcpSession.capabilities)
+            ? mcpSessionInstructions(mcpSession.capabilities)
             : undefined;
           const params = yield* buildTurnStartParams({
             threadId: providerThreadId,

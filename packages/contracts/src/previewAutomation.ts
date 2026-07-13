@@ -639,7 +639,19 @@ export type PreviewAutomationResponse = typeof PreviewAutomationResponse.Type;
 export class PreviewAutomationUnavailableError extends Schema.TaggedErrorClass<PreviewAutomationUnavailableError>()(
   "PreviewAutomationUnavailableError",
   {
-    capability: Schema.Literals(["preview", "codex-agent", "cursor-agent"]),
+    capability: Schema.Literals([
+      "preview",
+      "codex-agent",
+      "cursor-agent",
+      "engine-planning",
+      "engine-consensus",
+      "engine-enrich",
+      "engine-implement",
+      "engine-quality",
+      "engine-performance",
+      "engine-typescript",
+      "engine-knowledge",
+    ]),
     environmentId: EnvironmentId,
     threadId: ThreadId,
     providerSessionId: TrimmedNonEmptyString,

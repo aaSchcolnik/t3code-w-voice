@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
@@ -9,14 +10,50 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import { HttpServer } from "effect/unstable/http";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { makeProviderRegistryLayer } from "../provider/testUtils/providerRegistryMock.ts";
+import {
+  ProjectionProjectRepository,
+  type ProjectionProject,
+} from "../persistence/Services/ProjectionProjects.ts";
+import {
+  ProjectionThreadRepository,
+  type ProjectionThread,
+} from "../persistence/Services/ProjectionThreads.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
+const projectId = ProjectId.make("project-1");
+const projectionRepositories = Layer.mergeAll(
+  Layer.succeed(
+    ProjectionThreadRepository,
+    ProjectionThreadRepository.of({
+      getById: ({ threadId }) =>
+        Effect.succeed(
+          Option.some({ threadId, projectId, worktreePath: null } as ProjectionThread),
+        ),
+      upsert: () => Effect.void,
+      listByProjectId: () => Effect.succeed([]),
+      deleteById: () => Effect.void,
+    }),
+  ),
+  Layer.succeed(
+    ProjectionProjectRepository,
+    ProjectionProjectRepository.of({
+      getById: () =>
+        Effect.succeed(
+          Option.some({ projectId, workspaceRoot: "/tmp/project-1" } as ProjectionProject),
+        ),
+      upsert: () => Effect.void,
+      listAll: () => Effect.succeed([]),
+      deleteById: () => Effect.void,
+    }),
+  ),
+);
 const makeFakeHttpServer = (hostname: string, port = 43123) =>
   HttpServer.HttpServer.of({
     address: { _tag: "TcpAddress", hostname, port },
@@ -51,7 +88,20 @@ const makeRegistry = (
   httpServer = fakeHttpServer,
   options: {
     providers?: ReadonlyArray<ServerProvider>;
-    mcp?: { preview?: boolean; codexAgent?: boolean; cursorAgent?: boolean };
+    mcp?: {
+      preview?: boolean;
+      codexAgent?: boolean;
+      cursorAgent?: boolean;
+      engine?: Partial<{
+        planning: boolean;
+        consensus: boolean;
+        enrich: boolean;
+        implement: boolean;
+        quality: boolean;
+        performance: boolean;
+        typescript: boolean;
+      }>;
+    };
   } = {},
 ) =>
   McpSessionRegistry.__testing
@@ -64,8 +114,23 @@ const makeRegistry = (
         Layer.mergeAll(
           Layer.succeed(HttpServer.HttpServer, httpServer),
           Layer.succeed(ServerEnvironment.ServerEnvironment, fakeEnvironment),
-          ServerSettingsService.layerTest({ mcp: options.mcp ?? {} }),
+          ServerSettingsService.layerTest({
+            mcp: {
+              ...options.mcp,
+              engine: {
+                planning: false,
+                consensus: false,
+                enrich: false,
+                implement: false,
+                quality: false,
+                performance: false,
+                typescript: false,
+                ...options.mcp?.engine,
+              },
+            },
+          }),
           makeProviderRegistryLayer(options.providers ?? []),
+          projectionRepositories,
           NodeServices.layer,
         ),
       ),
@@ -110,6 +175,31 @@ it.effect("grants MCP capabilities from settings and provider availability", () 
   }),
 );
 
+it.effect("grants enabled engine abilities and the shared knowledge capability", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      mcp: {
+        preview: false,
+        engine: { planning: true, consensus: true, quality: true },
+      },
+    });
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-engine-capabilities"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect([...resolved!.capabilities]).toEqual([
+      "engine-planning",
+      "engine-consensus",
+      "engine-quality",
+      "engine-knowledge",
+    ]);
+    expect(resolved!.projectId).toBe(projectId);
+    expect(resolved!.worktreePath).toBe("/tmp/project-1");
+  }),
+);
+
 it.effect("does not grant recursive agent delegation to delegated sessions", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
@@ -122,6 +212,32 @@ it.effect("does not grant recursive agent delegation to delegated sessions", () 
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
     expect([...resolved!.capabilities]).toEqual(["preview"]);
+  }),
+);
+
+it.effect("grants engine capabilities to delegated sessions using the parent project", () =>
+  Effect.gen(function* () {
+    const parentThreadId = ThreadId.make("thread-delegated-parent");
+    const delegatedThreadId = ThreadId.make("delegated-child-engine-run");
+    McpSessionRegistry.registerDelegatedMcpProjectContext(delegatedThreadId, parentThreadId);
+    const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      providers: [makeProvider("codex")],
+      mcp: { engine: { planning: true, implement: true } },
+    });
+    const issued = yield* registry.issue({
+      threadId: delegatedThreadId,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect([...resolved!.capabilities]).toEqual([
+      "preview",
+      "engine-planning",
+      "engine-implement",
+      "engine-knowledge",
+    ]);
+    expect(resolved!.threadId).toBe(delegatedThreadId);
+    expect(resolved!.projectId).toBe(projectId);
   }),
 );
 

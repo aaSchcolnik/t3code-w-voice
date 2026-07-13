@@ -44,6 +44,11 @@ import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as DelegatedRunService from "./orchestration/DelegatedRunService.ts";
 import * as SubagentTranscriptService from "./orchestration/SubagentTranscriptService.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
+import { ProjectKnowledgeStore } from "./knowledge/ProjectKnowledgeStore.ts";
+import { ProjectionProjectRepositoryLive } from "./persistence/Layers/ProjectionProjects.ts";
+import { ProjectionThreadRepositoryLive } from "./persistence/Layers/ProjectionThreads.ts";
+import { SkillRepositoryLive } from "./persistence/Layers/Skills.ts";
+import { SkillDefaultsSeederLive } from "./knowledge/skills/seed.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -237,6 +242,12 @@ const ProviderLayerLive = ProviderServiceLive.pipe(
 );
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
+const SkillPersistenceLayerLive = Layer.mergeAll(
+  SkillRepositoryLive.pipe(Layer.provide(SqlitePersistenceLayerLive)),
+  SkillDefaultsSeederLive.pipe(
+    Layer.provide(SkillRepositoryLive.pipe(Layer.provide(SqlitePersistenceLayerLive))),
+  ),
+);
 
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
@@ -324,6 +335,7 @@ const ProjectFaviconResolverLayerLive = ProjectFaviconResolver.layer.pipe(
 
 const AuthLayerLive = EnvironmentAuth.layer.pipe(
   Layer.provideMerge(PersistenceLayerLive),
+  Layer.provideMerge(SkillPersistenceLayerLive),
   Layer.provide(ServerSecretStore.layer),
 );
 
@@ -433,7 +445,20 @@ export const makeRoutesLayer = Layer.mergeAll(
     staticAndDevRouteLayer,
     websocketRpcRouteLayer,
   ),
-  McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
+  McpHttpServer.layer.pipe(
+    Layer.provide(
+      McpSessionRegistry.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            ProjectionProjectRepositoryLive,
+            ProjectionThreadRepositoryLive,
+            SkillRepositoryLive,
+          ).pipe(Layer.provide(SqlitePersistenceLayerLive)),
+        ),
+      ),
+    ),
+    Layer.provide(ProjectKnowledgeStore.layer),
+  ),
 ).pipe(
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer),

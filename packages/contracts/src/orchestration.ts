@@ -2,9 +2,9 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
-import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Struct from "effect/Struct";
-import { ProviderOptionSelections } from "./model.ts";
+import { ModelSelection } from "./model.ts";
+export { ModelSelection } from "./model.ts";
 import { RepositoryIdentity } from "./environment.ts";
 import {
   ApprovalRequestId,
@@ -21,6 +21,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { ProjectMcpOverrides } from "./projectMcpOverrides.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -60,59 +61,6 @@ export type ProviderSandboxMode = typeof ProviderSandboxMode.Type;
  * post-decode compatibility code lives in the runtime; the transform is the
  * only compat surface.
  */
-const ModelSelectionWire = Schema.Struct({
-  instanceId: ProviderInstanceId,
-  model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(ProviderOptionSelections),
-});
-
-// Source shape for persisted legacy payloads. Fields are typed as
-// `Schema.Unknown` so malformed drafts still make it into the transform and
-// fail validation through the target schema (with proper error messages)
-// rather than at the source-struct layer where the error is less actionable.
-const ModelSelectionSource = Schema.Struct({
-  provider: Schema.optional(Schema.Unknown),
-  instanceId: Schema.optional(Schema.Unknown),
-  model: Schema.Unknown,
-  options: Schema.optional(Schema.Unknown),
-});
-
-export const ModelSelection = ModelSelectionSource.pipe(
-  Schema.decodeTo(
-    ModelSelectionWire,
-    SchemaTransformation.transformOrFail({
-      decode: (raw) => {
-        // Resolve the routing key: prefer an explicit `instanceId`; fall
-        // back to promoting the legacy `provider` slug (the canonical
-        // `defaultInstanceIdForDriver` mapping) so persisted rollout-era
-        // payloads decode without data loss. The target schema brands the
-        // string as `ProviderInstanceId`.
-        const instanceIdSource =
-          raw.instanceId !== undefined
-            ? raw.instanceId
-            : typeof raw.provider === "string"
-              ? raw.provider
-              : undefined;
-        const base: Record<string, unknown> = {
-          instanceId: instanceIdSource,
-          model: raw.model,
-        };
-        if (raw.options !== undefined) base.options = raw.options;
-        return Effect.succeed(base as typeof ModelSelectionWire.Encoded);
-      },
-      encode: (value) => {
-        const base: Record<string, unknown> = {
-          model: value.model,
-          instanceId: value.instanceId,
-        };
-        if (value.options !== undefined) base.options = value.options;
-        return Effect.succeed(base as typeof ModelSelectionSource.Encoded);
-      },
-    }),
-  ),
-);
-export type ModelSelection = typeof ModelSelection.Type;
-
 export const RuntimeMode = Schema.Literals([
   "approval-required",
   "auto-accept-edits",
@@ -215,6 +163,7 @@ export const OrchestrationProject = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
+  mcpOverrides: Schema.optional(Schema.NullOr(Schema.suspend(() => ProjectMcpOverrides))),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -392,6 +341,7 @@ export const OrchestrationProjectShell = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
+  mcpOverrides: Schema.optional(Schema.NullOr(Schema.suspend(() => ProjectMcpOverrides))),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -531,6 +481,13 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+});
+
+export const ProjectMcpSettingsUpdateCommand = Schema.Struct({
+  type: Schema.Literal("project.update-mcp-settings"),
+  commandId: CommandId,
+  projectId: ProjectId,
+  mcpOverrides: Schema.suspend(() => ProjectMcpOverrides),
 });
 
 const ProjectDeleteCommand = Schema.Struct({
@@ -748,6 +705,7 @@ const ThreadSessionStopCommand = Schema.Struct({
 const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
+  ProjectMcpSettingsUpdateCommand,
   ProjectDeleteCommand,
   ThreadCreateCommand,
   ThreadDeleteCommand,
@@ -773,6 +731,7 @@ export type DispatchableClientOrchestrationCommand =
 export const ClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
+  ProjectMcpSettingsUpdateCommand,
   ProjectDeleteCommand,
   ThreadCreateCommand,
   ThreadDeleteCommand,
@@ -879,6 +838,7 @@ export type OrchestrationCommand = typeof OrchestrationCommand.Type;
 export const OrchestrationEventType = Schema.Literals([
   "project.created",
   "project.meta-updated",
+  "project.mcp-settings-updated",
   "project.deleted",
   "thread.created",
   "thread.deleted",
@@ -917,6 +877,7 @@ export const ProjectCreatedPayload = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
+  mcpOverrides: Schema.optional(Schema.suspend(() => ProjectMcpOverrides)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -928,6 +889,12 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectMcpSettingsUpdatedPayload = Schema.Struct({
+  projectId: ProjectId,
+  mcpOverrides: Schema.suspend(() => ProjectMcpOverrides),
   updatedAt: IsoDateTime,
 });
 
@@ -1137,6 +1104,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("project.meta-updated"),
     payload: ProjectMetaUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.mcp-settings-updated"),
+    payload: ProjectMcpSettingsUpdatedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
