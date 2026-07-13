@@ -15,6 +15,8 @@ import {
   ApprovalRequestId,
   ClaudeSettings,
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
+  ProjectId,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
@@ -37,6 +39,8 @@ import * as TestClock from "effect/testing/TestClock";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import type { McpSessionInstructionBuilder } from "../../mcp/delegationPolicy.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import {
@@ -163,6 +167,7 @@ function makeHarness(config?: {
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
   readonly skillSettings?: SkillToggleSettings;
+  readonly buildMcpSessionInstructions?: McpSessionInstructionBuilder;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -174,6 +179,9 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...(config?.buildMcpSessionInstructions
+      ? { buildMcpSessionInstructions: config.buildMcpSessionInstructions }
+      : {}),
     createQuery: (input) => {
       createInput = input;
       return query;
@@ -279,6 +287,53 @@ const THREAD_ID = ThreadId.make("thread-claude-1");
 const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
 
 describe("ClaudeAdapterLive", () => {
+  it.effect("appends the T3 Code skill catalog to the Claude system prompt", () => {
+    const harness = makeHarness({
+      buildMcpSessionInstructions: () =>
+        Effect.succeed("## T3 Code skills\n\n- **Release notes** (`release-notes`)"),
+    });
+    McpProviderSession.setMcpProviderSession({
+      environmentId: EnvironmentId.make("environment-claude-catalog"),
+      threadId: THREAD_ID,
+      projectId: ProjectId.make("project-claude-catalog"),
+      providerSessionId: "provider-session-claude-catalog",
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      capabilities: new Set(["engine-knowledge"]),
+      endpoint: "http://127.0.0.1/mcp",
+      authorizationHeader: "Bearer test",
+    });
+
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const systemPrompt = harness.getLastCreateQueryInput()?.options.systemPrompt;
+      assert.equal(
+        typeof systemPrompt === "object" && !Array.isArray(systemPrompt)
+          ? systemPrompt.append
+          : undefined,
+        "## T3 Code skills\n\n- **Release notes** (`release-notes`)",
+      );
+      const queryOptions = harness.getLastCreateQueryInput()?.options;
+      assert.equal(queryOptions?.agents?.["t3-code-knowledge-scanner"]?.model, "claude-opus-4-8");
+      assert.deepEqual(queryOptions?.disallowedTools, [
+        "mcp__t3-code__claude_capabilities",
+        "mcp__t3-code__claude_start",
+        "mcp__t3-code__claude_status",
+        "mcp__t3-code__claude_result",
+        "mcp__t3-code__claude_cancel",
+      ]);
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => McpProviderSession.clearMcpProviderSession(THREAD_ID))),
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("disallows every Claude skill when the master switch is on", () => {
     const harness = makeHarness({
       skillSettings: { ...DEFAULT_SERVER_SETTINGS.skills, disableAllProviders: true },

@@ -66,7 +66,7 @@ const fakeEnvironment = ServerEnvironment.ServerEnvironment.of({
 });
 
 const makeProvider = (
-  driver: "codex" | "cursor",
+  driver: "claudeAgent" | "codex" | "cursor",
   overrides: Partial<ServerProvider> = {},
 ): ServerProvider => ({
   instanceId: ProviderInstanceId.make(driver),
@@ -90,6 +90,7 @@ const makeRegistry = (
     providers?: ReadonlyArray<ServerProvider>;
     mcp?: {
       preview?: boolean;
+      claudeAgent?: boolean;
       codexAgent?: boolean;
       cursorAgent?: boolean;
       engine?: Partial<{
@@ -146,6 +147,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
       providerInstanceId: ProviderInstanceId.make("codex"),
     });
     expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
+    expect(issued.config.projectId).toBe(projectId);
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     expect(token.length).toBeGreaterThan(20);
 
@@ -172,6 +174,23 @@ it.effect("grants MCP capabilities from settings and provider availability", () 
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
     expect([...resolved!.capabilities]).toEqual(["codex-agent"]);
+  }),
+);
+
+it.effect("withholds Claude delegation from a Claude parent thread", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      providers: [makeProvider("claudeAgent"), makeProvider("codex")],
+      mcp: { preview: false, claudeAgent: true, codexAgent: true },
+    });
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-claude-parent"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect([...resolved!.capabilities]).toEqual(["codex-agent"]);
+    expect(resolved!.providerDriver).toBe("claudeAgent");
   }),
 );
 

@@ -403,7 +403,7 @@ describe("ServerSettings MCP engine", () => {
                 },
               ],
               scanner: [
-                { provider: "inline" as const, model: "claude-opus-4-8" },
+                { provider: "claudeAgent" as const, model: "claude-opus-4-8" },
                 { provider: "cursor" as const, model: "glm-5.2" },
               ],
             },
@@ -474,6 +474,12 @@ describe("ServerSettings MCP engine", () => {
 });
 
 describe("per-project MCP settings", () => {
+  it("defaults and round-trips the Claude delegation toggle", () => {
+    expect(decodeServerSettings({}).mcp.claudeAgent).toBe(true);
+    expect(decodeServerSettingsPatch({ mcp: { claudeAgent: false } }).mcp?.claudeAgent).toBe(false);
+    expect(decodeProjectMcpOverrides({ claudeAgent: false })).toEqual({ claudeAgent: false });
+  });
+
   it("decodes an empty override as inherit-all", () => {
     expect(decodeProjectMcpOverrides({})).toEqual({});
   });
@@ -520,6 +526,13 @@ describe("per-project MCP settings", () => {
 
   it.each([
     {
+      providers: ["claudeAgent", "codex", "cursor"] as const,
+      scout: ["cursor", "codex"],
+      worker: ["codex", "codex", "cursor"],
+      consensus: ["codex", "cursor"],
+      scanner: ["claudeAgent", "codex", "cursor", "cursor"],
+    },
+    {
       providers: ["codex", "cursor"] as const,
       scout: ["cursor", "codex"],
       worker: ["codex", "codex", "cursor"],
@@ -540,7 +553,14 @@ describe("per-project MCP settings", () => {
       consensus: ["cursor"],
       scanner: ["cursor", "cursor"],
     },
-    { providers: ["inline"] as const, scout: [], worker: [], consensus: [], scanner: ["inline"] },
+    {
+      providers: ["claudeAgent"] as const,
+      scout: [],
+      worker: [],
+      consensus: [],
+      scanner: ["claudeAgent"],
+    },
+    { providers: ["inline"] as const, scout: [], worker: [], consensus: [], scanner: [] },
     { providers: [] as const, scout: [], worker: [], consensus: [], scanner: [] },
   ])(
     "derives delegation roles for $providers",
@@ -556,7 +576,7 @@ describe("per-project MCP settings", () => {
   it("materializes automatic delegation defaults while preserving explicit empty roles", () => {
     const automatic = resolveDelegationRoles(
       decodeEngineDelegationSettings({}),
-      new Set(["codex", "cursor", "inline"]),
+      new Set(["claudeAgent", "codex", "cursor"]),
     );
     expect(automatic.scout).toEqual(SCOUT_DEFAULTS);
     expect(automatic.worker).toEqual(WORKER_DEFAULTS);
@@ -565,7 +585,7 @@ describe("per-project MCP settings", () => {
 
     const disabledScout = resolveDelegationRoles(
       decodeEngineDelegationSettings({ roles: { scout: [] } }),
-      new Set(["codex", "cursor", "inline"]),
+      new Set(["claudeAgent", "codex", "cursor"]),
     );
     expect(disabledScout.scout).toEqual([]);
     expect(disabledScout.worker).toEqual(WORKER_DEFAULTS);
@@ -574,11 +594,21 @@ describe("per-project MCP settings", () => {
   it("materializes only defaults supported by the supplied providers", () => {
     const resolved = resolveDelegationRoles(
       decodeEngineDelegationSettings({}),
-      new Set(["codex", "inline"]),
+      new Set(["claudeAgent", "codex"]),
     );
     expect(resolved.scout.map((target) => target.provider)).toEqual(["codex"]);
     expect(resolved.consensus.map((target) => target.provider)).toEqual(["codex"]);
-    expect(resolved.scanner.map((target) => target.provider)).toEqual(["inline", "codex"]);
+    expect(resolved.scanner.map((target) => target.provider)).toEqual(["claudeAgent", "codex"]);
+  });
+
+  it("migrates a persisted inline scanner to Claude delegation", () => {
+    const resolved = resolveDelegationRoles(
+      decodeEngineDelegationSettings({
+        roles: { scanner: [{ provider: "inline", model: "claude-opus-4-8" }] },
+      }),
+      new Set(["claudeAgent"]),
+    );
+    expect(resolved.scanner).toEqual([{ provider: "claudeAgent", model: "claude-opus-4-8" }]);
   });
 
   it("round-trips scan thread model preferences", () => {

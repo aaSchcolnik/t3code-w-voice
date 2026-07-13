@@ -20,6 +20,7 @@ export interface ResolvedDelegationChains {
 const providerCapability = {
   codex: "codex-agent",
   cursor: "cursor-agent",
+  claudeAgent: "claude-agent",
 } as const;
 
 const targetAvailable = (
@@ -45,6 +46,7 @@ export function resolveDelegationChains(input: {
   const availableProviders = new Set<EngineDelegationTarget["provider"]>();
   if (input.capabilities.has("codex-agent")) availableProviders.add("codex");
   if (input.capabilities.has("cursor-agent")) availableProviders.add("cursor");
+  if (input.capabilities.has("claude-agent")) availableProviders.add("claudeAgent");
   availableProviders.add("inline");
   const roles = resolveDelegationRoles(input.settings, availableProviders);
   return {

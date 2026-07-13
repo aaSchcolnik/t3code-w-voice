@@ -945,4 +945,21 @@ export const respondToActiveDelegatedRun = (
     ? activeDelegatedRunService.respond(runId, answers)
     : Effect.fail(unavailable("respond", runId));
 
-export const __testing = { make };
+const withActiveService = <A, E, R>(
+  service: DelegatedRunServiceShape,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = activeDelegatedRunService;
+      activeDelegatedRunService = service;
+      return previous;
+    }),
+    () => effect,
+    (previous) =>
+      Effect.sync(() => {
+        activeDelegatedRunService = previous;
+      }),
+  );
+
+export const __testing = { make, withActiveService };

@@ -17,21 +17,32 @@ export const KnowledgeSource = Schema.Literals(["bootstrap", "agent", "user"]);
 export type KnowledgeSource = typeof KnowledgeSource.Type;
 export const KnowledgeTable = Schema.Literals([
   "project_profile",
-  "reusable_components",
+  "knowledge_entities",
+  "knowledge_relationships",
   "lessons_learned",
   "rules",
   "audit_rules",
-  "features",
 ]);
 export type KnowledgeTable = typeof KnowledgeTable.Type;
 export const SearchableKnowledgeTable = Schema.Literals([
-  "reusable_components",
+  "knowledge_entities",
+  "knowledge_relationships",
   "lessons_learned",
   "rules",
   "audit_rules",
-  "features",
 ]);
 export type SearchableKnowledgeTable = typeof SearchableKnowledgeTable.Type;
+
+export const KnowledgeEntityCategory = Schema.Literals([
+  "architecture",
+  "capability",
+  "building-block",
+  "contract",
+  "data",
+  "integration",
+  "operation",
+]);
+export type KnowledgeEntityCategory = typeof KnowledgeEntityCategory.Type;
 
 export const ImplementationCaseKind = Schema.Literals([
   "plan-brief",
@@ -75,6 +86,7 @@ export const KnowledgeStatusInput = Schema.Struct({});
 export const KnowledgeSearchInput = Schema.Struct({
   table: SearchableKnowledgeTable,
   query: Schema.String,
+  category: Schema.optional(KnowledgeEntityCategory),
   scopePath: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
 });
@@ -122,6 +134,31 @@ export const ScannerReusableComponent = Schema.Struct({
   reuseWhen: Schema.optional(Schema.String),
   evidence: ScannerEvidence,
 });
+export const ScannerKnowledgeEntity = Schema.Struct({
+  key: Schema.String,
+  category: KnowledgeEntityCategory,
+  kind: Schema.String,
+  name: Schema.String,
+  summary: Schema.String,
+  locations: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  publicApi: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  reuseWhen: Schema.optional(Schema.String),
+  tags: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  evidence: ScannerEvidence,
+});
+export const ScannerKnowledgeRelationship = Schema.Struct({
+  sourceKey: Schema.String,
+  targetKey: Schema.String,
+  kind: Schema.String,
+  summary: Schema.optional(Schema.String),
+  metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  evidence: ScannerEvidence,
+});
 export const ScannerRule = Schema.Struct({
   text: Schema.String,
   scopePath: Schema.optional(Schema.String),
@@ -145,10 +182,16 @@ export const ScannerReport = Schema.Struct({
   lane: Schema.optional(ScanLane),
   scanner: ScannerIdentity,
   profileFacts: Schema.Array(ScannerProfileFact),
-  reusable_components: Schema.Array(ScannerReusableComponent),
+  entities: Schema.Array(ScannerKnowledgeEntity).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  relationships: Schema.Array(ScannerKnowledgeRelationship).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  reusable_components: Schema.optional(Schema.Array(ScannerReusableComponent)),
   rules: Schema.Array(ScannerRule),
   lessons_learned: Schema.Array(ScannerLesson),
-  features: Schema.Array(ScannerFeature),
+  features: Schema.optional(Schema.Array(ScannerFeature)),
   failures: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type ScannerReport = typeof ScannerReport.Type;
@@ -330,6 +373,7 @@ export const KnowledgeQueryInput = Schema.Struct({
   table: KnowledgeTable,
   status: Schema.optional(KnowledgeStatus),
   query: Schema.optional(Schema.String),
+  categories: Schema.optional(Schema.Array(KnowledgeEntityCategory)),
   offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 200 }))),
 });

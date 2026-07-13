@@ -19,18 +19,38 @@ describe("knowledge bootstrap scan", () => {
     NodeFS.rmSync(root, { recursive: true, force: true });
   });
 
+  it("recognizes stylesheet and infrastructure repositories as codebases", () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-scan-assets-"));
+    NodeFS.writeFileSync(NodePath.join(root, "tokens.scss"), "$color-danger: #c00;");
+    expect(workspaceHasCodebase(root)).toBe(true);
+    NodeFS.rmSync(root, { recursive: true, force: true });
+  });
+
   it("names every scanner and requires reconvening", () => {
     const workflow = renderBootstrapScanWorkflow([
-      { provider: "inline", model: "claude-opus-4-8" },
+      { provider: "claudeAgent", model: "claude-opus-4-8" },
       { provider: "codex", model: "gpt-5.6-terra" },
       { provider: "cursor", model: "grok-4.5" },
       { provider: "cursor", model: "glm-5.2" },
     ]);
-    expect(workflow).toContain("inline/claude-opus-4-8");
+    expect(workflow).toContain("claude_start");
+    expect(workflow).toContain('"model":"claude-opus-4-8"');
     expect(workflow).toContain("codex_start");
     expect(workflow).toContain("grok-4.5");
     expect(workflow).toContain("glm-5.2");
     expect(workflow).toContain("engine_knowledge_merge_reports");
+    expect(workflow).toContain("design tokens");
+    expect(workflow).toContain("operation — build, test, deployment");
+  });
+
+  it("uses the pinned native Claude scanner without recursive Claude MCP delegation", () => {
+    const workflow = renderBootstrapScanWorkflow(
+      [{ provider: "claudeAgent", model: "claude-opus-4-8" }],
+      { nativeClaudeSubagents: true },
+    );
+    expect(workflow).toContain('subagent_type: "t3-code-knowledge-scanner"');
+    expect(workflow).toContain("pinned to claude-opus-4-8");
+    expect(workflow).toContain("do not call `claude_start`");
   });
 
   it("requires batching without truncating oversized panels", () => {
@@ -51,7 +71,7 @@ describe("knowledge bootstrap scan", () => {
     expect(
       selectBootstrapWorkflow({
         hasCodebase: true,
-        scanners: [{ provider: "inline", model: "claude-opus-4-8" }],
+        scanners: [],
         legacyWorkflow: "legacy",
       }),
     ).toBe("legacy");

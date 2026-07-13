@@ -16,7 +16,9 @@ import * as TestClock from "effect/testing/TestClock";
 import { beforeEach } from "vite-plus/test";
 
 import {
+  EnvironmentId,
   OpenCodeSettings,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
@@ -24,6 +26,7 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import type { OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
@@ -254,7 +257,10 @@ const openCodeAdapterTestSettings = Schema.decodeSync(OpenCodeSettings)({
 
 const OpenCodeAdapterTestLayer = Layer.effect(
   OpenCodeAdapter,
-  makeOpenCodeAdapter(openCodeAdapterTestSettings),
+  makeOpenCodeAdapter(openCodeAdapterTestSettings, {
+    buildMcpSessionInstructions: () =>
+      Effect.succeed("## T3 Code skills\n\n- **Release notes** (`release-notes`)"),
+  }),
 ).pipe(
   Layer.provideMerge(Layer.succeed(OpenCodeRuntime, OpenCodeRuntimeTestDouble)),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
@@ -275,12 +281,49 @@ const OpenCodeAdapterTestLayer = Layer.effect(
 
 beforeEach(() => {
   runtimeMock.reset();
+  McpProviderSession.clearAllMcpProviderSessions();
 });
 
 const advanceTestClock = (ms: number) =>
   TestClock.adjust(`${ms} millis`).pipe(Effect.andThen(Effect.yieldNow));
 
 it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
+  it.effect("sends the T3 Code skill catalog through OpenCode's system field", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-catalog");
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-opencode-catalog"),
+        threadId,
+        projectId: ProjectId.make("project-opencode-catalog"),
+        providerSessionId: "provider-session-opencode-catalog",
+        providerInstanceId: ProviderInstanceId.make("opencode"),
+        capabilities: new Set(["engine-knowledge"]),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "Draft the release notes",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("opencode"),
+          model: "openai/gpt-5",
+        },
+      });
+
+      NodeAssert.equal(
+        (runtimeMock.state.promptCalls.at(-1) as { system?: string }).system,
+        "## T3 Code skills\n\n- **Release notes** (`release-notes`)",
+      );
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("reuses a configured OpenCode server URL instead of spawning a local server", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;

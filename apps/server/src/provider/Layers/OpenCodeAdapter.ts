@@ -30,6 +30,10 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import {
+  McpSessionInstructionBuilderService,
+  type McpSessionInstructionBuilder,
+} from "../../mcp/delegationPolicy.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import {
   ProviderAdapterProcessError,
@@ -243,6 +247,7 @@ export interface OpenCodeAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  readonly buildMcpSessionInstructions?: McpSessionInstructionBuilder;
 }
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -569,6 +574,8 @@ export function makeOpenCodeAdapter(
     const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("opencode");
     const serverConfig = yield* ServerConfig;
     const serverSettings = yield* ServerSettingsService;
+    const buildSessionInstructions =
+      options?.buildMcpSessionInstructions ?? (yield* McpSessionInstructionBuilderService);
     const openCodeRuntime = yield* OpenCodeRuntime;
     const crypto = yield* Crypto.Crypto;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -1479,6 +1486,10 @@ export function makeOpenCodeAdapter(
 
       const agent = getModelSelectionStringOptionValue(modelSelection, "agent");
       const variant = getModelSelectionStringOptionValue(modelSelection, "variant");
+      const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+      const sessionInstructions = mcpSession
+        ? yield* buildSessionInstructions(mcpSession)
+        : undefined;
 
       context.activeTurnId = turnId;
       context.activeAgent = agent ?? (input.interactionMode === "plan" ? "plan" : undefined);
@@ -1510,6 +1521,7 @@ export function makeOpenCodeAdapter(
           model: parsedModel,
           ...(context.activeAgent ? { agent: context.activeAgent } : {}),
           ...(context.activeVariant ? { variant: context.activeVariant } : {}),
+          ...(sessionInstructions ? { system: sessionInstructions } : {}),
           parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
         }),
       ).pipe(

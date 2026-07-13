@@ -587,7 +587,8 @@ function SkillsScopeField({
       <FieldLabel>Settings scope</FieldLabel>
       <FieldDescription>
         Projects inherit the global skill catalog. Skills can only be created, edited, and deleted
-        from the global scope; per project you can enable or disable them.
+        from the global scope; per project you can enable or disable them. Title and description
+        changes are advertised to agents when the next thread starts.
       </FieldDescription>
       <div className="flex items-center gap-2">
         <Select

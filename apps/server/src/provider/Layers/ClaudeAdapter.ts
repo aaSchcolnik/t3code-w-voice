@@ -70,11 +70,18 @@ import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import {
+  CLAUDE_DELEGATION_MCP_TOOL_NAMES,
+  NATIVE_CLAUDE_KNOWLEDGE_SCANNER_MODEL,
+  NATIVE_CLAUDE_KNOWLEDGE_SCANNER_NAME,
+  NATIVE_CLAUDE_KNOWLEDGE_SCANNER_PROMPT,
+} from "../../knowledge/nativeClaudeKnowledgeScanner.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   detectUntrackedDelegationAttempt,
-  mcpSessionInstructions,
+  McpSessionInstructionBuilderService,
+  type McpSessionInstructionBuilder,
   untrackedDelegationDenialMessage,
 } from "../../mcp/delegationPolicy.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
@@ -264,6 +271,7 @@ export interface ClaudeAdapterLiveOptions {
   }) => ClaudeQueryRuntime;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  readonly buildMcpSessionInstructions?: McpSessionInstructionBuilder;
 }
 
 function isUuid(value: string): boolean {
@@ -1390,6 +1398,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig;
   const serverSettings = yield* ServerSettingsService;
+  const buildSessionInstructions =
+    options?.buildMcpSessionInstructions ?? (yield* McpSessionInstructionBuilderService);
   const crypto = yield* Crypto.Crypto;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, options?.environment).pipe(
     Effect.provideService(Path.Path, path),
@@ -3844,7 +3854,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       };
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
       const delegationInstructions = mcpSession
-        ? mcpSessionInstructions(mcpSession.capabilities)
+        ? yield* buildSessionInstructions(mcpSession)
         : undefined;
       const currentSkillSettings = yield* serverSettings.getSettings.pipe(
         Effect.map((currentSettings) => currentSettings.skills),
@@ -3858,7 +3868,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             }),
         ),
       );
-      const disallowedTools = buildClaudeSkillDisallowedTools(currentSkillSettings);
+      const disallowedTools = buildClaudeSkillDisallowedTools(
+        currentSkillSettings,
+        mcpSession?.capabilities.has("claude-agent") === false
+          ? CLAUDE_DELEGATION_MCP_TOOL_NAMES
+          : [],
+      );
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -3869,6 +3884,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ...(delegationInstructions ? { append: delegationInstructions } : {}),
         },
         settingSources: [...CLAUDE_SETTING_SOURCES],
+        ...(mcpSession?.capabilities.has("engine-knowledge") === true
+          ? {
+              agents: {
+                [NATIVE_CLAUDE_KNOWLEDGE_SCANNER_NAME]: {
+                  description: "Scan the whole codebase for reusable project knowledge",
+                  prompt: NATIVE_CLAUDE_KNOWLEDGE_SCANNER_PROMPT,
+                  model: NATIVE_CLAUDE_KNOWLEDGE_SCANNER_MODEL,
+                  effort: "max",
+                  tools: ["Read", "Glob", "Grep", "Bash"],
+                  disallowedTools: [...CLAUDE_DELEGATION_MCP_TOOL_NAMES],
+                },
+              },
+            }
+          : {}),
         // `ultracode` is a Claude Code setting, not an API effort level. It is
         // normalized to `xhigh` above and paired with `settings.ultracode`.
         ...(effectiveEffort

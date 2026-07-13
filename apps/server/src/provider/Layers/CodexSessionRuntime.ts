@@ -40,7 +40,7 @@ import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
-import { mcpSessionInstructions } from "../../mcp/delegationPolicy.ts";
+import type { McpSessionInstructionBuilder } from "../../mcp/delegationPolicy.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -104,6 +104,7 @@ export interface CodexSessionRuntimeOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly cwd: string;
   readonly runtimeMode: RuntimeMode;
+  readonly buildMcpSessionInstructions: McpSessionInstructionBuilder;
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
@@ -688,6 +689,14 @@ function toCodexUserInputAnswers(
 function currentProviderThreadId(session: ProviderSession): string | undefined {
   return readResumeCursorThreadId(session.resumeCursor);
 }
+
+export const resolveCodexMcpSessionInstructions = (
+  threadId: ThreadId,
+  buildInstructions: McpSessionInstructionBuilder,
+): Effect.Effect<string | undefined> => {
+  const mcpSession = McpProviderSession.readMcpProviderSession(threadId);
+  return mcpSession ? buildInstructions(mcpSession) : Effect.succeed(undefined);
+};
 
 function updateSession(
   sessionRef: Ref.Ref<ProviderSession>,
@@ -1300,10 +1309,10 @@ export const makeCodexSessionRuntime = (
           const normalizedModel = normalizeCodexModelSlug(
             input.model ?? (yield* Ref.get(sessionRef)).model,
           );
-          const mcpSession = McpProviderSession.readMcpProviderSession(options.threadId);
-          const delegationInstructions = mcpSession
-            ? mcpSessionInstructions(mcpSession.capabilities)
-            : undefined;
+          const delegationInstructions = yield* resolveCodexMcpSessionInstructions(
+            options.threadId,
+            options.buildMcpSessionInstructions,
+          );
           const params = yield* buildTurnStartParams({
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,

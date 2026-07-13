@@ -5,6 +5,7 @@ import {
   KnowledgeError,
   ProjectMcpOverrides,
   type ProjectEngineDelegationOverrides,
+  type ProviderDriverKind,
   resolveDelegationRoles,
   resolveEffectiveMcpSettings,
 } from "@t3tools/contracts";
@@ -59,8 +60,8 @@ const bootstrapWorkflow = `# Implementation Engine knowledge bootstrap
 1. Read the project's package manifests and framework/compiler/build configuration. Identify language, framework, package manager, test runner, async model, state management, styling, i18n, and default branch.
 2. Read lint configuration plus CONTRIBUTING, README, AGENTS, and equivalent project guidance. Extract conventions; do not infer rules from a single example.
 3. Map source layers, path aliases, file suffixes, and allowed import directions. Verify the matrix against actual imports.
-4. Inventory reusable components, hooks, directives, utilities, services, and stores. Rank them by import consumers and record when each should be reused.
-5. Search recurring fixes and tests for lessons, gotchas, and high-risk rules.
+4. Inventory durable knowledge entities across architecture, capabilities, reusable building blocks, contracts, data, integrations, and operations. Include UI primitives, services, repositories, clients, schemas, design tokens, animations, infrastructure, tests, deployment, and recovery when present. Rank reusable items by consumers and record when each should be reused.
+5. Record relationships between those entities, then search recurring fixes and tests for lessons, gotchas, and high-risk rules.
 6. Save discoveries with engine_knowledge_save as proposed. Present the proposed profile and important rules to the user. Only after explicit approval, save them again with confirmed=true.
 
 Keep evidence in summaries. Do not write bootstrap files into the repository.`;
@@ -68,15 +69,26 @@ Keep evidence in summaries. Do not write bootstrap files into the repository.`;
 const providerCapability = {
   codex: "codex-agent",
   cursor: "cursor-agent",
+  claudeAgent: "claude-agent",
 } as const;
 
 const targetAvailable = (
   target: EngineDelegationTarget,
   capabilities: ReadonlySet<McpCapability>,
-): boolean => target.provider === "inline" || capabilities.has(providerCapability[target.provider]);
+  providerDriver?: ProviderDriverKind,
+): boolean =>
+  target.provider === "inline" ||
+  (target.provider === "claudeAgent" && providerDriver === "claudeAgent") ||
+  capabilities.has(providerCapability[target.provider]);
 
-const availableDelegationProviders = (capabilities: ReadonlySet<McpCapability>) => {
+const availableDelegationProviders = (
+  capabilities: ReadonlySet<McpCapability>,
+  providerDriver?: ProviderDriverKind,
+) => {
   const providers = new Set<EngineDelegationTarget["provider"]>(["inline"]);
+  if (providerDriver === "claudeAgent" || capabilities.has("claude-agent")) {
+    providers.add("claudeAgent");
+  }
   if (capabilities.has("codex-agent")) providers.add("codex");
   if (capabilities.has("cursor-agent")) providers.add("cursor");
   return providers;
@@ -85,11 +97,12 @@ const availableDelegationProviders = (capabilities: ReadonlySet<McpCapability>) 
 const resolveTargets = (
   chain: ReadonlyArray<EngineDelegationTarget>,
   capabilities: ReadonlySet<McpCapability>,
+  providerDriver?: ProviderDriverKind,
 ) =>
   chain.map((target) => {
     const capability =
       target.provider === "inline" ? undefined : providerCapability[target.provider];
-    const available = capability === undefined || capabilities.has(capability);
+    const available = targetAvailable(target, capabilities, providerDriver);
     return {
       target,
       available,
@@ -100,17 +113,21 @@ const resolveTargets = (
 const delegationConfiguration = (
   settings: EngineDelegationSettings,
   capabilities: ReadonlySet<McpCapability>,
+  providerDriver?: ProviderDriverKind,
 ) => {
-  const roles = resolveDelegationRoles(settings, availableDelegationProviders(capabilities));
+  const roles = resolveDelegationRoles(
+    settings,
+    availableDelegationProviders(capabilities, providerDriver),
+  );
   return {
     roles,
     skillOverrides: settings.skillOverrides,
     resolved: {
       roles: {
-        scout: resolveTargets(roles.scout, capabilities),
-        worker: resolveTargets(roles.worker, capabilities),
-        consensus: resolveTargets(roles.consensus, capabilities),
-        scanner: resolveTargets(roles.scanner, capabilities),
+        scout: resolveTargets(roles.scout, capabilities, providerDriver),
+        worker: resolveTargets(roles.worker, capabilities, providerDriver),
+        consensus: resolveTargets(roles.consensus, capabilities, providerDriver),
+        scanner: resolveTargets(roles.scanner, capabilities, providerDriver),
       },
       skillOverrides: Object.fromEntries(
         Object.entries(settings.skillOverrides).map(([workflow, override]) => [
@@ -118,16 +135,16 @@ const delegationConfiguration = (
           {
             ...(override.scout === undefined
               ? {}
-              : { scout: resolveTargets(override.scout, capabilities) }),
+              : { scout: resolveTargets(override.scout, capabilities, providerDriver) }),
             ...(override.worker === undefined
               ? {}
-              : { worker: resolveTargets(override.worker, capabilities) }),
+              : { worker: resolveTargets(override.worker, capabilities, providerDriver) }),
             ...(override.consensus === undefined
               ? {}
-              : { consensus: resolveTargets(override.consensus, capabilities) }),
+              : { consensus: resolveTargets(override.consensus, capabilities, providerDriver) }),
             ...(override.scanner === undefined
               ? {}
-              : { scanner: resolveTargets(override.scanner, capabilities) }),
+              : { scanner: resolveTargets(override.scanner, capabilities, providerDriver) }),
           },
         ]),
       ),
@@ -174,12 +191,13 @@ const configurationResult = (input: {
   readonly projectOverrides?: ProjectEngineDelegationOverrides | undefined;
   readonly effective: EngineDelegationSettings;
   readonly capabilities: ReadonlySet<McpCapability>;
+  readonly providerDriver?: ProviderDriverKind;
 }) => ({
   scope: input.scope,
   global: input.global,
   ...(input.projectOverrides === undefined ? {} : { projectOverrides: input.projectOverrides }),
   effective: input.effective,
-  ...delegationConfiguration(input.effective, input.capabilities),
+  ...delegationConfiguration(input.effective, input.capabilities, input.providerDriver),
 });
 
 const normalizeProjectDelegation = (
@@ -244,14 +262,17 @@ export const EngineKnowledgeToolkitHandlersLive = EngineKnowledgeToolkit.toLayer
       );
       const scanners = resolveDelegationRoles(
         effective.engine.delegation,
-        availableDelegationProviders(scope.capabilities),
-      ).scanner.filter((target) => targetAvailable(target, scope.capabilities));
+        availableDelegationProviders(scope.capabilities, scope.providerDriver),
+      ).scanner.filter((target) =>
+        targetAvailable(target, scope.capabilities, scope.providerDriver),
+      );
       return {
         data: {
           workflow: selectBootstrapWorkflow({
             hasCodebase: true,
             scanners,
             legacyWorkflow: bootstrapWorkflow,
+            nativeClaudeSubagents: scope.providerDriver === "claudeAgent",
           }),
           importedRules: imported,
           packs: selected,
@@ -261,13 +282,35 @@ export const EngineKnowledgeToolkitHandlersLive = EngineKnowledgeToolkit.toLayer
   engine_knowledge_merge_reports: ({ reports }) =>
     Effect.gen(function* () {
       const scope = yield* requireCapability;
-      const merged = mergeScannerReports(reports);
+      const crypto = yield* Crypto.Crypto;
+      const scanRunId = yield* crypto.randomUUIDv4.pipe(fail("merge-reports"));
+      const merged = mergeScannerReports(reports, { scanRunId });
+      yield* Effect.all(
+        [
+          saveKnowledge(scope.projectId!, "project_profile", merged.candidates.project_profile),
+          saveKnowledge(
+            scope.projectId!,
+            "knowledge_entities",
+            merged.candidates.knowledge_entities,
+          ),
+          saveKnowledge(
+            scope.projectId!,
+            "knowledge_relationships",
+            merged.candidates.knowledge_relationships,
+          ),
+          saveKnowledge(scope.projectId!, "rules", merged.candidates.rules),
+          saveKnowledge(scope.projectId!, "lessons_learned", merged.candidates.lessons_learned),
+        ],
+        { concurrency: 1 },
+      ).pipe(fail("merge-reports"));
       yield* recordKnowledgeScan(scope.projectId!, {
+        scanRunId,
         reportCount: reports.length,
         conflictCount: merged.conflicts.length,
         failureCount: merged.failures.length,
+        markMissingStale: reports.some((report) => report.failures.length === 0),
       }).pipe(fail("merge-reports"));
-      return { data: merged };
+      return { data: { ...merged, scanRunId, persisted: true } };
     }),
   engine_case_open: (input) =>
     Effect.gen(function* () {
@@ -312,6 +355,7 @@ export const EngineKnowledgeToolkitHandlersLive = EngineKnowledgeToolkit.toLayer
           projectOverrides,
           effective,
           capabilities: scope.capabilities,
+          ...(scope.providerDriver === undefined ? {} : { providerDriver: scope.providerDriver }),
         }),
       };
     }),
@@ -352,6 +396,7 @@ export const EngineKnowledgeToolkitHandlersLive = EngineKnowledgeToolkit.toLayer
             global: updatedSettings.mcp.engine.delegation,
             effective: updatedSettings.mcp.engine.delegation,
             capabilities: scope.capabilities,
+            ...(scope.providerDriver === undefined ? {} : { providerDriver: scope.providerDriver }),
           }),
         };
       }
@@ -399,6 +444,7 @@ export const EngineKnowledgeToolkitHandlersLive = EngineKnowledgeToolkit.toLayer
           projectOverrides: nextDelegation,
           effective,
           capabilities: scope.capabilities,
+          ...(scope.providerDriver === undefined ? {} : { providerDriver: scope.providerDriver }),
         }),
       };
     }),

@@ -20,8 +20,13 @@ const jsonColumns = new Set([
   "layer_model",
   "path_aliases",
   "file_suffix_conventions",
+  "locations",
+  "public_api",
+  "metadata",
+  "evidence",
   "props_or_api",
   "keywords",
+  "tags",
   "gotchas",
   "imports",
   "capabilities",
@@ -48,19 +53,39 @@ const tableColumns: Record<KnowledgeTable, readonly string[]> = {
     "ticket_pattern",
     "default_branch",
     "notes",
+    "evidence",
     "agreed_by",
   ],
-  reusable_components: [
-    "name",
+  knowledge_entities: [
+    "entity_key",
+    "category",
     "kind",
-    "import_path",
+    "name",
     "summary",
-    "when_to_use",
-    "props_or_api",
-    "example_snippet",
-    "keywords",
+    "locations",
+    "public_api",
+    "reuse_guidance",
+    "tags",
+    "metadata",
+    "evidence",
     "consumer_count",
     "agreed_by",
+    "scan_run_id",
+    "content_fingerprint",
+    "stale",
+  ],
+  knowledge_relationships: [
+    "relationship_key",
+    "source_entity_key",
+    "target_entity_key",
+    "kind",
+    "summary",
+    "metadata",
+    "evidence",
+    "agreed_by",
+    "scan_run_id",
+    "content_fingerprint",
+    "stale",
   ],
   lessons_learned: ["title", "body", "category", "scope_glob", "keywords", "agreed_by"],
   rules: [
@@ -84,25 +109,32 @@ const tableColumns: Record<KnowledgeTable, readonly string[]> = {
     "enabled",
     "agreed_by",
   ],
-  features: [
-    "key",
-    "name",
-    "summary",
-    "keywords",
-    "capabilities",
-    "relationships",
-    "gotchas",
-    "when_touched_ask",
-    "agreed_by",
-  ],
 };
 
 const searchColumns: Record<SearchableKnowledgeTable, readonly string[]> = {
-  reusable_components: ["name", "summary", "when_to_use", "keywords", "import_path"],
+  knowledge_entities: [
+    "entity_key",
+    "category",
+    "kind",
+    "name",
+    "summary",
+    "locations",
+    "public_api",
+    "reuse_guidance",
+    "tags",
+    "metadata",
+  ],
+  knowledge_relationships: [
+    "relationship_key",
+    "source_entity_key",
+    "target_entity_key",
+    "kind",
+    "summary",
+    "metadata",
+  ],
   lessons_learned: ["title", "body", "category", "keywords", "scope_glob"],
   rules: ["concern", "rule_text", "gotchas", "keywords"],
   audit_rules: ["rule_id", "description", "detection_hint", "fix_guidance", "pack"],
-  features: ["key", "name", "summary", "keywords", "capabilities", "relationships", "gotchas"],
 };
 
 const normalizeRow = (row: Record<string, unknown>) =>
@@ -165,6 +197,7 @@ export const searchKnowledge = (
   input: {
     table: SearchableKnowledgeTable;
     query: string;
+    category?: string | undefined;
     scopePath?: string | undefined;
     limit?: number | undefined;
   },
@@ -182,6 +215,12 @@ export const searchKnowledge = (
         return `CASE WHEN lower(${haystack}) LIKE ? THEN 1 ELSE 0 END`;
       });
       const score = termScores.length > 0 ? termScores.join(" + ") : "1";
+      const categoryFilter =
+        input.table === "knowledge_entities" && input.category ? " AND category = ?" : "";
+      const staleFilter =
+        input.table === "knowledge_entities" || input.table === "knowledge_relationships"
+          ? " AND stale = 0"
+          : "";
       const where = terms.length > 0 ? `(${score}) > 0` : "1 = 1";
       const scopeFilter =
         input.table === "lessons_learned" && input.scopePath
@@ -190,11 +229,12 @@ export const searchKnowledge = (
       const scoreParams = [...params];
       const whereParams = [...params];
       const allParams = [...scoreParams, ...whereParams];
+      if (categoryFilter) allParams.push(input.category);
       if (scopeFilter) allParams.push(input.scopePath);
       allParams.push(Math.min(input.limit ?? 20, 100));
       const rows = yield* sql.unsafe<Record<string, unknown>>(
         `SELECT *, (${score}) AS rank FROM ${input.table}
-         WHERE status != 'rejected' AND ${where}${scopeFilter}
+         WHERE status != 'rejected' AND ${where}${staleFilter}${categoryFilter}${scopeFilter}
          ORDER BY CASE status WHEN 'confirmed' THEN 0 ELSE 1 END, rank DESC, updated_at DESC
          LIMIT ?`,
         allParams,
@@ -211,9 +251,11 @@ export const getKnowledge = (projectId: ProjectId, table: KnowledgeTable, id: st
       const key =
         table === "project_profile"
           ? "id"
-          : table === "features" && typeof id === "string"
-            ? "key"
-            : "id";
+          : table === "knowledge_entities" && typeof id === "string"
+            ? "entity_key"
+            : table === "knowledge_relationships" && typeof id === "string"
+              ? "relationship_key"
+              : "id";
       const rows = yield* sql.unsafe<Record<string, unknown>>(
         `SELECT * FROM ${table} WHERE ${key} = ? LIMIT 1`,
         [table === "project_profile" ? 1 : id],
@@ -261,23 +303,24 @@ export const saveKnowledge = (
         let id = typeof row.id === "number" ? row.id : undefined;
         if (id === undefined && source === "bootstrap") {
           const match =
-            table === "reusable_components" &&
-            typeof row.name === "string" &&
-            typeof row.import_path === "string"
+            table === "knowledge_entities" && typeof row.entity_key === "string"
               ? yield* sql.unsafe<{
                   readonly id: number;
                   readonly status: string;
                   readonly source: string;
                 }>(
-                  "SELECT id, status, source FROM reusable_components WHERE name = ? AND import_path = ? LIMIT 1",
-                  [row.name, row.import_path],
+                  "SELECT id, status, source FROM knowledge_entities WHERE entity_key = ? LIMIT 1",
+                  [row.entity_key],
                 )
-              : table === "features" && typeof row.key === "string"
+              : table === "knowledge_relationships" && typeof row.relationship_key === "string"
                 ? yield* sql.unsafe<{
                     readonly id: number;
                     readonly status: string;
                     readonly source: string;
-                  }>("SELECT id, status, source FROM features WHERE key = ? LIMIT 1", [row.key])
+                  }>(
+                    "SELECT id, status, source FROM knowledge_relationships WHERE relationship_key = ? LIMIT 1",
+                    [row.relationship_key],
+                  )
                 : table === "rules" && typeof row.rule_text === "string"
                   ? yield* sql.unsafe<{
                       readonly id: number;
@@ -307,8 +350,13 @@ export const saveKnowledge = (
         }
         if (id !== undefined) {
           if (columns.length > 0) {
+            const refreshSeen =
+              source === "bootstrap" &&
+              (table === "knowledge_entities" || table === "knowledge_relationships")
+                ? ", stale = 0, last_seen_at = CURRENT_TIMESTAMP"
+                : "";
             yield* sql.unsafe(
-              `UPDATE ${table} SET ${columns.map((column) => `${column} = ?`).join(", ")}, status = ?, source = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              `UPDATE ${table} SET ${columns.map((column) => `${column} = ?`).join(", ")}, status = ?, source = ?, updated_at = CURRENT_TIMESTAMP${refreshSeen} WHERE id = ?`,
               [...values, status, source, id],
             );
           }
@@ -367,15 +415,23 @@ export const importAuditPacks = (
 export const recordKnowledgeScan = (
   projectId: ProjectId,
   stats: {
+    readonly scanRunId: string;
     readonly reportCount: number;
     readonly conflictCount: number;
     readonly failureCount: number;
+    readonly markMissingStale?: boolean;
   },
 ) =>
   withProjectDatabase(
     projectId,
     Effect.gen(function* () {
       const { sql } = yield* KnowledgeDatabase;
+      if (stats.markMissingStale !== false) {
+        yield* sql`UPDATE knowledge_entities SET stale = 1, updated_at = CURRENT_TIMESTAMP
+          WHERE source = 'bootstrap' AND (scan_run_id IS NULL OR scan_run_id != ${stats.scanRunId})`;
+        yield* sql`UPDATE knowledge_relationships SET stale = 1, updated_at = CURRENT_TIMESTAMP
+          WHERE source = 'bootstrap' AND (scan_run_id IS NULL OR scan_run_id != ${stats.scanRunId})`;
+      }
       yield* sql`INSERT INTO bootstrap_state (phase, stats) VALUES ('knowledge-scan', ${encodeJson(stats)})
         ON CONFLICT(phase) DO UPDATE SET completed_at=CURRENT_TIMESTAMP, stats=excluded.stats`;
     }),
@@ -508,6 +564,7 @@ export const queryKnowledge = (
     table: KnowledgeTable;
     status?: string | undefined;
     query?: string | undefined;
+    categories?: ReadonlyArray<string> | undefined;
     offset?: number | undefined;
     limit?: number | undefined;
   },
@@ -521,6 +578,10 @@ export const queryKnowledge = (
       if (input.status) {
         clauses.push("status = ?");
         params.push(input.status);
+      }
+      if (input.table === "knowledge_entities" && input.categories?.length) {
+        clauses.push(`category IN (${input.categories.map(() => "?").join(",")})`);
+        params.push(...input.categories);
       }
       if (input.query?.trim()) {
         const columns =
@@ -559,9 +620,11 @@ export const setKnowledgeStatus = (
       const key =
         table === "project_profile"
           ? "id"
-          : table === "features" && ids.some((id) => typeof id === "string")
-            ? "key"
-            : "id";
+          : table === "knowledge_entities" && ids.some((id) => typeof id === "string")
+            ? "entity_key"
+            : table === "knowledge_relationships" && ids.some((id) => typeof id === "string")
+              ? "relationship_key"
+              : "id";
       yield* sql.unsafe(
         `UPDATE ${table} SET status = ?, source = 'user', updated_at = CURRENT_TIMESTAMP WHERE ${key} IN (${ids.map(() => "?").join(",")})`,
         [status, ...ids.map((id) => (table === "project_profile" ? 1 : id))],
@@ -582,9 +645,11 @@ export const deleteKnowledgeRow = (
       const key =
         table === "project_profile"
           ? "id"
-          : table === "features" && typeof id === "string"
-            ? "key"
-            : "id";
+          : table === "knowledge_entities" && typeof id === "string"
+            ? "entity_key"
+            : table === "knowledge_relationships" && typeof id === "string"
+              ? "relationship_key"
+              : "id";
       yield* sql.unsafe(`DELETE FROM ${table} WHERE ${key} = ?`, [
         table === "project_profile" ? 1 : id,
       ]);

@@ -9,52 +9,62 @@ const metadata: Record<
 > = {
   "plan-brief": {
     title: "Plan brief",
-    description: "Produce a bounded, copy-ready implementation brief.",
+    description:
+      "Use when the user asks for a quick or brief plan; produce a bounded, copy-ready implementation brief.",
     capability: "engine-planning",
   },
   plan: {
     title: "Plan",
-    description: "Build a decision-complete implementation plan.",
+    description:
+      "Use when the user asks for a detailed implementation plan; build a decision-complete plan.",
     capability: "engine-planning",
   },
   consensus: {
     title: "Consensus",
-    description: "Run an independent multi-model analysis or decision panel.",
+    description:
+      "Use when the user asks for consensus, independent opinions, or a decision panel; run a multi-model analysis.",
     capability: "engine-consensus",
   },
   enrich: {
     title: "Enrich",
-    description: "Enrich a plan with applicable project knowledge.",
+    description:
+      "Use when the user asks to enrich or ground a plan; add applicable project knowledge.",
     capability: "engine-enrich",
   },
   implement: {
     title: "Implement",
-    description: "Execute a crash-resilient, verified implementation loop.",
+    description:
+      "Use when the user asks to implement a plan or substantial change; execute a crash-resilient, verified implementation loop.",
     capability: "engine-implement",
   },
   "quality-audit": {
     title: "Quality audit",
-    description: "Run a broad, evidence-backed quality audit.",
+    description:
+      "Use when the user asks for a broad code-quality audit; run an evidence-backed review.",
     capability: "engine-quality",
   },
   "quality-quick": {
     title: "Quick quality audit",
-    description: "Audit changed files and directly affected callers.",
+    description:
+      "Use when the user asks for a quick or focused quality check; audit changed files and directly affected callers.",
     capability: "engine-quality",
   },
   "quality-pr": {
     title: "Pull request review",
-    description: "Review the actual merge diff and its cross-cutting effects.",
+    description:
+      "Use when the user asks for a pull request review; inspect the merge diff and its cross-cutting effects.",
     capability: "engine-quality",
   },
   "hot-loops": {
     title: "Hot-loop analysis",
-    description: "Find and prioritize repeated expensive work.",
+    description:
+      "Use when the user asks about performance or hot loops; find and prioritize repeated expensive work.",
     capability: "engine-performance",
   },
   typescript: {
     title: "TypeScript",
-    description: "Diagnose and solve TypeScript type-system problems.",
+    description:
+      "Use when the user asks for help with TypeScript types; diagnose and solve type-system problems.",
     capability: "engine-typescript",
   },
 };

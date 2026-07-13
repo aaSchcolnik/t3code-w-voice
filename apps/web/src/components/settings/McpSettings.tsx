@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { type ProjectMcpOverrides } from "@t3tools/contracts";
-import { BotIcon, Code2Icon, MonitorSmartphoneIcon } from "lucide-react";
+import { MonitorSmartphoneIcon } from "lucide-react";
 import { useState } from "react";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
@@ -9,6 +9,7 @@ import { primaryServerProvidersAtom } from "../../state/server";
 import { useProjects } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { ClaudeAI, CursorIcon, OpenAI } from "../Icons";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Field, FieldDescription, FieldLabel } from "../ui/field";
@@ -23,7 +24,7 @@ import {
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
-type McpBooleanKey = "preview" | "codexAgent" | "cursorAgent";
+type McpBooleanKey = "preview" | "codexAgent" | "cursorAgent" | "claudeAgent";
 
 export function McpBooleanControl({
   projectScoped,
@@ -99,6 +100,10 @@ export function McpSettingsPanel() {
   const cursorAvailable = providerEntries.some(
     (entry) =>
       entry.driverKind === "cursor" && entry.enabled && entry.installed && entry.isAvailable,
+  );
+  const claudeAvailable = providerEntries.some(
+    (entry) =>
+      entry.driverKind === "claudeAgent" && entry.enabled && entry.installed && entry.isAvailable,
   );
 
   const updateMcp = (patch: Partial<typeof settings.mcp>) =>
@@ -195,7 +200,32 @@ export function McpSettingsPanel() {
         <SettingsRow
           title={
             <span className="inline-flex items-center gap-2">
-              <Code2Icon className="size-4 text-muted-foreground" />
+              <ClaudeAI className="size-4 shrink-0" aria-hidden />
+              Claude Agent
+            </span>
+          }
+          description="Lets the current agent delegate one-shot tasks to Claude as tracked subagents."
+          status={
+            claudeAvailable
+              ? "Available for new sessions"
+              : "Not available: configure and enable a Claude provider under Providers."
+          }
+          control={
+            <McpBooleanControl
+              projectScoped={selectedProject !== undefined}
+              globalValue={settings.mcp.claudeAgent}
+              projectValue={projectOverrides?.claudeAgent}
+              disabled={!claudeAvailable}
+              label="Enable Claude Agent MCP toolkit"
+              onGlobalChange={(claudeAgent) => updateMcp({ claudeAgent })}
+              onProjectChange={(claudeAgent) => updateProjectBoolean("claudeAgent", claudeAgent)}
+            />
+          }
+        />
+        <SettingsRow
+          title={
+            <span className="inline-flex items-center gap-2">
+              <OpenAI className="size-4 shrink-0" aria-hidden />
               Codex Agent
             </span>
           }
@@ -220,7 +250,7 @@ export function McpSettingsPanel() {
         <SettingsRow
           title={
             <span className="inline-flex items-center gap-2">
-              <BotIcon className="size-4 text-muted-foreground" />
+              <CursorIcon className="size-4 shrink-0" aria-hidden />
               Cursor Agent
             </span>
           }

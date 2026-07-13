@@ -128,14 +128,13 @@ export const CONSENSUS_DEFAULTS: ReadonlyArray<EngineDelegationTarget> = [
   { provider: "cursor", model: "grok-4.5" },
 ];
 
-// Scanner panel, not a fallback chain: every available delegated entry runs and the
-// inline entry represents the Judge's own Claude pass.
+// Scanner panel, not a fallback chain: every available delegated entry runs in parallel.
 export const SCANNER_DEFAULTS: ReadonlyArray<EngineDelegationTarget> = [
   {
-    provider: "inline",
+    provider: "claudeAgent",
     model: "claude-opus-4-8",
     options: [{ id: "effort", value: "max" }],
-    focus: "Run the complete codebase scan inline as the Judge's Claude lane.",
+    focus: "Run the complete codebase scan in a dedicated Claude Opus 4.8 subagent.",
   },
   {
     provider: "codex",
@@ -268,6 +267,7 @@ export const McpSettings = Schema.Struct({
   preview: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   codexAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   cursorAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  claudeAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   engine: McpEngineSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type McpSettings = typeof McpSettings.Type;
@@ -275,6 +275,7 @@ export type McpSettings = typeof McpSettings.Type;
 export const DELEGATION_SUBAGENT_MODEL_BY_PROVIDER = {
   codex: "gpt-5.5",
   cursor: "composer-2.5",
+  claudeAgent: "claude-sonnet-5",
 } as const;
 
 export const NATIVE_SUBAGENT_MODEL_BY_DRIVER = {
@@ -313,11 +314,16 @@ export function resolveDelegationRoles(
   availableProviders: ReadonlySet<DelegatedRunProvider | "inline">,
 ): ResolvedEngineDelegationRoles {
   const defaults = deriveDefaultDelegationRoles(availableProviders);
+  const scanner = settings.roles.scanner ?? defaults.scanner ?? [];
   return {
     scout: settings.roles.scout ?? defaults.scout ?? [],
     worker: settings.roles.worker ?? defaults.worker ?? [],
     consensus: settings.roles.consensus ?? defaults.consensus ?? [],
-    scanner: settings.roles.scanner ?? defaults.scanner ?? [],
+    // Preserve decoding compatibility for existing settings while removing the
+    // old behavior: a persisted inline scanner now resolves to a real Claude run.
+    scanner: scanner.map((target) =>
+      target.provider === "inline" ? { ...target, provider: "claudeAgent" } : target,
+    ),
   };
 }
 
@@ -335,6 +341,7 @@ export function resolveEffectiveMcpSettings(
     preview: overrides.preview ?? global.preview,
     codexAgent: overrides.codexAgent ?? global.codexAgent,
     cursorAgent: overrides.cursorAgent ?? global.cursorAgent,
+    claudeAgent: overrides.claudeAgent ?? global.claudeAgent,
     engine: {
       planning: engineOverrides?.planning ?? global.engine.planning,
       consensus: engineOverrides?.consensus ?? global.engine.consensus,
@@ -1104,6 +1111,7 @@ export const ServerSettingsPatch = Schema.Struct({
       preview: Schema.optionalKey(Schema.Boolean),
       codexAgent: Schema.optionalKey(Schema.Boolean),
       cursorAgent: Schema.optionalKey(Schema.Boolean),
+      claudeAgent: Schema.optionalKey(Schema.Boolean),
       engine: Schema.optionalKey(
         Schema.Struct({
           planning: Schema.optionalKey(Schema.Boolean),

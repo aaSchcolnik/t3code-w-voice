@@ -13,6 +13,7 @@ import { ServerConfig } from "../config.ts";
 import { makeRuntimeSqliteLayer } from "../persistence/Layers/Sqlite.ts";
 import migrateInitial from "./Migrations/001_InitialKnowledgeSchema.ts";
 import migrateScanProvenance from "./Migrations/002_ScanProvenance.ts";
+import migrateGenericKnowledgeEntities from "./Migrations/003_GenericKnowledgeEntities.ts";
 
 export const ARTIFACT_TTL_DAYS = 21;
 export const PROJECT_KNOWLEDGE_IDLE_TTL = "10 minutes";
@@ -65,6 +66,7 @@ const databaseLayer = (projectId: ProjectId) =>
           yield* sql.unsafe("PRAGMA foreign_keys = ON").unprepared;
           yield* migrateInitial;
           yield* migrateScanProvenance;
+          yield* migrateGenericKnowledgeEntities;
           const sweepExpiredArtifacts = sweep().pipe(
             Effect.provideService(SqlClient.SqlClient, sql),
           );

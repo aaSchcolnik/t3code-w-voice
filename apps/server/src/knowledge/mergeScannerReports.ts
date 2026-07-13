@@ -3,10 +3,10 @@ import type { ScannerReport } from "@t3tools/contracts";
 export interface ScannerReportConflict {
   readonly table:
     | "project_profile"
-    | "reusable_components"
+    | "knowledge_entities"
+    | "knowledge_relationships"
     | "rules"
-    | "lessons_learned"
-    | "features";
+    | "lessons_learned";
   readonly key: string;
   readonly scannerValues: ReadonlyArray<{ readonly scanner: string; readonly value: unknown }>;
 }
@@ -19,6 +19,15 @@ const normalize = (value: string): string =>
     .replace(/\s+/g, " ");
 const scannerId = (report: ScannerReport): string =>
   `${report.scanner.provider}/${report.scanner.model}`;
+const fingerprint = (value: unknown): string => {
+  const content = JSON.stringify(value);
+  let hash = 2166136261;
+  for (let index = 0; index < content.length; index += 1) {
+    hash ^= content.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+};
 
 function mergeByKey<T>(input: {
   readonly table: ScannerReportConflict["table"];
@@ -61,7 +70,10 @@ function mergeByKey<T>(input: {
   return { rows, conflicts };
 }
 
-export function mergeScannerReports(reports: ReadonlyArray<ScannerReport>) {
+export function mergeScannerReports(
+  reports: ReadonlyArray<ScannerReport>,
+  options: { readonly scanRunId?: string } = {},
+) {
   const profile = mergeByKey({
     table: "project_profile",
     rows: reports.flatMap((report) =>
@@ -75,24 +87,134 @@ export function mergeScannerReports(reports: ReadonlyArray<ScannerReport>) {
       agreed_by: agreedBy,
     }),
   });
-  const components = mergeByKey({
-    table: "reusable_components",
+  const profileColumns = new Set([
+    "framework",
+    "language",
+    "package_manager",
+    "test_runner",
+    "async_model",
+    "state_management",
+    "component_library",
+    "styling",
+    "i18n",
+    "layer_model",
+    "path_aliases",
+    "file_suffix_conventions",
+    "ticket_pattern",
+    "default_branch",
+  ]);
+  const profileRow = profile.rows.reduce<Record<string, unknown>>(
+    (result, row) => {
+      const key = String(row.key);
+      if (profileColumns.has(key)) result[key] = row.value;
+      else
+        result.notes = `${typeof result.notes === "string" ? `${result.notes}\n` : ""}${key}: ${String(row.value)}`;
+      result.evidence = {
+        ...(typeof result.evidence === "object" && result.evidence !== null ? result.evidence : {}),
+        [key]: row.evidence,
+      };
+      result.agreed_by = [
+        ...new Set([
+          ...(Array.isArray(result.agreed_by) ? result.agreed_by.map(String) : []),
+          ...(Array.isArray(row.agreed_by) ? row.agreed_by.map(String) : []),
+        ]),
+      ];
+      return result;
+    },
+    { source: "bootstrap" },
+  );
+  const legacyEntities = reports.flatMap((report) => [
+    ...(report.reusable_components ?? []).map((row) => ({
+      scanner: scannerId(report),
+      row: {
+        key: `${row.path}#${row.exportName}`,
+        category: "building-block" as const,
+        kind: "component",
+        name: row.exportName,
+        summary: row.summary,
+        locations: [row.path],
+        publicApi: [],
+        reuseWhen: row.reuseWhen,
+        tags: [],
+        metadata: {},
+        evidence: row.evidence,
+      },
+    })),
+    ...(report.features ?? []).map((row) => ({
+      scanner: scannerId(report),
+      row: {
+        key: `feature:${row.slug}`,
+        category: "capability" as const,
+        kind: "feature",
+        name: row.title,
+        summary: row.summary,
+        locations: row.paths,
+        publicApi: [],
+        reuseWhen: undefined,
+        tags: [],
+        metadata: {},
+        evidence: row.evidence,
+      },
+    })),
+  ]);
+  const entities = mergeByKey({
+    table: "knowledge_entities",
+    rows: reports
+      .flatMap((report) =>
+        report.entities.map((row) => ({
+          scanner: scannerId(report),
+          key: row.key,
+          row,
+        })),
+      )
+      .concat(legacyEntities.map(({ scanner, row }) => ({ scanner, key: row.key, row }))),
+    substance: (row) => ({
+      category: row.category,
+      kind: normalize(row.kind),
+      summary: normalize(`${row.summary} ${row.reuseWhen ?? ""}`),
+      locations: [...row.locations].sort(),
+    }),
+    toCandidate: (row, agreedBy) => ({
+      entity_key: row.key,
+      category: row.category,
+      kind: row.kind,
+      name: row.name,
+      summary: row.summary,
+      locations: row.locations,
+      public_api: row.publicApi,
+      reuse_guidance: row.reuseWhen,
+      tags: row.tags,
+      metadata: row.metadata,
+      evidence: row.evidence,
+      agreed_by: agreedBy,
+      scan_run_id: options.scanRunId,
+      content_fingerprint: fingerprint(row),
+      stale: 0,
+      source: "bootstrap",
+    }),
+  });
+  const relationships = mergeByKey({
+    table: "knowledge_relationships",
     rows: reports.flatMap((report) =>
-      report.reusable_components.map((row) => ({
+      report.relationships.map((row) => ({
         scanner: scannerId(report),
-        key: `${row.path}:${row.exportName}`,
+        key: `${row.sourceKey}|${row.kind}|${row.targetKey}`,
         row,
       })),
     ),
-    substance: (row) => normalize(`${row.summary} ${row.reuseWhen ?? ""}`),
+    substance: (row) => ({ kind: normalize(row.kind), summary: normalize(row.summary ?? "") }),
     toCandidate: (row, agreedBy) => ({
-      name: row.exportName,
-      kind: "component",
-      import_path: row.path,
+      relationship_key: `${row.sourceKey}|${row.kind}|${row.targetKey}`,
+      source_entity_key: row.sourceKey,
+      target_entity_key: row.targetKey,
+      kind: row.kind,
       summary: row.summary,
-      when_to_use: row.reuseWhen,
-      keywords: [],
+      metadata: row.metadata,
+      evidence: row.evidence,
       agreed_by: agreedBy,
+      scan_run_id: options.scanRunId,
+      content_fingerprint: fingerprint(row),
+      stale: 0,
       source: "bootstrap",
     }),
   });
@@ -129,38 +251,20 @@ export function mergeScannerReports(reports: ReadonlyArray<ScannerReport>) {
       source: "bootstrap",
     }),
   });
-  const features = mergeByKey({
-    table: "features",
-    rows: reports.flatMap((report) =>
-      report.features.map((row) => ({ scanner: scannerId(report), key: row.slug, row })),
-    ),
-    substance: (row) => normalize(`${row.title} ${row.summary}`),
-    toCandidate: (row, agreedBy) => ({
-      key: row.slug,
-      name: row.title,
-      summary: row.summary,
-      keywords: [],
-      capabilities: row.paths,
-      relationships: [],
-      gotchas: [],
-      when_touched_ask: [],
-      agreed_by: agreedBy,
-      source: "bootstrap",
-    }),
-  });
   return {
     candidates: {
-      project_profile: profile.rows,
-      reusable_components: components.rows,
+      project_profile: profile.rows.length > 0 ? [profileRow] : [],
+      knowledge_entities: entities.rows,
+      knowledge_relationships: relationships.rows,
       rules: rules.rows,
       lessons_learned: lessons.rows,
-      features: features.rows,
     },
     conflicts: [
       ...profile.conflicts,
-      ...components.conflicts,
+      ...entities.conflicts,
+      ...relationships.conflicts,
+      ...rules.conflicts,
       ...lessons.conflicts,
-      ...features.conflicts,
     ],
     failures: reports.flatMap((report) =>
       report.failures.map((reason) => ({ scanner: scannerId(report), reason })),

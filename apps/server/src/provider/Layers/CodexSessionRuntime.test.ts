@@ -4,7 +4,13 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { describe } from "vite-plus/test";
-import { DEFAULT_MODEL, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_MODEL,
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 
@@ -19,7 +25,9 @@ import {
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
   openCodexThread,
+  resolveCodexMcpSessionInstructions,
 } from "./CodexSessionRuntime.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
 
 describe("CodexSessionRuntimeIdentifierGenerationError", () => {
@@ -243,30 +251,66 @@ describe("buildTurnStartParams", () => {
     NodeAssert.ok(instructions.trimEnd().endsWith("</collaboration_mode>"));
   });
 
-  it("omits collaboration mode when interaction mode is absent", () => {
-    const params = Effect.runSync(
-      buildTurnStartParams({
+  it.effect("emits the T3 Code skill catalog inside Codex collaboration instructions", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread-codex-catalog");
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-codex-catalog"),
+        threadId,
+        projectId: ProjectId.make("project-codex-catalog"),
+        providerSessionId: "provider-session-codex-catalog",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        capabilities: new Set(["engine-knowledge"]),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+
+      try {
+        const delegationInstructions = yield* resolveCodexMcpSessionInstructions(threadId, () =>
+          Effect.succeed("## T3 Code skills\n\n- **Release notes** (`release-notes`)"),
+        );
+        const params = yield* buildTurnStartParams({
+          threadId: "provider-thread-catalog",
+          runtimeMode: "full-access",
+          prompt: "Draft the release notes",
+          interactionMode: "default",
+          ...(delegationInstructions ? { delegationInstructions } : {}),
+        });
+
+        NodeAssert.match(
+          params.collaborationMode?.settings.developer_instructions ?? "",
+          /## T3 Code skills[\s\S]*release-notes/,
+        );
+      } finally {
+        McpProviderSession.clearMcpProviderSession(threadId);
+      }
+    }),
+  );
+
+  it.effect("omits collaboration mode when interaction mode is absent", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
         threadId: "provider-thread-1",
         runtimeMode: "approval-required",
         prompt: "Review",
-      }),
-    );
+      });
 
-    NodeAssert.deepStrictEqual(params, {
-      threadId: "provider-thread-1",
-      approvalPolicy: "untrusted",
-      approvalsReviewer: "user",
-      sandboxPolicy: {
-        type: "readOnly",
-      },
-      input: [
-        {
-          type: "text",
-          text: "Review",
+      NodeAssert.deepStrictEqual(params, {
+        threadId: "provider-thread-1",
+        approvalPolicy: "untrusted",
+        approvalsReviewer: "user",
+        sandboxPolicy: {
+          type: "readOnly",
         },
-      ],
-    });
-  });
+        input: [
+          {
+            type: "text",
+            text: "Review",
+          },
+        ],
+      });
+    }),
+  );
 });
 
 describe("buildCodexDeveloperInstructions", () => {

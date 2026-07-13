@@ -28,6 +28,7 @@ import { EngineToolkit } from "./tools.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ProjectionProjectRepository } from "../../../persistence/Services/ProjectionProjects.ts";
 import { SkillRepository } from "../../../persistence/Services/Skills.ts";
+import { builtinSkillToolName, isSkillAvailable } from "../../skillCatalog.ts";
 
 const Chunk = Schema.Struct({
   id: Schema.String,
@@ -154,10 +155,15 @@ const workflow = (
         });
       }
     }
-    const [rules, features, lessons, components] = yield* Effect.all(
+    const [rules, capabilities, lessons, buildingBlocks, knowledgeEntities] = yield* Effect.all(
       [
         searchKnowledge(scope.projectId!, { table: "rules", query: input.task, limit: 8 }),
-        searchKnowledge(scope.projectId!, { table: "features", query: input.task, limit: 6 }),
+        searchKnowledge(scope.projectId!, {
+          table: "knowledge_entities",
+          category: "capability",
+          query: input.task,
+          limit: 6,
+        }),
         searchKnowledge(scope.projectId!, {
           table: "lessons_learned",
           query: input.task,
@@ -165,9 +171,15 @@ const workflow = (
           limit: 8,
         }),
         searchKnowledge(scope.projectId!, {
-          table: "reusable_components",
+          table: "knowledge_entities",
+          category: "building-block",
           query: input.task,
           limit: 6,
+        }),
+        searchKnowledge(scope.projectId!, {
+          table: "knowledge_entities",
+          query: input.task,
+          limit: 10,
         }),
       ],
       { concurrency: "unbounded" },
@@ -175,9 +187,10 @@ const workflow = (
     const context = {
       profile: status.profile,
       rules,
-      features,
+      features: capabilities,
       lessons,
-      reusableComponents: components,
+      reusableComponents: buildingBlocks,
+      knowledgeEntities,
     };
     const resolvedDelegation = resolveDelegationChains({
       settings: effectiveMcp.engine.delegation,
@@ -268,17 +281,20 @@ export const EngineToolkitHandlersLive = EngineToolkit.toLayer({
       return {
         data: {
           skills: records
-            .filter(
-              (skill) =>
-                skill.source !== "builtin" &&
-                skill.enabled &&
-                skillOverrides?.[skill.skillId] !== false,
+            .filter((skill) =>
+              isSkillAvailable(skill, {
+                projectSkillOverrides: skillOverrides,
+                capabilities: scope.capabilities,
+              }),
             )
             .map((skill) => ({
               slug: skill.slug,
               title: skill.title,
               description: skill.description,
+              source: skill.source,
               activeVersion: skill.activeVersion,
+              tool:
+                skill.source === "builtin" ? builtinSkillToolName(skill.slug) : "engine_skill_run",
             })),
         },
       };

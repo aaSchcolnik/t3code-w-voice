@@ -2,6 +2,7 @@ import {
   type EngineDelegationRole,
   type EngineDelegationTarget,
   type ModelSelection,
+  type SelectProviderOptionDescriptor,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
@@ -75,6 +76,26 @@ const replaceTarget = (
 ): ReadonlyArray<EngineDelegationTarget> =>
   chain.map((entry, entryIndex) => (entryIndex === index ? target : entry));
 
+export function findDelegationReasoningDescriptor(
+  target: EngineDelegationTarget,
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  model = target.model,
+): SelectProviderOptionDescriptor | undefined {
+  const matchingEntries = entries.filter(
+    (entry) =>
+      entry.driverKind === target.provider &&
+      (target.providerInstanceId === undefined || entry.instanceId === target.providerInstanceId),
+  );
+  const selectedModel = matchingEntries
+    .flatMap((entry) => entry.models)
+    .find((candidate) => candidate.slug === (model ?? matchingEntries[0]?.models[0]?.slug));
+  return selectedModel?.capabilities?.optionDescriptors?.find(
+    (descriptor): descriptor is SelectProviderOptionDescriptor =>
+      descriptor.type === "select" &&
+      (descriptor.id === "effort" || descriptor.id === "reasoningEffort"),
+  );
+}
+
 export function ChainEditor({
   chain,
   providerEntries,
@@ -86,6 +107,12 @@ export function ChainEditor({
   onChange: (chain: ReadonlyArray<EngineDelegationTarget>) => void;
   role: EngineDelegationRole;
 }) {
+  const providerItems = [
+    ...(role === "scanner" ? [] : [{ value: "inline" as const, label: "Inline" }]),
+    { value: "cursor" as const, label: "Cursor" },
+    { value: "codex" as const, label: "Codex" },
+    { value: "claudeAgent" as const, label: "Claude" },
+  ];
   return (
     <FieldGroup className="w-full gap-3">
       {chain.map((target, index) => {
@@ -117,7 +144,17 @@ export function ChainEditor({
           { value: PROVIDER_DEFAULT_MODEL, label: "Provider default" },
           ...[...models].map(([value, label]) => ({ value, label })),
         ];
-        const reasoning = target.options?.find(({ id }) => id === "reasoningEffort")?.value;
+        const reasoningDescriptor = findDelegationReasoningDescriptor(target, matchingEntries);
+        const reasoning = target.options?.find(({ id }) => id === reasoningDescriptor?.id)?.value;
+        const reasoningItems = reasoningDescriptor
+          ? [
+              { value: DEFAULT_REASONING, label: "Model default" },
+              ...reasoningDescriptor.options.map((option) => ({
+                value: option.id,
+                label: option.label,
+              })),
+            ]
+          : [];
 
         return (
           <Field
@@ -175,14 +212,15 @@ export function ChainEditor({
               <Field>
                 <FieldLabel>Provider</FieldLabel>
                 <Select
-                  items={[
-                    { value: "inline", label: "Inline" },
-                    { value: "cursor", label: "Cursor" },
-                    { value: "codex", label: "Codex" },
-                  ]}
+                  items={providerItems}
                   value={target.provider}
                   onValueChange={(provider) => {
-                    if (provider !== "inline" && provider !== "cursor" && provider !== "codex")
+                    if (
+                      provider !== "inline" &&
+                      provider !== "cursor" &&
+                      provider !== "codex" &&
+                      provider !== "claudeAgent"
+                    )
                       return;
                     onChange(replaceTarget(chain, index, { provider }));
                   }}
@@ -192,9 +230,11 @@ export function ChainEditor({
                   </SelectTrigger>
                   <SelectPopup>
                     <SelectGroup>
-                      <SelectItem value="inline">Inline</SelectItem>
-                      <SelectItem value="cursor">Cursor</SelectItem>
-                      <SelectItem value="codex">Codex</SelectItem>
+                      {providerItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
                     </SelectGroup>
                   </SelectPopup>
                 </Select>
@@ -238,10 +278,24 @@ export function ChainEditor({
                   value={target.model ?? PROVIDER_DEFAULT_MODEL}
                   onValueChange={(model) => {
                     if (model === null) return;
+                    const nextModel = model === PROVIDER_DEFAULT_MODEL ? undefined : model;
+                    const nextReasoningDescriptor = findDelegationReasoningDescriptor(
+                      target,
+                      matchingEntries,
+                      nextModel,
+                    );
+                    const options = (target.options ?? []).filter(({ id, value }) => {
+                      if (id !== "effort" && id !== "reasoningEffort") return true;
+                      return (
+                        id === nextReasoningDescriptor?.id &&
+                        nextReasoningDescriptor.options.some((option) => option.id === value)
+                      );
+                    });
                     onChange(
                       replaceTarget(chain, index, {
                         ...target,
-                        ...(model === PROVIDER_DEFAULT_MODEL ? { model: undefined } : { model }),
+                        model: nextModel,
+                        options: options.length === 0 ? undefined : options,
                       }),
                     );
                   }}
@@ -260,49 +314,44 @@ export function ChainEditor({
                   </SelectPopup>
                 </Select>
               </Field>
-              <Field data-disabled={target.provider !== "codex" || undefined}>
-                <FieldLabel>Reasoning effort</FieldLabel>
-                <Select
-                  items={[
-                    { value: DEFAULT_REASONING, label: "Model default" },
-                    { value: "low", label: "Low" },
-                    { value: "medium", label: "Medium" },
-                    { value: "high", label: "High" },
-                    { value: "xhigh", label: "Extra high" },
-                  ]}
-                  disabled={target.provider !== "codex"}
-                  value={typeof reasoning === "string" ? reasoning : DEFAULT_REASONING}
-                  onValueChange={(value) => {
-                    if (value === null) return;
-                    const remaining = (target.options ?? []).filter(
-                      ({ id }) => id !== "reasoningEffort",
-                    );
-                    const options =
-                      value === DEFAULT_REASONING
-                        ? remaining
-                        : [...remaining, { id: "reasoningEffort", value }];
-                    onChange(
-                      replaceTarget(chain, index, {
-                        ...target,
-                        options: options.length === 0 ? undefined : options,
-                      }),
-                    );
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectPopup>
-                    <SelectGroup>
-                      <SelectItem value={DEFAULT_REASONING}>Model default</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="xhigh">Extra high</SelectItem>
-                    </SelectGroup>
-                  </SelectPopup>
-                </Select>
-              </Field>
+              {reasoningDescriptor ? (
+                <Field>
+                  <FieldLabel>Reasoning effort</FieldLabel>
+                  <Select
+                    items={reasoningItems}
+                    value={typeof reasoning === "string" ? reasoning : DEFAULT_REASONING}
+                    onValueChange={(value) => {
+                      if (value === null) return;
+                      const remaining = (target.options ?? []).filter(
+                        ({ id }) => id !== "effort" && id !== "reasoningEffort",
+                      );
+                      const options =
+                        value === DEFAULT_REASONING
+                          ? remaining
+                          : [...remaining, { id: reasoningDescriptor.id, value }];
+                      onChange(
+                        replaceTarget(chain, index, {
+                          ...target,
+                          options: options.length === 0 ? undefined : options,
+                        }),
+                      );
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectPopup>
+                      <SelectGroup>
+                        {reasoningItems.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectPopup>
+                  </Select>
+                </Field>
+              ) : null}
             </div>
             {role === "consensus" ? (
               <Field>

@@ -34,7 +34,7 @@ describe("resolveKnowledgeScanConfiguration", () => {
     });
     expect(resolved.selectedModel?.model).toBe("claude-opus-4-8");
     expect(resolved.availableScanners).toEqual([
-      "inline/claude-opus-4-8",
+      "claudeAgent/claude-opus-4-8",
       "codex/gpt-5.6-terra",
       "cursor/grok-4.5",
       "cursor/glm-5.2",
@@ -47,6 +47,6 @@ describe("resolveKnowledgeScanConfiguration", () => {
       providers: [provider("codex", "codex", ["gpt-5.6-terra"])],
     });
     expect(resolved.selectedModel?.model).toBe("gpt-5.6-terra");
-    expect(resolved.availableScanners).toEqual(["inline/claude-opus-4-8", "codex/gpt-5.6-terra"]);
+    expect(resolved.availableScanners).toEqual(["codex/gpt-5.6-terra"]);
   });
 });

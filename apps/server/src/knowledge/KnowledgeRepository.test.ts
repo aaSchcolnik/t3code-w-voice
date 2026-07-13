@@ -15,6 +15,7 @@ import {
   saveKnowledge,
   searchKnowledge,
   queryKnowledge,
+  recordKnowledgeScan,
   setKnowledgeStatus,
   deleteKnowledgeRow,
   deleteCase,
@@ -155,6 +156,8 @@ it.layer(layer)("KnowledgeRepository", (it) => {
       const projectId = ProjectId.make("scanner-provenance-project");
       const base = {
         profileFacts: [],
+        relationships: [],
+        reusable_components: [],
         rules: [],
         lessons_learned: [],
         features: [],
@@ -164,11 +167,17 @@ it.layer(layer)("KnowledgeRepository", (it) => {
         {
           ...base,
           scanner: { provider: "codex", model: "terra" },
-          reusable_components: [
+          entities: [
             {
-              path: "src/Button.tsx",
-              exportName: "Button",
+              key: "src/Button.tsx#Button",
+              category: "building-block",
+              kind: "component",
+              name: "Button",
               summary: "Shared button",
+              locations: ["src/Button.tsx"],
+              publicApi: ["Button"],
+              tags: [],
+              metadata: {},
               evidence: [],
             },
           ],
@@ -176,19 +185,25 @@ it.layer(layer)("KnowledgeRepository", (it) => {
         {
           ...base,
           scanner: { provider: "cursor", model: "grok" },
-          reusable_components: [
+          entities: [
             {
-              path: "src/Button.tsx",
-              exportName: "Button",
+              key: "src/Button.tsx#Button",
+              category: "building-block",
+              kind: "component",
+              name: "Button",
               summary: "Shared button",
+              locations: ["src/Button.tsx"],
+              publicApi: ["Button"],
+              tags: [],
+              metadata: {},
               evidence: [],
             },
           ],
         },
       ]);
-      yield* saveKnowledge(projectId, "reusable_components", merged.candidates.reusable_components);
+      yield* saveKnowledge(projectId, "knowledge_entities", merged.candidates.knowledge_entities);
       const queried = yield* queryKnowledge(projectId, {
-        table: "reusable_components",
+        table: "knowledge_entities",
         status: "proposed",
       });
       expect(queried.rows[0]?.agreed_by).toEqual(["codex/terra", "cursor/grok"]);
@@ -200,22 +215,97 @@ it.layer(layer)("KnowledgeRepository", (it) => {
     Effect.gen(function* () {
       const projectId = ProjectId.make("idempotent-scan-project");
       const row = {
-        name: "Button",
-        kind: "component",
-        import_path: "src/Button.tsx",
+        entity_key: "src/session.ts#SessionService",
+        category: "building-block",
+        kind: "service",
+        name: "SessionService",
         summary: "Initial summary",
+        locations: ["src/session.ts"],
+        evidence: ["src/session.ts"],
         source: "bootstrap",
       };
-      const [id] = yield* saveKnowledge(projectId, "reusable_components", [row]);
-      yield* setKnowledgeStatus(projectId, "reusable_components", [id!], "confirmed");
-      const [rescannedId] = yield* saveKnowledge(projectId, "reusable_components", [
+      const [id] = yield* saveKnowledge(projectId, "knowledge_entities", [row]);
+      yield* setKnowledgeStatus(projectId, "knowledge_entities", [id!], "confirmed");
+      const [rescannedId] = yield* saveKnowledge(projectId, "knowledge_entities", [
         { ...row, summary: "Refreshed summary", agreed_by: ["codex/terra"] },
       ]);
       expect(rescannedId).toBe(id);
-      const queried = yield* queryKnowledge(projectId, { table: "reusable_components" });
+      const queried = yield* queryKnowledge(projectId, { table: "knowledge_entities" });
       expect(queried.total).toBe(1);
       expect(queried.rows[0]?.status).toBe("confirmed");
       expect(queried.rows[0]?.summary).toBe("Refreshed summary");
+    }),
+  );
+
+  it.effect("filters entity categories and marks unseen bootstrap knowledge stale", () =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("stale-scan-project");
+      const rows = [
+        {
+          entity_key: "src/session.ts#SessionService",
+          category: "building-block",
+          kind: "service",
+          name: "SessionService",
+          summary: "Owns sessions",
+          scan_run_id: "scan-1",
+          source: "bootstrap",
+        },
+        {
+          entity_key: "docs/architecture.md#layers",
+          category: "architecture",
+          kind: "layer-model",
+          name: "Layer model",
+          summary: "Defines dependency direction",
+          scan_run_id: "scan-1",
+          source: "bootstrap",
+        },
+      ];
+      yield* saveKnowledge(projectId, "knowledge_entities", rows);
+      yield* recordKnowledgeScan(projectId, {
+        scanRunId: "scan-1",
+        reportCount: 2,
+        conflictCount: 0,
+        failureCount: 0,
+      });
+      yield* saveKnowledge(projectId, "knowledge_entities", [
+        { ...rows[0], scan_run_id: "scan-2", summary: "Owns provider sessions" },
+      ]);
+      yield* recordKnowledgeScan(projectId, {
+        scanRunId: "scan-2",
+        reportCount: 1,
+        conflictCount: 0,
+        failureCount: 0,
+      });
+
+      const buildingBlocks = yield* queryKnowledge(projectId, {
+        table: "knowledge_entities",
+        categories: ["building-block"],
+      });
+      expect(buildingBlocks.rows).toHaveLength(1);
+      expect(buildingBlocks.rows[0]?.stale).toBe(0);
+      const architecture = yield* queryKnowledge(projectId, {
+        table: "knowledge_entities",
+        categories: ["architecture"],
+      });
+      expect(architecture.rows[0]?.stale).toBe(1);
+      expect(
+        yield* searchKnowledge(projectId, {
+          table: "knowledge_entities",
+          query: "dependency direction",
+        }),
+      ).toHaveLength(0);
+      yield* recordKnowledgeScan(projectId, {
+        scanRunId: "failed-scan",
+        reportCount: 1,
+        conflictCount: 0,
+        failureCount: 1,
+        markMissingStale: false,
+      });
+      const afterFailedScan = yield* queryKnowledge(projectId, {
+        table: "knowledge_entities",
+        categories: ["building-block"],
+      });
+      expect(afterFailedScan.rows[0]?.stale).toBe(0);
     }),
   );
 });

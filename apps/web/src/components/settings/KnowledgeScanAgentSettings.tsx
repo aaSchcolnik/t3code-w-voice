@@ -35,7 +35,7 @@ export function KnowledgeScanAgentSettings() {
   const [modelPreferenceOpen, setModelPreferenceOpen] = useState(false);
   const resolvedScanner = resolveDelegationRoles(
     settings.mcp.engine.delegation,
-    new Set(["codex", "cursor", "inline"] as const),
+    new Set(["claudeAgent", "codex", "cursor"] as const),
   ).scanner;
   const explicitScanner = settings.mcp.engine.delegation.roles.scanner;
 
@@ -70,7 +70,7 @@ export function KnowledgeScanAgentSettings() {
           <SettingsRow
             className="pb-3.5"
             title="Scanner panel"
-            description="Every available scanner runs in parallel; the inline target is the Judge's own pass."
+            description="Every available scanner runs in parallel as a dedicated subagent."
             status={explicitScanner === undefined ? "Automatic defaults" : "Customized"}
             control={
               <>

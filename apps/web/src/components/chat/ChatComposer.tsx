@@ -3376,8 +3376,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       </TooltipTrigger>
                       <TooltipPopup>
                         {knowledgeScanAvailability.knowledgePopulated
-                          ? "Knowledge base already populated — re-scan the entire codebase to refresh reusable components, rules, conventions, and lessons."
-                          : "Performs a lookup of the entire codebase to generate a knowledge base for this project (reusable components, rules, conventions, lessons)."}
+                          ? "Knowledge base already populated — re-scan the entire codebase to refresh architecture, capabilities, building blocks, relationships, conventions, and lessons."
+                          : "Builds a maintainable knowledge map of this project: architecture, capabilities, reusable building blocks, contracts, data, integrations, operations, relationships, conventions, and lessons."}
                       </TooltipPopup>
                     </Tooltip>
                   ) : null}

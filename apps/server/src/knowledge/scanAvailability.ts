@@ -1,8 +1,8 @@
 import {
-  deriveDefaultDelegationRoles,
   isProviderAvailable,
   type McpSettings,
   type ModelSelection,
+  resolveDelegationRoles,
   type ServerProvider,
 } from "@t3tools/contracts";
 
@@ -29,22 +29,22 @@ export function resolveKnowledgeScanConfiguration(input: {
   readonly projectDefaultModel?: ModelSelection | undefined;
 }) {
   const usableProviders = input.providers.filter(providerUsable);
-  const available = new Set<"inline" | "codex" | "cursor">(["inline"]);
+  const available = new Set<"claudeAgent" | "codex" | "cursor">();
+  if (usableProviders.some((provider) => provider.driver === "claudeAgent")) {
+    available.add("claudeAgent");
+  }
   if (usableProviders.some((provider) => provider.driver === "codex")) available.add("codex");
   if (usableProviders.some((provider) => provider.driver === "cursor")) available.add("cursor");
-  const defaults = deriveDefaultDelegationRoles(available);
-  const panel = input.mcp.engine.delegation.roles.scanner ?? defaults.scanner ?? [];
-  const availableScanners = panel.filter(
-    (target) =>
-      target.provider === "inline" ||
-      usableProviders.some(
-        (provider) =>
-          provider.driver === target.provider &&
-          (target.providerInstanceId === undefined ||
-            provider.instanceId === target.providerInstanceId) &&
-          (target.model === undefined ||
-            provider.models.some((model) => model.slug === target.model)),
-      ),
+  const panel = resolveDelegationRoles(input.mcp.engine.delegation, available).scanner;
+  const availableScanners = panel.filter((target) =>
+    usableProviders.some(
+      (provider) =>
+        provider.driver === target.provider &&
+        (target.providerInstanceId === undefined ||
+          provider.instanceId === target.providerInstanceId) &&
+        (target.model === undefined ||
+          provider.models.some((model) => model.slug === target.model)),
+    ),
   );
   const selectedModel = [
     ...input.mcp.engine.knowledgeScan.mainThreadModelPreference,

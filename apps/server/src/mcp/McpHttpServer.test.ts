@@ -12,6 +12,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
@@ -37,6 +38,12 @@ import { SkillRepository } from "../persistence/Services/Skills.ts";
 import { SkillRepositoryLive } from "../persistence/Layers/Skills.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { SkillDefaultsSeederLive } from "../knowledge/skills/seed.ts";
+import { DEFAULT_SKILLS } from "../knowledge/skills/defaults.ts";
+import {
+  builtinSkillToolName,
+  isSkillAvailable,
+  renderSkillCatalogSection,
+} from "./skillCatalog.ts";
 
 const SkillRepositoryTestLive = SkillRepositoryLive.pipe(
   Layer.provideMerge(SqlitePersistenceMemory),
@@ -44,6 +51,21 @@ const SkillRepositoryTestLive = SkillRepositoryLive.pipe(
 const SkillTestLayer = Layer.mergeAll(
   SkillRepositoryTestLive,
   SkillDefaultsSeederLive.pipe(Layer.provide(SkillRepositoryTestLive)),
+);
+const decodeListedSkills = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      data: Schema.Struct({
+        skills: Schema.Array(
+          Schema.Struct({
+            slug: Schema.String,
+            source: Schema.String,
+            tool: Schema.String,
+          }),
+        ),
+      }),
+    }),
+  ),
 );
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
@@ -82,6 +104,7 @@ const makeAllToolkitTestLayer = (
     McpHttpServer.PreviewToolkitRegistrationLive,
     McpHttpServer.CodexAgentToolkitRegistrationLive,
     McpHttpServer.CursorAgentToolkitRegistrationLive,
+    McpHttpServer.ClaudeAgentToolkitRegistrationLive,
     McpHttpServer.EngineKnowledgeToolkitRegistrationLive,
     McpHttpServer.EngineToolkitRegistrationLive,
     Layer.succeed(
@@ -143,6 +166,11 @@ it.effect("registers the built-in delegation toolkits", () =>
         "cursor_result",
         "cursor_cancel",
         "cursor_respond",
+        "claude_capabilities",
+        "claude_start",
+        "claude_status",
+        "claude_result",
+        "claude_cancel",
         "engine_knowledge_status",
         "engine_knowledge_search",
         "engine_knowledge_get",
@@ -172,6 +200,17 @@ it.effect("registers the built-in delegation toolkits", () =>
         "engine_skill_save",
       ]),
     );
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("derives built-in engine tool descriptions from the default skill catalog", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const tool = server.tools.find(({ tool }) => tool.name === "engine_plan_brief")?.tool;
+    const skill = DEFAULT_SKILLS.find(({ slug }) => slug === "plan-brief");
+
+    expect(tool?.description).toBe(skill?.description);
+    expect(tool?.description).toContain("Use when the user asks for a quick or brief plan");
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
 
@@ -280,7 +319,8 @@ it.effect("creates, lists, and runs a versioned custom skill", () =>
       slug: "release-readiness",
       title: "Release readiness",
       description: "Check release readiness",
-      content: "# Release readiness\n\nInspect {{CONSENSUS_MODE_PROTOCOL}} for {{TASK}}.",
+      content:
+        "# Release readiness\n\nInspect {{CONSENSUS_MODE_PROTOCOL}} for {{TASK}}.\n\n## Delegation guidance\n\n- **Judge:** Own the release decision on the main thread.",
     });
     expect(saved.isError).toBe(false);
 
@@ -296,6 +336,64 @@ it.effect("creates, lists, and runs a versioned custom skill", () =>
     expect(run.isError).toBe(false);
     expect(runText).toContain("Release readiness");
     expect(runText).toContain("ship version 1.0");
+    expect(runText).toContain("## Subagent delegation");
+    expect(runText).toContain("reusableComponents");
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("lists eligible built-in skills with their dedicated tools", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server.callTool({ name: "engine_skill_list", arguments: {} }).pipe(
+      Effect.provideService(McpInvocationContext.McpInvocationContext, {
+        ...invocation,
+        capabilities: new Set(["engine-knowledge", "engine-planning"] as const),
+      }),
+      Effect.provideService(McpSchema.McpServerClient, client),
+    );
+    const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+
+    expect(result.isError).toBe(false);
+    expect(text).toContain('"slug":"plan-brief"');
+    expect(text).toContain('"tool":"engine_plan_brief"');
+    expect(text).not.toContain('"tool":"engine_implement"');
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
+it.effect("keeps engine_skill_list in parity with the injected catalog", () =>
+  Effect.gen(function* () {
+    const capabilities = new Set(["engine-knowledge", "engine-planning"] as const);
+    const server = yield* McpServer.McpServer;
+    const skills = yield* SkillRepository;
+    const records = yield* skills.list();
+    const result = yield* server.callTool({ name: "engine_skill_list", arguments: {} }).pipe(
+      Effect.provideService(McpInvocationContext.McpInvocationContext, {
+        ...invocation,
+        capabilities,
+      }),
+      Effect.provideService(McpSchema.McpServerClient, client),
+    );
+    const text = result.content[0]?.type === "text" ? result.content[0].text : "{}";
+    const listed = yield* decodeListedSkills(text);
+    const catalog = renderSkillCatalogSection({
+      skills: records,
+      projectSkillOverrides: undefined,
+      capabilities,
+    });
+
+    expect(catalog).toBeDefined();
+    for (const entry of listed.data.skills) {
+      expect(catalog).toContain(
+        entry.source === "builtin" ? builtinSkillToolName(entry.slug) : `\`${entry.slug}\``,
+      );
+    }
+    expect(listed.data.skills.map(({ slug }) => slug)).toEqual(
+      records
+        .filter((skill) =>
+          isSkillAvailable(skill, { projectSkillOverrides: undefined, capabilities }),
+        )
+        .map(({ slug }) => slug),
+    );
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
 
@@ -404,6 +502,7 @@ it.effect("reads, persists, and immediately applies delegation workflow override
         "engine-consensus",
         "codex-agent",
         "cursor-agent",
+        "claude-agent",
       ] as const),
     };
     const call = (name: string, args: Record<string, unknown>) =>
@@ -419,7 +518,7 @@ it.effect("reads, persists, and immediately applies delegation workflow override
     const initialText = initial.content[0]?.type === "text" ? initial.content[0].text : "";
     expect(initialText).toContain('"model":"gpt-5.6-sol"');
     expect(initialText).toContain('"model":"grok-4.5"');
-    expect(initialText).toContain('"provider":"inline"');
+    expect(initialText).toContain('"provider":"claudeAgent"');
 
     const updated = yield* call("engine_delegation_set", {
       role: "consensus",

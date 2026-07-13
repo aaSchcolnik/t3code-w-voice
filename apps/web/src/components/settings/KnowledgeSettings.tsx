@@ -10,7 +10,12 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import type { KnowledgeTable, ProjectId, SkillToggleProviderId } from "@t3tools/contracts";
+import type {
+  KnowledgeEntityCategory,
+  KnowledgeTable,
+  ProjectId,
+  SkillToggleProviderId,
+} from "@t3tools/contracts";
 import { SKILL_TOGGLE_CAPABILITIES, SKILL_TOGGLE_PROVIDER_IDS } from "@t3tools/contracts";
 
 import { serverEnvironment } from "../../state/server";
@@ -61,20 +66,59 @@ import {
 type KnowledgeRecord = Record<string, unknown>;
 type KnowledgeTab =
   | "profile"
-  | "reusable_components"
+  | "architecture"
+  | "capabilities"
+  | "building_blocks"
+  | "contracts_data"
+  | "operations"
+  | "relationships"
   | "lessons_learned"
   | "rules"
   | "audit_rules"
-  | "features"
   | "skills"
   | "artifacts";
-const tabs: ReadonlyArray<{ value: KnowledgeTab; label: string }> = [
-  { value: "profile", label: "Profile" },
-  { value: "reusable_components", label: "Components" },
-  { value: "lessons_learned", label: "Lessons" },
-  { value: "rules", label: "Rules" },
-  { value: "audit_rules", label: "Audit rules" },
-  { value: "features", label: "Features" },
+type KnowledgeTabDefinition = {
+  readonly value: KnowledgeTab;
+  readonly label: string;
+  readonly table?: KnowledgeTable;
+  readonly categories?: ReadonlyArray<KnowledgeEntityCategory>;
+};
+const tabs: ReadonlyArray<KnowledgeTabDefinition> = [
+  { value: "profile", label: "Overview" },
+  {
+    value: "architecture",
+    label: "Architecture",
+    table: "knowledge_entities",
+    categories: ["architecture"],
+  },
+  {
+    value: "capabilities",
+    label: "Capabilities",
+    table: "knowledge_entities",
+    categories: ["capability"],
+  },
+  {
+    value: "building_blocks",
+    label: "Building blocks",
+    table: "knowledge_entities",
+    categories: ["building-block"],
+  },
+  {
+    value: "contracts_data",
+    label: "Contracts & data",
+    table: "knowledge_entities",
+    categories: ["contract", "data"],
+  },
+  {
+    value: "operations",
+    label: "Operations",
+    table: "knowledge_entities",
+    categories: ["integration", "operation"],
+  },
+  { value: "relationships", label: "Relationships", table: "knowledge_relationships" },
+  { value: "rules", label: "Conventions", table: "rules" },
+  { value: "lessons_learned", label: "Lessons", table: "lessons_learned" },
+  { value: "audit_rules", label: "Audit rules", table: "audit_rules" },
   { value: "skills", label: "Skills" },
   { value: "artifacts", label: "Artifacts" },
 ];
@@ -110,7 +154,16 @@ const recordId = (row: KnowledgeRecord): string | number | null =>
       ? row.key
       : null;
 const recordTitle = (row: KnowledgeRecord): string => {
-  for (const key of ["name", "title", "rule_id", "key", "concern", "framework"]) {
+  for (const key of [
+    "name",
+    "title",
+    "rule_id",
+    "entity_key",
+    "relationship_key",
+    "key",
+    "concern",
+    "framework",
+  ]) {
     if (typeof row[key] === "string" && row[key].trim()) return row[key];
   }
   return `Record ${String(recordId(row) ?? "")}`;
@@ -198,10 +251,14 @@ function KnowledgeTableView({
   environmentId,
   projectId,
   table,
+  title,
+  categories,
 }: {
   environmentId: Parameters<typeof serverEnvironment.knowledgeSetStatus.run>[1]["environmentId"];
   projectId: ProjectId;
   table: KnowledgeTable;
+  title: string;
+  categories?: ReadonlyArray<KnowledgeEntityCategory>;
 }) {
   const [pendingOnly, setPendingOnly] = useState(true);
   const [selected, setSelected] = useState<ReadonlySet<string | number>>(new Set());
@@ -211,6 +268,7 @@ function KnowledgeTableView({
       input: {
         projectId,
         table,
+        ...(categories?.length ? { categories: [...categories] } : {}),
         ...(pendingOnly ? { status: "proposed" as const } : {}),
         limit: 100,
       },
@@ -234,7 +292,7 @@ function KnowledgeTableView({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{tabs.find((tab) => tab.value === table)?.label}</CardTitle>
+        <CardTitle>{title}</CardTitle>
         <CardDescription>
           {query.data?.total ?? 0} records. Proposed knowledge is never silently treated as
           confirmed.
@@ -288,6 +346,10 @@ function KnowledgeTableView({
               {rows.map((row) => {
                 const id = recordId(row);
                 if (id === null) return null;
+                const evidencePaths = [
+                  ...(Array.isArray(row.locations) ? row.locations : []),
+                  ...(Array.isArray(row.evidence) ? row.evidence : []),
+                ].filter((value): value is string => typeof value === "string");
                 return (
                   <TableRow key={String(id)}>
                     <TableCell>
@@ -307,6 +369,34 @@ function KnowledgeTableView({
                     <TableCell className="max-w-xl whitespace-normal">
                       <div className="font-medium">{recordTitle(row)}</div>
                       <div className="line-clamp-2 text-muted-foreground">{recordSummary(row)}</div>
+                      {typeof row.source_entity_key === "string" &&
+                      typeof row.target_entity_key === "string" ? (
+                        <div className="mt-2 font-mono text-muted-foreground text-xs">
+                          {row.source_entity_key} → {row.target_entity_key}
+                        </div>
+                      ) : null}
+                      {evidencePaths.length > 0 ? (
+                        <div className="mt-2 line-clamp-2 font-mono text-muted-foreground text-xs">
+                          {[...new Set(evidencePaths)].slice(0, 3).join(" · ")}
+                        </div>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {typeof row.category === "string" ? (
+                          <Badge size="sm" variant="outline">
+                            {row.category}
+                          </Badge>
+                        ) : null}
+                        {typeof row.kind === "string" ? (
+                          <Badge size="sm" variant="secondary">
+                            {row.kind}
+                          </Badge>
+                        ) : null}
+                        {row.stale === 1 ? (
+                          <Badge size="sm" variant="warning">
+                            Stale
+                          </Badge>
+                        ) : null}
+                      </div>
                       {Array.isArray(row.agreed_by) && row.agreed_by.length > 0 ? (
                         <div className="mt-2 flex flex-wrap gap-1">
                           {row.agreed_by.map((scanner) => (
@@ -891,7 +981,7 @@ export function KnowledgeSettingsPanel() {
               <Tabs value={tab} onValueChange={(value) => setTab(value as KnowledgeTab)}>
                 <TabsList
                   variant="line"
-                  className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  className="w-full max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {tabs.map((item) => (
                     <TabsTrigger key={item.value} value={item.value}>
@@ -911,13 +1001,17 @@ export function KnowledgeSettingsPanel() {
                   ) : null}
                 </TabsContent>
                 {tabs
-                  .filter((item) => !["profile", "skills", "artifacts"].includes(item.value))
+                  .filter((item): item is KnowledgeTabDefinition & { table: KnowledgeTable } =>
+                    Boolean(item.table),
+                  )
                   .map((item) => (
                     <TabsContent key={item.value} value={item.value}>
                       <KnowledgeTableView
                         environmentId={environmentId}
                         projectId={projectId}
-                        table={item.value as KnowledgeTable}
+                        table={item.table}
+                        title={item.label}
+                        {...(item.categories === undefined ? {} : { categories: item.categories })}
                       />
                     </TabsContent>
                   ))}

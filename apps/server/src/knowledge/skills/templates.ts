@@ -18,7 +18,7 @@ export const workflows: Record<EngineWorkflowName, string> = {
 
 ${lanePreamble}
 
-Stay Fast or Focused. Search features, rules, lessons, and reusable components using engine_knowledge_search. Inspect only enough source to name concrete owners and symbols. When the area is unfamiliar, the optional Scout may resolve paths and symbols as described below; all scope and acceptance decisions remain yours. ${evidence}
+Stay Fast or Focused. Search knowledge_entities, relationships, rules, and lessons using engine_knowledge_search. Inspect only enough source to name concrete owners and symbols. When the area is unfamiliar, the optional Scout may resolve paths and symbols as described below; all scope and acceptance decisions remain yours. ${evidence}
 
 Return a copy-paste-ready brief:
 
@@ -100,13 +100,13 @@ When no tracked panelist is listed, perform and persist a runtime-only self-anal
 
 ${lanePreamble}
 
-Call engine_knowledge_status, then search rules and features with the task’s concrete nouns, verbs, target paths, and risk terms. Search lessons with scopePath. Search reusable_components before proposing new UI/runtime primitives.
+Call engine_knowledge_status, then search rules and knowledge_entities with the task’s concrete nouns, verbs, target paths, and risk terms. Search lessons with scopePath. Search building-block entities before proposing any new UI, service, data, infrastructure, or runtime primitive; search relationships before changing boundaries.
 
 Use two modes. In Expand mode, delegate per-directory applicability checks to Scouts as described in the Subagent delegation section; concern placement and layer validation remain yours:
 - **Seed:** a tight concern map for an early brief/plan. Budget 3–7 highest-risk matches.
 - **Expand:** after a file map exists, query once per target directory/owner and add lower-risk gotchas only when they change a decision or test.
 
-Order the budget high → medium → low risk. For every inserted item record table/id, status (confirmed or proposed/unverified), why it applies, intended owner/phase, imports or reusable components, gotchas, and required verification. Do not paste catalogs wholesale.
+Order the budget high → medium → low risk. For every inserted item record table/id, status (confirmed or proposed/unverified), why it applies, intended owner/phase, imports or reusable building blocks, gotchas, and required verification. Do not paste catalogs wholesale.
 
 Validate concern placement against the profile layer_model. Report illegal or uncertain dependency direction before implementation. Save a kind=concern-map JSON artifact and a kind=lift-audit Markdown artifact (Locatable, Intentional, Focused, Testable). Update the canonical plan rather than creating a competing plan.`,
 
@@ -133,7 +133,8 @@ After all chunks: run repository-required checks, then quality audit. Follow the
 
 ## Knowledge harvest
 Before closing the case, review the final diff and chunk history for durable project knowledge:
-- **Reusable components:** a component, hook, service, or utility built this run whose responsibility serves consumers beyond this feature. Record where it lives, when to reuse it, and its import path.
+- **Reusable building blocks:** a component, hook, service, repository, client, utility, schema, token, animation, test fixture, or operational primitive built this run whose responsibility serves consumers beyond this feature. Save it as a building-block knowledge entity with locations, reuse guidance, evidence, and relationships.
+- **System map changes:** new or changed architecture boundaries, capability owners, public contracts, data models, integrations, deployment paths, configuration, observability, or recovery workflows. Save the affected entities and their source-backed relationships.
 - **Lessons learned:** any failed attempt, gotcha, or non-obvious constraint that cost a retry. Record the root cause and the scopePath it applies to, not just the symptom.
 - **Rules:** a convention this run established, or one that reviews/tests enforced but the knowledge base lacks.
 

@@ -6,9 +6,31 @@ import { mergeScannerReports } from "./mergeScannerReports.ts";
 const report = (provider: "codex" | "cursor", summary: string): ScannerReport => ({
   scanner: { provider, model: `${provider}-model` },
   profileFacts: [{ key: "language", value: "TypeScript", evidence: ["package.json"] }],
-  reusable_components: [
-    { path: "src/Button.tsx", exportName: "Button", summary, evidence: ["src/Button.tsx"] },
+  entities: [
+    {
+      key: "src/Button.tsx#Button",
+      category: "building-block",
+      kind: "component",
+      name: "Button",
+      summary,
+      locations: ["src/Button.tsx"],
+      publicApi: ["Button"],
+      tags: ["ui"],
+      metadata: {},
+      evidence: ["src/Button.tsx"],
+    },
   ],
+  relationships: [
+    {
+      sourceKey: "feature:chat",
+      targetKey: "src/Button.tsx#Button",
+      kind: "uses",
+      summary: "Chat actions use the shared button",
+      metadata: {},
+      evidence: ["src/chat/ChatView.tsx"],
+    },
+  ],
+  reusable_components: [],
   rules: [{ text: "Use Effect services", evidence: ["src/service.ts"] }],
   lessons_learned: [],
   features: [
@@ -23,8 +45,10 @@ describe("mergeScannerReports", () => {
       report("codex", "Shared button"),
       report("cursor", "Shared button"),
     ]);
-    expect(merged.candidates.reusable_components).toHaveLength(1);
-    expect(merged.candidates.reusable_components[0]?.agreed_by).toEqual([
+    expect(merged.candidates.knowledge_entities).toHaveLength(2);
+    const button = merged.candidates.knowledge_entities.find((row) => row.name === "Button");
+    expect(button?.agreed_by).toEqual(["codex/codex-model", "cursor/cursor-model"]);
+    expect(merged.candidates.knowledge_relationships[0]?.agreed_by).toEqual([
       "codex/codex-model",
       "cursor/cursor-model",
     ]);
@@ -37,8 +61,9 @@ describe("mergeScannerReports", () => {
       report("cursor", "Never use for primary actions"),
     ]);
     expect(merged.conflicts).toEqual([
-      expect.objectContaining({ table: "reusable_components", key: "src button tsx button" }),
+      expect.objectContaining({ table: "knowledge_entities", key: "src button tsx button" }),
     ]);
-    expect(merged.candidates.reusable_components[0]?.summary).toBe("Use for primary actions");
+    const button = merged.candidates.knowledge_entities.find((row) => row.name === "Button");
+    expect(button?.summary).toBe("Use for primary actions");
   });
 });

@@ -162,6 +162,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         );
       }
       const providers = yield* providerRegistry.getProviders;
+      const parentProviderDriver = providers.find(
+        (provider) => provider.instanceId === request.providerInstanceId,
+      )?.driver;
       const effectiveMcp = resolveEffectiveMcpSettings(
         settings.mcp,
         project.value.mcpOverrides ?? undefined,
@@ -183,6 +186,14 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       if (!delegatedSession && effectiveMcp.cursorAgent && providerAvailable("cursor")) {
         capabilities.add("cursor-agent");
       }
+      if (
+        !delegatedSession &&
+        parentProviderDriver !== ProviderDriverKind.make("claudeAgent") &&
+        effectiveMcp.claudeAgent &&
+        providerAvailable("claudeAgent")
+      ) {
+        capabilities.add("claude-agent");
+      }
       const engineCapabilities = [
         ["planning", "engine-planning"],
         ["consensus", "engine-consensus"],
@@ -202,7 +213,8 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         .filter(
           (provider) =>
             (provider.driver === ProviderDriverKind.make("codex") ||
-              provider.driver === ProviderDriverKind.make("cursor")) &&
+              provider.driver === ProviderDriverKind.make("cursor") ||
+              provider.driver === ProviderDriverKind.make("claudeAgent")) &&
             provider.enabled &&
             provider.installed &&
             provider.availability !== "unavailable",
@@ -230,14 +242,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
         capabilities,
         effectiveMcp,
-        ...(providers.find((provider) => provider.instanceId === request.providerInstanceId)
-          ?.driver === undefined
-          ? {}
-          : {
-              providerDriver: providers.find(
-                (provider) => provider.instanceId === request.providerInstanceId,
-              )!.driver,
-            }),
+        ...(parentProviderDriver === undefined ? {} : { providerDriver: parentProviderDriver }),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -249,6 +254,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         config: {
           environmentId,
           threadId: scope.threadId,
+          projectId: thread.value.projectId,
           providerSessionId,
           providerInstanceId: scope.providerInstanceId,
           capabilities: scope.capabilities,

@@ -42,7 +42,7 @@ export const KnowledgeStatusTool = Tool.make("engine_knowledge_status", {
   .annotate(Tool.Idempotent, true);
 export const KnowledgeSearchTool = Tool.make("engine_knowledge_search", {
   description:
-    "Search reusable components, lessons, rules, audit rules, or features in the current project's knowledge base. Search here before building a new component, hook, or utility from scratch and before working in an unfamiliar area.",
+    "Search architecture, capabilities, reusable building blocks, contracts, data, integrations, operations, relationships, lessons, or rules in the current project's knowledge base. Search here before creating a new abstraction or working in an unfamiliar area.",
   parameters: KnowledgeSearchInput,
   success: KnowledgeResult,
   failure: KnowledgeError,
@@ -52,7 +52,8 @@ export const KnowledgeSearchTool = Tool.make("engine_knowledge_search", {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Idempotent, true);
 export const KnowledgeGetTool = Tool.make("engine_knowledge_get", {
-  description: "Fetch one complete project-knowledge record by table and id (or feature key).",
+  description:
+    "Fetch one complete project-knowledge record by table and numeric id or stable entity/relationship key.",
   parameters: KnowledgeGetInput,
   success: KnowledgeResult,
   failure: KnowledgeError,
@@ -63,7 +64,7 @@ export const KnowledgeGetTool = Tool.make("engine_knowledge_get", {
   .annotate(Tool.Idempotent, true);
 export const KnowledgeSaveTool = Tool.make("engine_knowledge_save", {
   description:
-    "Validate and save project knowledge. Call this proactively — without waiting to be asked — whenever a run produces a reusable component, a lesson learned with its root cause, or a new convention or rule. Agent discoveries are proposed by default; pass confirmed only after explicit user approval.",
+    "Validate and save project knowledge. Call this proactively when a run discovers a durable entity, relationship, lesson with its root cause, or convention. Agent discoveries are proposed by default; pass confirmed only after explicit user approval.",
   parameters: KnowledgeSaveInput,
   success: KnowledgeResult,
   failure: KnowledgeError,

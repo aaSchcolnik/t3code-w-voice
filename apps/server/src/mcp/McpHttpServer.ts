@@ -26,6 +26,8 @@ import { CodexAgentToolkitHandlersLive } from "./toolkits/codexAgent/handlers.ts
 import { CodexAgentToolkit } from "./toolkits/codexAgent/tools.ts";
 import { CursorAgentToolkitHandlersLive } from "./toolkits/cursorAgent/handlers.ts";
 import { CursorAgentToolkit } from "./toolkits/cursorAgent/tools.ts";
+import { ClaudeAgentToolkitHandlersLive } from "./toolkits/claudeAgent/handlers.ts";
+import { ClaudeAgentToolkit } from "./toolkits/claudeAgent/tools.ts";
 import { EngineKnowledgeToolkitHandlersLive } from "./toolkits/engineKnowledge/handlers.ts";
 import { EngineKnowledgeToolkit } from "./toolkits/engineKnowledge/tools.ts";
 import { EngineToolkitHandlersLive } from "./toolkits/engine/handlers.ts";
@@ -232,6 +234,10 @@ export const CursorAgentToolkitRegistrationLive = McpServer.toolkit(CursorAgentT
   Layer.provide(CursorAgentToolkitHandlersLive),
 );
 
+export const ClaudeAgentToolkitRegistrationLive = McpServer.toolkit(ClaudeAgentToolkit).pipe(
+  Layer.provide(ClaudeAgentToolkitHandlersLive),
+);
+
 export const EngineKnowledgeToolkitRegistrationLive = McpServer.toolkit(
   EngineKnowledgeToolkit,
 ).pipe(Layer.provide(EngineKnowledgeToolkitHandlersLive));
@@ -270,6 +276,7 @@ export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   CodexAgentToolkitRegistrationLive,
   CursorAgentToolkitRegistrationLive,
+  ClaudeAgentToolkitRegistrationLive,
   EngineKnowledgeToolkitRegistrationLive,
   EngineToolkitRegistrationLive,
   McpGetRouteLive,

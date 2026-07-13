@@ -18,6 +18,7 @@ import { ProjectKnowledgeStore } from "../../../knowledge/ProjectKnowledgeStore.
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ProjectionProjectRepository } from "../../../persistence/Services/ProjectionProjects.ts";
 import { SkillRepository as SkillRepositoryService } from "../../../persistence/Services/Skills.ts";
+import { DEFAULT_SKILLS } from "../../../knowledge/skills/defaults.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
@@ -42,47 +43,53 @@ const consensusSpec = (description: string) => ({
   parameters: EngineConsensusInput,
 });
 
+const builtinSkillDescription = (slug: string): string => {
+  const skill = DEFAULT_SKILLS.find((candidate) => candidate.slug === slug);
+  if (skill === undefined) {
+    throw new Error(`Missing default skill metadata for '${slug}'.`);
+  }
+  return skill.description;
+};
+
 export const EnginePlanBriefTool = Tool.make(
   "engine_plan_brief",
-  workflowSpec("Return a hydrated, project-aware quick development brief workflow."),
+  workflowSpec(builtinSkillDescription("plan-brief")),
 );
 export const EnginePlanTool = Tool.make(
   "engine_plan",
-  workflowSpec("Return the decision-complete project planning and artifact workflow."),
+  workflowSpec(builtinSkillDescription("plan")),
 );
 export const EngineConsensusTool = Tool.make(
   "engine_consensus",
-  consensusSpec("Run an independent multi-agent consensus analysis over any subject."),
+  consensusSpec(builtinSkillDescription("consensus")),
 );
 export const EngineEnrichTool = Tool.make(
   "engine_enrich",
-  workflowSpec("Match project rules, features, lessons, and reusable components to a plan."),
+  workflowSpec(builtinSkillDescription("enrich")),
 );
 export const EngineImplementTool = Tool.make(
   "engine_implement",
-  workflowSpec("Return the crash-resilient artifact and chunk implementation loop."),
+  workflowSpec(builtinSkillDescription("implement")),
 );
 export const EngineQualityAuditTool = Tool.make(
   "engine_quality_audit",
-  workflowSpec("Return the full project audit workflow driven by stored audit rules."),
+  workflowSpec(builtinSkillDescription("quality-audit")),
 );
 export const EngineQualityQuickTool = Tool.make(
   "engine_quality_quick",
-  workflowSpec("Return a bounded Tier-1 quality audit workflow."),
+  workflowSpec(builtinSkillDescription("quality-quick")),
 );
 export const EngineQualityPrTool = Tool.make(
   "engine_quality_pr",
-  workflowSpec("Return a semantic-block pull request review workflow."),
+  workflowSpec(builtinSkillDescription("quality-pr")),
 );
 export const EngineHotLoopsTool = Tool.make(
   "engine_hot_loops",
-  workflowSpec("Return a project-aware hot-loop and repeated-work analysis workflow."),
+  workflowSpec(builtinSkillDescription("hot-loops")),
 );
 export const EngineTypescriptTool = Tool.make(
   "engine_typescript",
-  workflowSpec(
-    "Return the TypeScript type-system workflow when the project language is TypeScript.",
-  ),
+  workflowSpec(builtinSkillDescription("typescript")),
 );
 export const EngineChunksNextTool = Tool.make("engine_chunks_next", {
   description:
@@ -112,7 +119,7 @@ export const EngineReportRenderTool = Tool.make("engine_report_render", {
 });
 
 export const EngineSkillListTool = Tool.make("engine_skill_list", {
-  description: "List enabled custom skills stored globally in T3 Code.",
+  description: "List enabled built-in and custom skills available in this project.",
   parameters: Schema.Record(Schema.String, Schema.Unknown),
   success: KnowledgeResult,
   failure: KnowledgeError,

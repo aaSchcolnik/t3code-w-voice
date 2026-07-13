@@ -17,7 +17,7 @@ import { ProviderOptionDescriptor, ProviderOptionSelections } from "./model.ts";
 export const DelegatedRunId = TrimmedNonEmptyString.pipe(Schema.brand("DelegatedRunId"));
 export type DelegatedRunId = typeof DelegatedRunId.Type;
 
-export const DelegatedRunProvider = Schema.Literals(["codex", "cursor"]);
+export const DelegatedRunProvider = Schema.Literals(["codex", "cursor", "claudeAgent"]);
 export type DelegatedRunProvider = typeof DelegatedRunProvider.Type;
 
 export const DelegatedRunStatus = Schema.Literals([

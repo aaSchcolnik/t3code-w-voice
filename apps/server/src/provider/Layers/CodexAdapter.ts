@@ -41,6 +41,10 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import {
+  McpSessionInstructionBuilderService,
+  type McpSessionInstructionBuilder,
+} from "../../mcp/delegationPolicy.ts";
 
 import {
   ProviderAdapterRequestError,
@@ -106,6 +110,7 @@ export interface CodexAdapterLiveOptions {
   >;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  readonly buildMcpSessionInstructions?: McpSessionInstructionBuilder;
 }
 
 interface CodexAdapterSessionContext {
@@ -1415,6 +1420,8 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const crypto = yield* Crypto.Crypto;
   const serverConfig = yield* Effect.service(ServerConfig);
   const serverSettings = yield* ServerSettingsService;
+  const buildSessionInstructions =
+    options?.buildMcpSessionInstructions ?? (yield* McpSessionInstructionBuilderService);
   const projectSkillScanner = yield* makeProjectSkillScanner;
   const nativeEventLogger =
     options?.nativeEventLogger ??
@@ -1484,6 +1491,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           cwd,
           binaryPath: codexConfig.binaryPath,
           launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, options?.environment),
+          buildMcpSessionInstructions: buildSessionInstructions,
           ...(options?.environment ? { environment: options.environment } : {}),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)

@@ -358,7 +358,10 @@ validationLayer("CodexAdapterLive validation", (it) => {
         runtimeMode: "full-access",
       });
 
-      NodeAssert.deepStrictEqual(validationRuntimeFactory.factory.mock.calls[0]?.[0], {
+      const { buildMcpSessionInstructions, ...runtimeOptions } =
+        validationRuntimeFactory.factory.mock.calls[0]?.[0] ?? {};
+      NodeAssert.equal(typeof buildMcpSessionInstructions, "function");
+      NodeAssert.deepStrictEqual(runtimeOptions, {
         binaryPath: "codex",
         cwd: process.cwd(),
         launchArgs: "",

@@ -1476,11 +1476,11 @@ const makeWsRpcLayer = (
                     let pendingCount = 0;
                     for (const table of [
                       "project_profile",
-                      "reusable_components",
+                      "knowledge_entities",
+                      "knowledge_relationships",
                       "lessons_learned",
                       "rules",
                       "audit_rules",
-                      "features",
                     ] as const) {
                       const result = yield* queryKnowledge(project.projectId, {
                         table,

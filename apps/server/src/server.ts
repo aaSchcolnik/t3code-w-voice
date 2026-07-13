@@ -44,6 +44,10 @@ import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as DelegatedRunService from "./orchestration/DelegatedRunService.ts";
 import * as SubagentTranscriptService from "./orchestration/SubagentTranscriptService.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
+import {
+  makeMcpSessionInstructionBuilder,
+  McpSessionInstructionBuilderService,
+} from "./mcp/delegationPolicy.ts";
 import { ProjectKnowledgeStore } from "./knowledge/ProjectKnowledgeStore.ts";
 import { ProjectionProjectRepositoryLive } from "./persistence/Layers/ProjectionProjects.ts";
 import { ProjectionThreadRepositoryLive } from "./persistence/Layers/ProjectionThreads.ts";
@@ -248,6 +252,16 @@ const SkillPersistenceLayerLive = Layer.mergeAll(
     Layer.provide(SkillRepositoryLive.pipe(Layer.provide(SqlitePersistenceLayerLive))),
   ),
 );
+const McpSessionInstructionBuilderLive = Layer.effect(
+  McpSessionInstructionBuilderService,
+  makeMcpSessionInstructionBuilder(),
+).pipe(
+  Layer.provide(
+    Layer.mergeAll(ProjectionProjectRepositoryLive, SkillRepositoryLive).pipe(
+      Layer.provide(SqlitePersistenceLayerLive),
+    ),
+  ),
+);
 
 const VcsDriverRegistryLayerLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
@@ -372,7 +386,7 @@ const RuntimeCoreServicesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(ProviderRuntimeLayerLive),
   Layer.provideMerge(Layer.mergeAll(DelegatedRunLayerLive, SubagentTranscriptLayerLive)),
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
-  Layer.provideMerge(PersistenceLayerLive),
+  Layer.provideMerge(Layer.mergeAll(PersistenceLayerLive, McpSessionInstructionBuilderLive)),
   Layer.provideMerge(Keybindings.layer),
   Layer.provideMerge(ProviderRegistryLive),
   // The instance registry is the new routing keystone — text generation,
