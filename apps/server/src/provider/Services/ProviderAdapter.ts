@@ -18,6 +18,7 @@ import type {
   ProviderSessionStartInput,
   ThreadId,
   ProviderTurnStartResult,
+  SubagentControlInput,
   TurnId,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
@@ -67,6 +68,9 @@ export interface ProviderAdapterShape<TError> {
    * Interrupt an active turn.
    */
   readonly interruptTurn: (threadId: ThreadId, turnId?: TurnId) => Effect.Effect<void, TError>;
+
+  /** Cancel one provider-native child execution when supported. */
+  readonly cancelSubagent?: (input: SubagentControlInput) => Effect.Effect<boolean, TError>;
 
   /**
    * Respond to an interactive approval request.

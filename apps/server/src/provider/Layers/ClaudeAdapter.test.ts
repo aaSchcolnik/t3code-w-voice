@@ -23,6 +23,7 @@ import {
   type RuntimeMode,
   ThreadId,
   ProviderInstanceId,
+  SubagentRunId,
   type SkillToggleSettings,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -68,6 +69,7 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   public readonly setModelCalls: Array<string | undefined> = [];
   public readonly setPermissionModeCalls: Array<string> = [];
   public readonly setMaxThinkingTokensCalls: Array<number | null> = [];
+  public readonly stopTaskCalls: Array<string> = [];
   public closeCalls = 0;
 
   emit(message: SDKMessage): void {
@@ -120,6 +122,10 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
     this.setMaxThinkingTokensCalls.push(maxThinkingTokens);
   };
 
+  readonly stopTask = async (taskId: string): Promise<void> => {
+    this.stopTaskCalls.push(taskId);
+  };
+
   readonly close = (): void => {
     this.closeCalls += 1;
     this.finish();
@@ -168,6 +174,8 @@ function makeHarness(config?: {
   readonly instanceId?: ProviderInstanceId;
   readonly skillSettings?: SkillToggleSettings;
   readonly buildMcpSessionInstructions?: McpSessionInstructionBuilder;
+  readonly listSubagents?: ClaudeAdapterLiveOptions["listSubagents"];
+  readonly getSubagentMessages?: ClaudeAdapterLiveOptions["getSubagentMessages"];
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -182,6 +190,8 @@ function makeHarness(config?: {
     ...(config?.buildMcpSessionInstructions
       ? { buildMcpSessionInstructions: config.buildMcpSessionInstructions }
       : {}),
+    ...(config?.listSubagents ? { listSubagents: config.listSubagents } : {}),
+    ...(config?.getSubagentMessages ? { getSubagentMessages: config.getSubagentMessages } : {}),
     createQuery: (input) => {
       createInput = input;
       return query;
@@ -1498,7 +1508,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
 
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 9).pipe(
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -1894,7 +1904,7 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
 
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 9).pipe(
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -1930,6 +1940,7 @@ describe("ClaudeAdapterLive", () => {
         type: "system",
         subtype: "task_progress",
         task_id: "task-subagent-1",
+        tool_use_id: "tool-task-summary-1",
         description: "Running background teammate",
         summary: "Code reviewer checked the migration edge cases.",
         usage: {
@@ -1951,15 +1962,14 @@ describe("ClaudeAdapterLive", () => {
         );
         assert.equal(progressEvent.payload.description, "Running background teammate");
       }
-      const subagentUpdate = runtimeEvents.find(
-        (event) => event.type === "item.updated" && event.itemId === "tool-task-summary-1",
-      );
-      assert.equal(subagentUpdate?.type, "item.updated");
-      if (subagentUpdate?.type === "item.updated") {
+      const subagentUpdate = runtimeEvents.find((event) => event.type === "subagent.updated");
+      assert.equal(subagentUpdate?.type, "subagent.updated");
+      if (subagentUpdate?.type === "subagent.updated") {
         assert.equal(
-          subagentUpdate.payload.detail,
+          subagentUpdate.payload.lastSummary,
           "Code reviewer checked the migration edge cases.",
         );
+        assert.equal(subagentUpdate.providerRefs?.providerTaskId, "task-subagent-1");
       }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -2142,6 +2152,102 @@ describe("ClaudeAdapterLive", () => {
       if (usageEvent && progressEvent) {
         assert.notStrictEqual(usageEvent.eventId, progressEvent.eventId);
       }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("cancels a native Claude task only after its task id is known", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-cancel",
+        uuid: "cancel-start",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "tool-cancel-1",
+            name: "Agent",
+            input: { prompt: "Long review", run_in_background: true },
+          },
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: "task-cancel-1",
+        tool_use_id: "tool-cancel-1",
+        description: "Long review",
+        session_id: "sdk-session-cancel",
+        uuid: "cancel-task-started",
+      } as unknown as SDKMessage);
+      yield* Fiber.join(runtimeEventsFiber);
+
+      const accepted = yield* adapter.cancelSubagent!({
+        rootThreadId: THREAD_ID,
+        runId: SubagentRunId.make("tool-cancel-1"),
+        expectedSequence: 0,
+      });
+
+      assert.equal(accepted, true);
+      assert.deepEqual(harness.query.stopTaskCalls, ["task-cancel-1"]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("replays persisted Claude subagent transcripts as unknown recovery state", () => {
+    const harness = makeHarness({
+      listSubagents: async () => ["agent-recovered"],
+      getSubagentMessages: async () => [
+        {
+          type: "assistant",
+          uuid: "recovered-message-1",
+          session_id: "11111111-1111-4111-8111-111111111111",
+          parent_tool_use_id: "tool-from-history",
+          message: { content: [{ type: "text", text: "Recovered analysis" }] },
+        },
+      ],
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 5).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+        resumeCursor: { resume: "11111111-1111-4111-8111-111111111111" },
+      });
+
+      const events = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const recovered = events.find((event) => event.type === "subagent.updated");
+      assert.equal(recovered?.type, "subagent.updated");
+      if (recovered?.type === "subagent.updated") {
+        assert.equal(recovered.payload.status, "unknown");
+        assert.equal(recovered.payload.capabilities?.transcriptQuality, "replay");
+        assert.equal(recovered.providerRefs?.providerAgentId, "agent-recovered");
+      }
+      const replayed = events.find((event) => event.type === "item.completed");
+      assert.equal(replayed?.executionScope?.subagentRunId, "claude-replay:agent-recovered");
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

@@ -58,6 +58,14 @@ export const providerRuntimeEventsTotal = Metric.counter("t3_provider_runtime_ev
   description: "Total canonical provider runtime events processed.",
 });
 
+export const nativeSubagentCorrelationMissingTotal = Metric.counter(
+  "t3_native_subagent_correlation_missing_total",
+  {
+    description:
+      "Native subagent lifecycle events that could not be linked to an explicit parent child-run correlation.",
+  },
+);
+
 export const gitCommandsTotal = Metric.counter("t3_git_commands_total", {
   description: "Total git commands executed by the server runtime.",
 });

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   CursorListAvailableModelsResponse,
+  CursorTaskRequest,
+  cursorSubagentTypeLabel,
   extractAskQuestions,
   extractPlanMarkdown,
   extractTodosAsPlan,
@@ -131,5 +133,20 @@ describe("CursorAcpExtension", () => {
     });
 
     expect(decoded.models[0]?.configOptions?.[0]?.id).toBe("reasoning");
+  });
+
+  it("decodes the authenticated cursor/task capture shape", () => {
+    const decoded = CursorTaskRequest.make({
+      toolCallId: "tool-foreground",
+      description: "Multiply two integers",
+      prompt: "Calculate the requested product.",
+      subagentType: { custom: { unspecified: {} } },
+      model: "gpt-5.4-medium",
+      agentId: "agent-foreground",
+      durationMs: 4941,
+    });
+
+    expect(decoded.toolCallId).toBe("tool-foreground");
+    expect(cursorSubagentTypeLabel(decoded.subagentType)).toBe("unspecified");
   });
 });

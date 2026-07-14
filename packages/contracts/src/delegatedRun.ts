@@ -3,8 +3,6 @@ import * as Schema from "effect/Schema";
 import { IsoDateTime, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   ChatAttachment,
-  OrchestrationMessage,
-  OrchestrationThreadActivity,
   ProviderApprovalPolicy,
   ProviderInteractionMode,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -12,7 +10,11 @@ import {
   RuntimeMode,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
-import { ProviderOptionDescriptor, ProviderOptionSelections } from "./model.ts";
+import {
+  ProviderOptionDescriptor,
+  ProviderOptionSelections,
+  ResolvedProviderOption,
+} from "./model.ts";
 
 export const DelegatedRunId = TrimmedNonEmptyString.pipe(Schema.brand("DelegatedRunId"));
 export type DelegatedRunId = typeof DelegatedRunId.Type;
@@ -58,6 +60,7 @@ export const DelegatedRun = Schema.Struct({
   resolvedModel: Schema.optional(TrimmedNonEmptyString),
   requestedOptions: Schema.optional(ProviderOptionSelections),
   resolvedOptions: Schema.optional(ProviderOptionSelections),
+  resolvedOptionDetails: Schema.optional(Schema.Array(ResolvedProviderOption)),
   interactionMode: Schema.optional(ProviderInteractionMode),
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
@@ -153,67 +156,6 @@ export const DelegatedRunCapabilities = Schema.Struct({
   supportsQuestions: Schema.Boolean,
 });
 export type DelegatedRunCapabilities = typeof DelegatedRunCapabilities.Type;
-
-export const SubagentTranscriptSource = Schema.Literals(["native", "delegated"]);
-export type SubagentTranscriptSource = typeof SubagentTranscriptSource.Type;
-
-/**
- * Complete child-run transcript for a subagent — either a delegated
- * cross-provider run (id = `DelegatedRunId`) or a native provider subagent
- * (id = the provider's child correlation id, e.g. Claude's parent tool-use
- * id). Reuses the orchestration message/activity contracts so the client can
- * render it with the established timeline components.
- */
-export const SubagentTranscript = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  source: SubagentTranscriptSource,
-  parentThreadId: ThreadId,
-  providerInstanceId: Schema.optional(ProviderInstanceId),
-  model: Schema.optional(TrimmedNonEmptyString),
-  requestedOptions: Schema.optional(ProviderOptionSelections),
-  resolvedOptions: Schema.optional(ProviderOptionSelections),
-  messages: Schema.Array(OrchestrationMessage),
-  activities: Schema.Array(OrchestrationThreadActivity),
-  latestSequence: NonNegativeInt,
-});
-export type SubagentTranscript = typeof SubagentTranscript.Type;
-
-export const SubagentTranscriptSubscribeInput = Schema.Struct({
-  parentThreadId: ThreadId,
-  transcriptId: TrimmedNonEmptyString,
-});
-export type SubagentTranscriptSubscribeInput = typeof SubagentTranscriptSubscribeInput.Type;
-
-/**
- * Subscription protocol: one `snapshot` first, then monotonically increasing
- * incremental upserts (`sequence` strictly greater than everything already
- * delivered). Reconnecting simply resubscribes and receives a fresh snapshot.
- */
-export const SubagentTranscriptStreamEvent = Schema.Union([
-  Schema.Struct({
-    type: Schema.Literal("snapshot"),
-    transcript: SubagentTranscript,
-  }),
-  Schema.Struct({
-    type: Schema.Literal("message.upserted"),
-    sequence: NonNegativeInt,
-    message: OrchestrationMessage,
-  }),
-  Schema.Struct({
-    type: Schema.Literal("activity.upserted"),
-    sequence: NonNegativeInt,
-    activity: OrchestrationThreadActivity,
-  }),
-]);
-export type SubagentTranscriptStreamEvent = typeof SubagentTranscriptStreamEvent.Type;
-
-export class SubagentTranscriptError extends Schema.TaggedErrorClass<SubagentTranscriptError>()(
-  "SubagentTranscriptError",
-  {
-    reason: Schema.Literals(["not_found", "forbidden"]),
-    message: TrimmedNonEmptyString,
-  },
-) {}
 
 export class DelegatedRunError extends Schema.TaggedErrorClass<DelegatedRunError>()(
   "DelegatedRunError",

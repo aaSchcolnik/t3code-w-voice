@@ -1,4 +1,10 @@
-import type { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 
 import type { McpCapability } from "./McpInvocationContext.ts";
 
@@ -8,6 +14,8 @@ export interface McpProviderSessionConfig {
   readonly projectId: ProjectId;
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly providerDriver?: ProviderDriverKind;
+  readonly nativeSubagentTracking?: boolean;
   readonly capabilities: ReadonlySet<McpCapability>;
   readonly endpoint: string;
   readonly authorizationHeader: string;

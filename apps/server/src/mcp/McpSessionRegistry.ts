@@ -64,6 +64,9 @@ interface RegistryState {
 export interface McpSessionRegistryOptions {
   readonly livenessWindowMs?: number;
   readonly now?: () => number;
+  readonly nativeSubagentTracking?: Partial<
+    Readonly<Record<"claudeAgent" | "codex" | "cursor", boolean>>
+  >;
 }
 
 /**
@@ -83,6 +86,11 @@ export interface McpSessionRegistryOptions {
 const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 const parentThreadByDelegatedThread = new Map<ThreadId, ThreadId>();
+const nativeTrackingEnvironmentKeys = {
+  claudeAgent: "T3CODE_NATIVE_SUBAGENTS_CLAUDE",
+  codex: "T3CODE_NATIVE_SUBAGENTS_CODEX",
+  cursor: "T3CODE_NATIVE_SUBAGENTS_CURSOR",
+} as const;
 
 export const registerDelegatedMcpProjectContext = (
   delegatedThreadId: ThreadId,
@@ -121,6 +129,18 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const state = yield* SynchronizedRef.make<RegistryState>({ records: new Map() });
   const currentTimeMillis = options.now ? Effect.sync(options.now) : Clock.currentTimeMillis;
   const livenessWindowMs = options.livenessWindowMs ?? DEFAULT_LIVENESS_WINDOW_MS;
+  const nativeSubagentTrackingEnabled = (driver: ProviderDriverKind) => {
+    const supportedDriver =
+      driver === ProviderDriverKind.make("claudeAgent") ||
+      driver === ProviderDriverKind.make("codex") ||
+      driver === ProviderDriverKind.make("cursor")
+        ? (String(driver) as keyof typeof nativeTrackingEnvironmentKeys)
+        : undefined;
+    return supportedDriver === undefined
+      ? false
+      : (options.nativeSubagentTracking?.[supportedDriver] ??
+          process.env[nativeTrackingEnvironmentKeys[supportedDriver]] === "1");
+  };
   const endpoint =
     httpServer.address._tag === "TcpAddress"
       ? `http://${getHttpMcpEndpointHost(httpServer.address.hostname)}:${httpServer.address.port}/mcp`
@@ -165,6 +185,12 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const parentProviderDriver = providers.find(
         (provider) => provider.instanceId === request.providerInstanceId,
       )?.driver;
+      const parentNativeSubagentTracking =
+        parentProviderDriver === ProviderDriverKind.make("claudeAgent") ||
+        parentProviderDriver === ProviderDriverKind.make("codex") ||
+        parentProviderDriver === ProviderDriverKind.make("cursor")
+          ? nativeSubagentTrackingEnabled(parentProviderDriver)
+          : false;
       const effectiveMcp = resolveEffectiveMcpSettings(
         settings.mcp,
         project.value.mcpOverrides ?? undefined,
@@ -180,17 +206,36 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const capabilities = new Set<McpInvocationContext.McpCapability>();
       const delegatedSession = String(request.threadId).startsWith("delegated-");
       if (effectiveMcp.preview) capabilities.add("preview");
-      if (!delegatedSession && effectiveMcp.codexAgent && providerAvailable("codex")) {
+      if (
+        !delegatedSession &&
+        effectiveMcp.codexAgent &&
+        providerAvailable("codex") &&
+        !(
+          parentProviderDriver === ProviderDriverKind.make("codex") &&
+          nativeSubagentTrackingEnabled(ProviderDriverKind.make("codex"))
+        )
+      ) {
         capabilities.add("codex-agent");
       }
-      if (!delegatedSession && effectiveMcp.cursorAgent && providerAvailable("cursor")) {
+      if (
+        !delegatedSession &&
+        effectiveMcp.cursorAgent &&
+        providerAvailable("cursor") &&
+        !(
+          parentProviderDriver === ProviderDriverKind.make("cursor") &&
+          nativeSubagentTrackingEnabled(ProviderDriverKind.make("cursor"))
+        )
+      ) {
         capabilities.add("cursor-agent");
       }
       if (
         !delegatedSession &&
-        parentProviderDriver !== ProviderDriverKind.make("claudeAgent") &&
         effectiveMcp.claudeAgent &&
-        providerAvailable("claudeAgent")
+        providerAvailable("claudeAgent") &&
+        !(
+          parentProviderDriver === ProviderDriverKind.make("claudeAgent") &&
+          nativeSubagentTrackingEnabled(ProviderDriverKind.make("claudeAgent"))
+        )
       ) {
         capabilities.add("claude-agent");
       }
@@ -257,6 +302,8 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           projectId: thread.value.projectId,
           providerSessionId,
           providerInstanceId: scope.providerInstanceId,
+          ...(parentProviderDriver === undefined ? {} : { providerDriver: parentProviderDriver }),
+          ...(parentNativeSubagentTracking ? { nativeSubagentTracking: true } : {}),
           capabilities: scope.capabilities,
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,

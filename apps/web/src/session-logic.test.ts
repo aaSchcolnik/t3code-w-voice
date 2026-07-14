@@ -870,7 +870,16 @@ describe("deriveSubagentEntries", () => {
               resolvedModel: "gpt-5.5",
               resolvedOptions: [
                 { id: "reasoningEffort", value: "high" },
-                { id: "fastMode", value: true },
+                { id: "serviceTier", value: "priority" },
+              ],
+              requestedOptions: [{ id: "fastMode", value: true }],
+              resolvedOptionDetails: [
+                {
+                  id: "serviceTier",
+                  label: "Service Tier",
+                  value: "priority",
+                  valueLabel: "Fast",
+                },
               ],
             },
           },
@@ -881,6 +890,19 @@ describe("deriveSubagentEntries", () => {
     expect(entry).toMatchObject({
       model: "gpt-5.5",
       reasoningEffort: "high",
+      requestedOptions: [{ id: "fastMode", value: true }],
+      resolvedOptions: [
+        { id: "reasoningEffort", value: "high" },
+        { id: "serviceTier", value: "priority" },
+      ],
+      resolvedOptionDetails: [
+        {
+          id: "serviceTier",
+          label: "Service Tier",
+          value: "priority",
+          valueLabel: "Fast",
+        },
+      ],
     });
   });
 

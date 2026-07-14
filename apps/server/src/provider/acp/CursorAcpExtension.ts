@@ -54,6 +54,37 @@ export const CursorUpdateTodosRequest = Schema.Struct({
   merge: Schema.Boolean,
 });
 
+const CursorSubagentType = Schema.Union([
+  Schema.String,
+  Schema.Struct({ custom: Schema.Record(Schema.String, Schema.Unknown) }),
+  Schema.Struct({ builtIn: Schema.Record(Schema.String, Schema.Unknown) }),
+]);
+
+export const CursorTaskRequest = Schema.Struct({
+  toolCallId: Schema.String,
+  description: Schema.String,
+  prompt: Schema.String,
+  subagentType: CursorSubagentType,
+  model: Schema.optional(Schema.String),
+  agentId: Schema.String,
+  durationMs: Schema.optional(Schema.Number),
+  outcome: Schema.optional(
+    Schema.Struct({
+      status: Schema.optional(Schema.String),
+      result: Schema.optional(Schema.String),
+      error: Schema.optional(Schema.String),
+    }),
+  ),
+});
+
+export type CursorTaskRequest = typeof CursorTaskRequest.Type;
+
+export function cursorSubagentTypeLabel(value: CursorTaskRequest["subagentType"]): string {
+  if (typeof value === "string") return value;
+  if ("custom" in value) return Object.keys(value.custom)[0] ?? "custom";
+  return Object.keys(value.builtIn)[0] ?? "built-in";
+}
+
 const CursorAvailableModel = Schema.Struct({
   value: Schema.String,
   name: Schema.String,

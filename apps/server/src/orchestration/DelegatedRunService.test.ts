@@ -13,6 +13,7 @@ import {
   type ProviderRespondToRequestInput,
   type ProviderSendTurnInput,
   type ProviderSessionStartInput,
+  type SubagentRun,
   type ServerProvider,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -27,6 +28,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { ProviderService } from "../provider/Services/ProviderService.ts";
 import * as DelegatedRunService from "./DelegatedRunService.ts";
+import * as SubagentRunService from "./SubagentRunService.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../config.ts";
@@ -39,6 +41,16 @@ const now = "2026-07-11T00:00:00.000Z";
 const configLayer = ServerConfig.layerTest("/workspace", {
   prefix: "delegated-run-service-test-",
 }).pipe(Layer.provide(NodeServices.layer));
+const subagentRunLayer = Layer.succeed(
+  SubagentRunService.SubagentRunService,
+  SubagentRunService.SubagentRunService.of({
+    upsert: (input) => Effect.succeed(input.run),
+    ingest: () => Effect.void,
+    getOwned: () => Effect.die("unused"),
+    subscribe: () => Effect.succeed(Stream.empty),
+    resolveProviderRef: () => Effect.succeed(undefined),
+  }),
+);
 
 const codexSnapshot = {
   instanceId: providerInstanceId,
@@ -160,6 +172,21 @@ const waitForStatus = Effect.fn("waitForStatus")(function* (
   return run;
 });
 
+const waitForFinalMessage = Effect.fn("waitForFinalMessage")(function* (
+  service: DelegatedRunService.DelegatedRunServiceShape,
+  runId: Parameters<DelegatedRunService.DelegatedRunServiceShape["get"]>[0],
+  expected: string,
+) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const run = yield* service.get(runId);
+    if (run.finalMessage === expected) return run;
+    yield* Effect.yieldNow;
+  }
+  const run = yield* service.get(runId);
+  expect(run.finalMessage).toBe(expected);
+  return run;
+});
+
 const makeStreamingHarness = Effect.gen(function* () {
   const commands: OrchestrationCommand[] = [];
   const approvalResponses: ProviderRespondToRequestInput[] = [];
@@ -240,6 +267,7 @@ const stubbedQuery = ProjectionSnapshotQuery.of({
 const streamingTestLayer = Layer.mergeAll(
   Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
   providerRegistryStub([codexSnapshot]),
+  subagentRunLayer,
   configLayer,
   ServerSettings.layerTest(),
   NodeServices.layer,
@@ -293,6 +321,7 @@ it.effect("resolves the delegated instance and model, and reports capabilities",
         Layer.succeed(OrchestrationEngineService, makeStubbedEngine(commands)),
         Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
         providerRegistryStub([codexSnapshot]),
+        subagentRunLayer,
         configLayer,
         ServerSettings.layerTest(),
         NodeServices.layer,
@@ -304,6 +333,21 @@ it.effect("resolves the delegated instance and model, and reports capabilities",
 
 it.effect("starts, projects, and cancels a delegated run", () => {
   const commands: OrchestrationCommand[] = [];
+  const projectedRuns: SubagentRun[] = [];
+  const capturingSubagentRunLayer = Layer.succeed(
+    SubagentRunService.SubagentRunService,
+    SubagentRunService.SubagentRunService.of({
+      upsert: (input) =>
+        Effect.sync(() => {
+          projectedRuns.push(input.run);
+          return input.run;
+        }),
+      ingest: () => Effect.void,
+      getOwned: () => Effect.die("unused"),
+      subscribe: () => Effect.succeed(Stream.empty),
+      resolveProviderRef: () => Effect.succeed(undefined),
+    }),
+  );
   const providerService = ProviderService.of({
     startSession: (threadId) =>
       Effect.succeed({
@@ -392,6 +436,15 @@ it.effect("starts, projects, and cancels a delegated run", () => {
     expect(yield* service.cancel(queued.id)).toBe(true);
     const cancelled = yield* service.get(queued.id);
     expect(cancelled.status).toBe("cancelled");
+    expect(projectedRuns.at(-1)).toMatchObject({
+      id: queued.id,
+      source: "delegated",
+      provider: "codex",
+      providerInstanceId: "codex",
+      rootThreadId: parentThreadId,
+      status: "cancelled",
+      resolvedModel: "gpt-5",
+    });
     expect(yield* service.cancel(queued.id)).toBe(false);
 
     const restoredService = yield* DelegatedRunService.__testing.make;
@@ -403,6 +456,7 @@ it.effect("starts, projects, and cancels a delegated run", () => {
         Layer.succeed(OrchestrationEngineService, engine),
         Layer.succeed(ProjectionSnapshotQuery, query),
         providerRegistryStub([codexSnapshot]),
+        capturingSubagentRunLayer,
         configLayer,
         ServerSettings.layerTest(),
         NodeServices.layer,
@@ -485,6 +539,7 @@ it.effect("propagates and records validated options at both execution boundaries
         Layer.succeed(OrchestrationEngineService, makeStubbedEngine(commands)),
         Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
         providerRegistryStub([codexSnapshot]),
+        subagentRunLayer,
         configLayer,
         ServerSettings.layerTest(),
         NodeServices.layer,
@@ -501,6 +556,7 @@ it.effect("resolves named profiles live and rejects ambiguous or unsafe configur
     Layer.succeed(OrchestrationEngineService, makeStubbedEngine(commands)),
     Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
     providerRegistryStub([codexSnapshot]),
+    subagentRunLayer,
     configLayer,
     ServerSettings.layerTest({
       delegationProfiles: [
@@ -723,6 +779,7 @@ it.effect("emits waiting-for-input and final-message updates without delay", () 
         },
       } as never),
     );
+    yield* waitForFinalMessage(harness.service, harness.queued.id, "The full final answer");
 
     const activities = appendCommands(harness.commands);
     expect(activities).toHaveLength(baseline + 2);

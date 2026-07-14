@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "provider": "cursor",
+  "cliVersion": "2026.07.09-c59fd9a",
+  "capturedAt": "2026-07-14",
+  "scenarios": {
+    "foreground": {
+      "toolStart": {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "tool-foreground",
+        "title": "Task: Subagent task",
+        "kind": "other",
+        "status": "pending",
+        "rawInput": {
+          "_toolName": "task"
+        }
+      },
+      "toolComplete": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "tool-foreground",
+        "status": "completed",
+        "rawOutput": {
+          "durationMs": 4941,
+          "isBackground": false
+        }
+      },
+      "taskRequest": {
+        "toolCallId": "tool-foreground",
+        "description": "Multiply two integers",
+        "prompt": "Calculate the requested product and return only the result.",
+        "subagentType": {
+          "custom": {
+            "unspecified": {}
+          }
+        },
+        "model": "gpt-5.4-medium",
+        "agentId": "agent-foreground",
+        "durationMs": 4941
+      }
+    },
+    "parallel": [
+      {
+        "toolCallId": "tool-parallel-a",
+        "description": "Compute a sum",
+        "prompt": "Return the first sum.",
+        "subagentType": {
+          "custom": {
+            "unspecified": {}
+          }
+        },
+        "model": "gpt-5.4-medium",
+        "agentId": "agent-parallel-a",
+        "durationMs": 3242
+      },
+      {
+        "toolCallId": "tool-parallel-b",
+        "description": "Compute a sum",
+        "prompt": "Return the second sum.",
+        "subagentType": {
+          "custom": {
+            "unspecified": {}
+          }
+        },
+        "model": "gpt-5.4-medium",
+        "agentId": "agent-parallel-b",
+        "durationMs": 15687
+      }
+    ],
+    "background": {
+      "launchComplete": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "tool-background-launch",
+        "status": "completed",
+        "rawOutput": {
+          "durationMs": 52,
+          "isBackground": true
+        }
+      },
+      "launchTaskRequest": {
+        "toolCallId": "tool-background-launch",
+        "description": "Compute a sum",
+        "prompt": "Calculate the requested sum and return only the result.",
+        "subagentType": {
+          "custom": {
+            "unspecified": {}
+          }
+        },
+        "model": "gpt-5.4-medium",
+        "agentId": "agent-background",
+        "durationMs": 52
+      },
+      "earlyFollowUpComplete": {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "tool-background-follow-up",
+        "status": "completed",
+        "rawOutput": {
+          "error": "Sub-agent is currently running. You may send the follow-up message when it has completed."
+        }
+      },
+      "earlyFollowUpTaskRequest": {
+        "toolCallId": "tool-background-follow-up",
+        "description": "Collect computed sum",
+        "prompt": "Report the result you computed.",
+        "subagentType": {
+          "custom": {
+            "unspecified": {}
+          }
+        },
+        "model": "gpt-5.4-medium",
+        "agentId": "agent-background-follow-up"
+      }
+    }
+  }
+}

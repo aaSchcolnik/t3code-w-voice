@@ -70,6 +70,14 @@ it.live("captures delegated events, isolates children, and enforces ownership", 
       model: "composer-2.5",
       requestedOptions: [{ id: "reasoning", value: "high" }],
       resolvedOptions: [{ id: "reasoning", value: "high" }],
+      resolvedOptionDetails: [
+        {
+          id: "reasoning",
+          label: "Reasoning",
+          value: "high",
+          valueLabel: "High",
+        },
+      ],
       task: "Compare package managers",
       createdAt: now,
     });
@@ -163,6 +171,7 @@ it.live("captures delegated events, isolates children, and enforces ownership", 
     expect(transcript.model).toBe("composer-2.5");
     expect(transcript.requestedOptions).toEqual([{ id: "reasoning", value: "high" }]);
     expect(transcript.resolvedOptions).toEqual([{ id: "reasoning", value: "high" }]);
+    expect(transcript.resolvedOptionDetails?.[0]?.valueLabel).toBe("High");
     expect(transcript.messages[0]).toMatchObject({
       role: "user",
       text: "Compare package managers",
@@ -272,6 +281,51 @@ it.live("subscribe emits a snapshot followed by live updates", () => {
         ServerConfig.layerTest("/workspace", { prefix: "subagent-transcripts-sub-test-" }).pipe(
           Layer.provide(NodeServices.layer),
         ),
+        NodeServices.layer,
+      ),
+    ),
+    Effect.scoped,
+  );
+});
+
+it.live("persists collision-prone transcript IDs to distinct files", () => {
+  const test = Effect.gen(function* () {
+    const provider = makeProviderServiceStub(Stream.empty);
+    const service = yield* SubagentTranscriptService.__testing.make.pipe(
+      Effect.provideService(ProviderService, provider),
+    );
+
+    yield* service.register({
+      id: "task/a",
+      source: "native",
+      parentThreadId,
+      task: "Slash transcript",
+      createdAt: now,
+    });
+    yield* service.register({
+      id: "task?a",
+      source: "native",
+      parentThreadId,
+      task: "Question transcript",
+      createdAt: now,
+    });
+
+    const restarted = yield* SubagentTranscriptService.__testing.make.pipe(
+      Effect.provideService(ProviderService, provider),
+    );
+    const slash = yield* restarted.get({ parentThreadId, transcriptId: "task/a" });
+    const question = yield* restarted.get({ parentThreadId, transcriptId: "task?a" });
+
+    expect(slash.messages[0]?.text).toBe("Slash transcript");
+    expect(question.messages[0]?.text).toBe("Question transcript");
+  });
+
+  return test.pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        ServerConfig.layerTest("/workspace", {
+          prefix: "subagent-transcripts-collision-test-",
+        }).pipe(Layer.provide(NodeServices.layer)),
         NodeServices.layer,
       ),
     ),

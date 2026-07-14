@@ -8,6 +8,7 @@ import {
   ProviderInstanceId,
   type ProviderOptionDescriptor,
   type ProviderOptionSelection,
+  type ResolvedProviderOption,
 } from "@t3tools/contracts";
 
 const DEFAULT_PROVIDER_DRIVER_KIND = ProviderDriverKind.make("codex");
@@ -210,6 +211,52 @@ export function buildProviderOptionSelectionsFromDescriptors(
   }
 
   return nextSelections.length > 0 ? nextSelections : undefined;
+}
+
+export function buildResolvedProviderOptionDetails(input: {
+  descriptors: ReadonlyArray<ProviderOptionDescriptor> | null | undefined;
+  selections: ReadonlyArray<ProviderOptionSelection> | null | undefined;
+}): Array<ResolvedProviderOption> | undefined {
+  const { descriptors, selections } = input;
+  if (!descriptors || !selections || selections.length === 0) {
+    return undefined;
+  }
+
+  const descriptorsById = new Map(descriptors.map((descriptor) => [descriptor.id, descriptor]));
+  const details: Array<ResolvedProviderOption> = [];
+
+  for (const selection of selections) {
+    const descriptor = descriptorsById.get(selection.id);
+    if (!descriptor) continue;
+    if (
+      (descriptor.type === "boolean" && typeof selection.value !== "boolean") ||
+      (descriptor.type === "select" &&
+        (typeof selection.value !== "string" ||
+          !descriptor.options.some((option) => option.id === selection.value)))
+    ) {
+      continue;
+    }
+
+    const resolvedDescriptor = withDescriptorCurrentValue(descriptor, selection.value);
+    const value = getProviderOptionCurrentValue(resolvedDescriptor);
+    const valueLabel = getProviderOptionCurrentLabel(resolvedDescriptor);
+    if (value === undefined || valueLabel === undefined) continue;
+    const description =
+      resolvedDescriptor.type === "select" && typeof value === "string"
+        ? (resolvedDescriptor.options.find((option) => option.id === value)?.description ??
+          resolvedDescriptor.description)
+        : resolvedDescriptor.description;
+
+    details.push({
+      id: descriptor.id,
+      label: descriptor.label,
+      value,
+      valueLabel,
+      ...(description ? { description } : {}),
+    });
+  }
+
+  return details.length > 0 ? details : undefined;
 }
 
 export function getModelSelectionOptionDescriptors(

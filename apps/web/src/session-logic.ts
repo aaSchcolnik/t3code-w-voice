@@ -7,6 +7,8 @@ import {
   type ModelSelection,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
+  type ProviderOptionSelection,
+  type ResolvedProviderOption,
   ProviderDriverKind,
   ProviderInstanceId,
   type SubagentTranscript,
@@ -123,6 +125,12 @@ export interface SubagentEntry {
   agentType: string | null;
   /** Identifier of the child transcript when one exists. */
   transcriptId: string | null;
+  /** Raw option request retained by delegated-run compatibility activities. */
+  requestedOptions?: ReadonlyArray<ProviderOptionSelection> | undefined;
+  /** Canonical effective option selections retained by compatibility activities. */
+  resolvedOptions?: ReadonlyArray<ProviderOptionSelection> | undefined;
+  /** Catalog labels captured when the delegated run was resolved. */
+  resolvedOptionDetails?: ReadonlyArray<ResolvedProviderOption> | undefined;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -815,6 +823,33 @@ function subagentLastMessage(payload: Record<string, unknown>): string | null {
   return truncateSubagentText(asTrimmedString(payload.detail));
 }
 
+function parseProviderOptionSelections(value: unknown): ProviderOptionSelection[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((candidate) => {
+    const selection = asRecord(candidate);
+    const id = asTrimmedString(selection?.id);
+    const rawValue = selection?.value;
+    const optionValue = typeof rawValue === "boolean" ? rawValue : asTrimmedString(rawValue);
+    return id && optionValue !== null ? [{ id, value: optionValue }] : [];
+  });
+}
+
+function parseResolvedProviderOptions(value: unknown): ResolvedProviderOption[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((candidate) => {
+    const detail = asRecord(candidate);
+    const id = asTrimmedString(detail?.id);
+    const label = asTrimmedString(detail?.label);
+    const rawValue = detail?.value;
+    const optionValue = typeof rawValue === "boolean" ? rawValue : asTrimmedString(rawValue);
+    const valueLabel = asTrimmedString(detail?.valueLabel);
+    const description = asTrimmedString(detail?.description);
+    return id && label && optionValue !== null && valueLabel
+      ? [{ id, label, value: optionValue, valueLabel, ...(description ? { description } : {}) }]
+      : [];
+  });
+}
+
 export function deriveSubagentEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): SubagentEntry[] {
@@ -875,6 +910,13 @@ export function deriveSubagentEntries(
     const resolvedOptions = Array.isArray(delegatedRun?.resolvedOptions)
       ? delegatedRun.resolvedOptions
       : [];
+    const requestedOptionSelections =
+      parseProviderOptionSelections(delegatedRun?.requestedOptions) ?? previous?.requestedOptions;
+    const resolvedOptionSelections =
+      parseProviderOptionSelections(delegatedRun?.resolvedOptions) ?? previous?.resolvedOptions;
+    const resolvedOptionDetails =
+      parseResolvedProviderOptions(delegatedRun?.resolvedOptionDetails) ??
+      previous?.resolvedOptionDetails;
     const reasoningEffort =
       resolvedOptions.flatMap((option) => {
         const selection = asRecord(option);
@@ -916,6 +958,9 @@ export function deriveSubagentEntries(
       reasoningEffort,
       agentType,
       transcriptId,
+      ...(requestedOptionSelections ? { requestedOptions: requestedOptionSelections } : {}),
+      ...(resolvedOptionSelections ? { resolvedOptions: resolvedOptionSelections } : {}),
+      ...(resolvedOptionDetails ? { resolvedOptionDetails } : {}),
     });
   }
 

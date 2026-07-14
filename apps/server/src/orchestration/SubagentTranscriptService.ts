@@ -25,6 +25,8 @@ import {
   OrchestrationMessage,
   OrchestrationThreadActivity,
   ProviderOptionSelections,
+  ResolvedProviderOption,
+  SubagentRunId,
   SubagentTranscriptError,
   ThreadId,
   TurnId,
@@ -50,6 +52,7 @@ import { ProviderService } from "../provider/Services/ProviderService.ts";
 
 const DELEGATED_THREAD_PREFIX = "delegated-";
 const MAX_TRANSCRIPT_ACTIVITIES = 2_000;
+const TRANSCRIPT_UPDATE_REPLAY_WINDOW = 50_000;
 
 // Persisted NDJSON line: meta first, then message/activity upserts in
 // sequence order. Messages are persisted when they finalize (streaming
@@ -59,9 +62,12 @@ const TranscriptMeta = Schema.Struct({
   source: Schema.Literals(["native", "delegated"]),
   parentThreadId: Schema.String,
   providerInstanceId: Schema.optional(Schema.String),
+  runId: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
+  transcriptQuality: Schema.optional(Schema.Literals(["live", "replay", "summary", "none"])),
   requestedOptions: Schema.optional(ProviderOptionSelections),
   resolvedOptions: Schema.optional(ProviderOptionSelections),
+  resolvedOptionDetails: Schema.optional(Schema.Array(ResolvedProviderOption)),
 });
 type TranscriptMeta = typeof TranscriptMeta.Type;
 
@@ -88,9 +94,12 @@ export interface RegisterTranscriptInput {
   readonly source: "native" | "delegated";
   readonly parentThreadId: ThreadId;
   readonly providerInstanceId?: ProviderInstanceId;
+  readonly runId?: SubagentRunId;
   readonly model?: string;
+  readonly transcriptQuality?: "live" | "replay" | "summary" | "none";
   readonly requestedOptions?: ProviderOptionSelections;
   readonly resolvedOptions?: ProviderOptionSelections;
+  readonly resolvedOptionDetails?: ReadonlyArray<ResolvedProviderOption>;
   /** Initial user message (the delegated task) when known. */
   readonly task?: string;
   readonly createdAt: string;
@@ -125,6 +134,9 @@ export class SubagentTranscriptService extends Context.Service<
  * them into the child transcript.
  */
 export const childScopedParentToolUseId = (event: ProviderRuntimeEvent): string | undefined => {
+  if (event.executionScope?.kind === "subagent") {
+    return event.executionScope.subagentRunId;
+  }
   if (
     event.type !== "item.started" &&
     event.type !== "item.updated" &&
@@ -149,7 +161,9 @@ interface TranscriptState {
 
 const toSnapshot = (state: TranscriptState): SubagentTranscript => ({
   id: state.meta.id,
+  runId: SubagentRunId.make(state.meta.runId ?? state.meta.id),
   source: state.meta.source,
+  rootThreadId: ThreadId.make(state.meta.parentThreadId),
   parentThreadId: ThreadId.make(state.meta.parentThreadId),
   ...(state.meta.providerInstanceId
     ? { providerInstanceId: state.meta.providerInstanceId as ProviderInstanceId }
@@ -157,12 +171,17 @@ const toSnapshot = (state: TranscriptState): SubagentTranscript => ({
   ...(state.meta.model ? { model: state.meta.model } : {}),
   ...(state.meta.requestedOptions ? { requestedOptions: state.meta.requestedOptions } : {}),
   ...(state.meta.resolvedOptions ? { resolvedOptions: state.meta.resolvedOptions } : {}),
+  ...(state.meta.resolvedOptionDetails
+    ? { resolvedOptionDetails: state.meta.resolvedOptionDetails }
+    : {}),
+  transcriptQuality: state.meta.transcriptQuality ?? "live",
   messages: [...state.messages],
   activities: [...state.activities],
   latestSequence: state.latestSequence,
 });
 
-const sanitizeFileName = (value: string): string => value.replace(/[^A-Za-z0-9._-]/gu, "_");
+const encodeFileName = (value: string): string => encodeURIComponent(value);
+const legacyFileName = (value: string): string => value.replace(/[^A-Za-z0-9._-]/gu, "_");
 
 const isToolItemType = (itemType: string): boolean =>
   itemType === "command_execution" ||
@@ -183,7 +202,7 @@ const make = Effect.gen(function* () {
   const updates = yield* PubSub.unbounded<{
     readonly transcriptId: string;
     readonly event: SubagentTranscriptStreamEvent;
-  }>();
+  }>({ replay: TRANSCRIPT_UPDATE_REPLAY_WINDOW });
   const writeLock = yield* Semaphore.make(1);
 
   yield* fs
@@ -191,7 +210,9 @@ const make = Effect.gen(function* () {
     .pipe(Effect.catchCause(() => Effect.void));
 
   const transcriptFilePath = (transcriptId: string) =>
-    path.join(transcriptsDir, `${sanitizeFileName(transcriptId)}.ndjson`);
+    path.join(transcriptsDir, `${encodeFileName(transcriptId)}.ndjson`);
+  const legacyTranscriptFilePath = (transcriptId: string) =>
+    path.join(transcriptsDir, `${legacyFileName(transcriptId)}.ndjson`);
 
   const appendLine = (transcriptId: string, line: TranscriptLine) =>
     writeLock.withPermits(1)(
@@ -212,9 +233,10 @@ const make = Effect.gen(function* () {
 
   const loadFromDisk = (transcriptId: string): Effect.Effect<TranscriptState | undefined> =>
     Effect.gen(function* () {
-      const raw = yield* fs
-        .readFileString(transcriptFilePath(transcriptId))
-        .pipe(Effect.orElseSucceed(() => undefined));
+      const raw = yield* fs.readFileString(transcriptFilePath(transcriptId)).pipe(
+        Effect.catch(() => fs.readFileString(legacyTranscriptFilePath(transcriptId))),
+        Effect.orElseSucceed(() => undefined),
+      );
       if (raw === undefined) return undefined;
       let meta: TranscriptMeta | undefined;
       const messagesById = new Map<string, OrchestrationMessage>();
@@ -312,9 +334,14 @@ const make = Effect.gen(function* () {
           source: input.source,
           parentThreadId: input.parentThreadId,
           ...(input.providerInstanceId ? { providerInstanceId: input.providerInstanceId } : {}),
+          ...(input.runId ? { runId: input.runId } : {}),
           ...(input.model ? { model: input.model } : {}),
+          ...(input.transcriptQuality ? { transcriptQuality: input.transcriptQuality } : {}),
           ...(input.requestedOptions ? { requestedOptions: input.requestedOptions } : {}),
           ...(input.resolvedOptions ? { resolvedOptions: input.resolvedOptions } : {}),
+          ...(input.resolvedOptionDetails
+            ? { resolvedOptionDetails: input.resolvedOptionDetails }
+            : {}),
         };
         const messages: OrchestrationMessage[] = [];
         const persist: TranscriptLine[] = [{ kind: "meta", meta }];
@@ -406,7 +433,7 @@ const make = Effect.gen(function* () {
     event: ProviderRuntimeEvent,
   ): Effect.Effect<void> =>
     Effect.gen(function* () {
-      if (source === "delegated") {
+      {
         if (event.type === "content.delta" && event.payload.streamKind === "assistant_text") {
           const messageId = streamingAssistantMessageId(transcriptId, event);
           const states = yield* SynchronizedRef.get(stateRef);
@@ -593,9 +620,11 @@ const make = Effect.gen(function* () {
     if (parentToolUseId !== undefined) {
       yield* createTranscript({
         id: parentToolUseId,
+        runId: SubagentRunId.make(parentToolUseId),
         source: "native",
         parentThreadId: event.threadId,
         ...(event.providerInstanceId ? { providerInstanceId: event.providerInstanceId } : {}),
+        transcriptQuality: "live",
         createdAt: event.createdAt,
       });
       yield* handleTranscriptEvent(parentToolUseId, "native", event);
@@ -619,14 +648,16 @@ const make = Effect.gen(function* () {
 
   const requireOwnedTranscript = Effect.fn("SubagentTranscriptService.requireOwnedTranscript")(
     function* (input: SubagentTranscriptSubscribeInput) {
-      const state = yield* ensureLoaded(input.transcriptId);
+      const transcriptId = "runId" in input ? input.runId : input.transcriptId;
+      const rootThreadId = "rootThreadId" in input ? input.rootThreadId : input.parentThreadId;
+      const state = yield* ensureLoaded(transcriptId);
       if (!state) {
         return yield* new SubagentTranscriptError({
           reason: "not_found",
           message: "No transcript exists for this subagent.",
         });
       }
-      if (state.meta.parentThreadId !== input.parentThreadId) {
+      if (state.meta.parentThreadId !== rootThreadId) {
         return yield* new SubagentTranscriptError({
           reason: "forbidden",
           message: "The transcript does not belong to this thread.",
@@ -645,8 +676,9 @@ const make = Effect.gen(function* () {
     subscribe: Effect.fn("SubagentTranscriptService.subscribe")(function* (input) {
       const state = yield* requireOwnedTranscript(input);
       const snapshot = toSnapshot(state);
+      const transcriptId = "runId" in input ? input.runId : input.transcriptId;
       const live = Stream.fromPubSub(updates).pipe(
-        Stream.filter((update) => update.transcriptId === input.transcriptId),
+        Stream.filter((update) => update.transcriptId === transcriptId),
         Stream.map((update) => update.event),
         Stream.filter(
           (event) => event.type === "snapshot" || event.sequence > snapshot.latestSequence,

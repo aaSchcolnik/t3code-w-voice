@@ -16,6 +16,7 @@ import {
   type ProviderSession,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
+  SubagentRunId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -131,6 +132,9 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   public readonly interruptTurnImpl = vi.fn(
     (_turnId?: TurnId): Promise<void> => Promise.resolve(undefined),
   );
+  public readonly interruptChildTurnImpl = vi.fn(
+    (_providerThreadId: string, _turnId: TurnId): Promise<void> => Promise.resolve(undefined),
+  );
 
   public readonly readThreadImpl = vi.fn(
     (): Promise<CodexThreadSnapshot> =>
@@ -178,6 +182,10 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
   interruptTurn(turnId?: TurnId) {
     return Effect.promise(() => this.interruptTurnImpl(turnId));
+  }
+
+  interruptChildTurn(providerThreadId: string, turnId: TurnId) {
+    return Effect.promise(() => this.interruptChildTurnImpl(providerThreadId, turnId));
   }
 
   readThread = Effect.promise(() => this.readThreadImpl());
@@ -782,6 +790,79 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       NodeAssert.equal(firstEvent.value.payload.itemType, "collab_agent_tool_call");
       NodeAssert.equal(firstEvent.value.payload.status, "failed");
       NodeAssert.equal(firstEvent.value.payload.detail, "Tests exposed a race");
+    }),
+  );
+
+  it.effect("projects native Codex child runs and interrupts the active child turn", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.take(adapter.streamEvents, 4).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-spawn-child"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/started",
+        threadId: asThreadId("thread-1"),
+        providerThreadId: "provider-root",
+        turnId: asTurnId("turn-root"),
+        itemId: asItemId("collab-spawn"),
+        payload: {
+          startedAtMs: 1_778_000_000_000,
+          threadId: "provider-root",
+          turnId: "turn-root",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab-spawn",
+            tool: "spawnAgent",
+            senderThreadId: "provider-root",
+            receiverThreadIds: ["provider-child"],
+            agentsStates: { "provider-child": { status: "running" } },
+            status: "inProgress",
+            prompt: "Review the implementation",
+          },
+        },
+      });
+      yield* runtime.emit({
+        id: asEventId("evt-child-turn"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:01.000Z",
+        method: "turn/started",
+        threadId: asThreadId("thread-1"),
+        providerThreadId: "provider-child",
+        turnId: asTurnId("turn-child"),
+        payload: {
+          threadId: "provider-child",
+          turn: { id: "turn-child", status: "inProgress", items: [] },
+        },
+      });
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      const lifecycle = events.find(
+        (event) =>
+          event.type === "subagent.updated" && event.providerRefs?.providerTurnId === "turn-child",
+      );
+      NodeAssert.equal(lifecycle?.executionScope?.subagentRunId, "provider-child");
+      if (lifecycle?.type === "subagent.updated") {
+        NodeAssert.equal(lifecycle.payload.capabilities?.canCancel, true);
+      }
+      const childTurn = events.find((event) => event.type === "turn.started");
+      NodeAssert.equal(childTurn?.executionScope?.subagentRunId, "provider-child");
+
+      const accepted = yield* adapter.cancelSubagent!({
+        rootThreadId: asThreadId("thread-1"),
+        runId: SubagentRunId.make("provider-child"),
+        expectedSequence: 0,
+      });
+      NodeAssert.equal(accepted, true);
+      NodeAssert.deepStrictEqual(runtime.interruptChildTurnImpl.mock.calls, [
+        ["provider-child", "turn-child"],
+      ]);
     }),
   );
 

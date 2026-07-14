@@ -1,0 +1,128 @@
+import { SubagentRunId, type SubagentStatus } from "@t3tools/contracts";
+
+import type { AcpToolCallState } from "../acp/AcpRuntimeModel.ts";
+import { cursorSubagentTypeLabel, type CursorTaskRequest } from "../acp/CursorAcpExtension.ts";
+
+export interface CursorNativeSubagentRecord {
+  readonly runId: SubagentRunId;
+  readonly toolCallId: string;
+  readonly depth: 0;
+  readonly title: string;
+  readonly taskPreview: string;
+  readonly agentType?: string;
+  readonly requestedModel?: string;
+  readonly agentId?: string;
+  readonly durationMs?: number;
+  readonly status: SubagentStatus;
+  readonly lastSummary?: string;
+  readonly finalMessage?: string;
+  readonly error?: string;
+  readonly resumeOfRunId?: SubagentRunId;
+  readonly transcriptQuality: "summary" | "none";
+}
+
+function text(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+export function isCursorTaskToolCall(toolCall: AcpToolCallState): boolean {
+  const rawInput = toolCall.data.rawInput;
+  const toolName =
+    rawInput && typeof rawInput === "object"
+      ? text((rawInput as { readonly _toolName?: unknown })._toolName)
+      : undefined;
+  return (
+    toolName?.toLowerCase() === "task" || toolCall.title?.toLowerCase().startsWith("task:") === true
+  );
+}
+
+export class CursorNativeSubagentTracker {
+  readonly #runs = new Map<string, CursorNativeSubagentRecord>();
+  readonly #lastRunByAgentId = new Map<string, SubagentRunId>();
+  readonly #missingParentCorrelationRecorded = new Set<string>();
+
+  recordMissingParentCorrelation(toolCallId: string): boolean {
+    if (this.#missingParentCorrelationRecorded.has(toolCallId)) return false;
+    this.#missingParentCorrelationRecorded.add(toolCallId);
+    return true;
+  }
+
+  fromToolCall(toolCall: AcpToolCallState): CursorNativeSubagentRecord | undefined {
+    if (!isCursorTaskToolCall(toolCall)) return undefined;
+    const current = this.#runs.get(toolCall.toolCallId);
+    const rawOutput =
+      toolCall.data.rawOutput && typeof toolCall.data.rawOutput === "object"
+        ? (toolCall.data.rawOutput as Record<string, unknown>)
+        : undefined;
+    const background = rawOutput?.isBackground === true;
+    const error = text(rawOutput?.error);
+    const result = text(rawOutput?.result) ?? text(rawOutput?.output);
+    const status: SubagentStatus = error
+      ? "failed"
+      : toolCall.status === "failed"
+        ? "failed"
+        : toolCall.status === "completed"
+          ? background
+            ? "running"
+            : "completed"
+          : toolCall.status === "inProgress"
+            ? "running"
+            : "starting";
+    const run: CursorNativeSubagentRecord = {
+      ...current,
+      runId: SubagentRunId.make(toolCall.toolCallId),
+      toolCallId: toolCall.toolCallId,
+      depth: 0,
+      title: current?.title ?? toolCall.title ?? "Cursor subagent",
+      taskPreview: current?.taskPreview ?? toolCall.detail ?? toolCall.title ?? "Cursor task",
+      status,
+      ...(result ? { finalMessage: result, lastSummary: result } : {}),
+      ...(error ? { error } : {}),
+      transcriptQuality: result ? "summary" : (current?.transcriptQuality ?? "none"),
+    };
+    this.#runs.set(toolCall.toolCallId, run);
+    return run;
+  }
+
+  enrich(params: CursorTaskRequest): CursorNativeSubagentRecord | undefined {
+    const current =
+      this.#runs.get(params.toolCallId) ??
+      ({
+        runId: SubagentRunId.make(params.toolCallId),
+        toolCallId: params.toolCallId,
+        depth: 0,
+        title: params.description.trim() || "Cursor subagent",
+        taskPreview: params.prompt.trim() || params.description.trim() || "Cursor task",
+        status: "unknown",
+        transcriptQuality: "none",
+      } satisfies CursorNativeSubagentRecord);
+    const priorRunId = this.#lastRunByAgentId.get(params.agentId);
+    const outcomeStatus = text(params.outcome?.status);
+    const error = text(params.outcome?.error) ?? current.error;
+    const result = text(params.outcome?.result) ?? current.finalMessage;
+    const status: SubagentStatus = error
+      ? "failed"
+      : outcomeStatus === "completed"
+        ? "completed"
+        : outcomeStatus === "failed"
+          ? "failed"
+          : current.status;
+    const next: CursorNativeSubagentRecord = {
+      ...current,
+      title: params.description.trim() || current.title,
+      taskPreview: params.prompt.trim() || current.taskPreview,
+      agentType: cursorSubagentTypeLabel(params.subagentType),
+      ...(text(params.model) ? { requestedModel: text(params.model)! } : {}),
+      agentId: params.agentId,
+      ...(params.durationMs !== undefined ? { durationMs: params.durationMs } : {}),
+      status,
+      ...(result ? { finalMessage: result, lastSummary: result } : {}),
+      ...(error ? { error } : {}),
+      ...(priorRunId && priorRunId !== current.runId ? { resumeOfRunId: priorRunId } : {}),
+      transcriptQuality: params.prompt.trim() || result ? "summary" : "none",
+    };
+    this.#runs.set(params.toolCallId, next);
+    this.#lastRunByAgentId.set(params.agentId, next.runId);
+    return next;
+  }
+}

@@ -11,6 +11,7 @@ import {
   type CanonicalItemType,
   type CanonicalRequestType,
   type CodexSettings,
+  EventId,
   ProviderDriverKind,
   type ProviderEvent,
   ProviderInstanceId,
@@ -69,6 +70,10 @@ import {
 } from "./CodexSessionRuntime.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import {
+  CodexNativeSubagentTracker,
+  type CodexNativeSubagentRecord,
+} from "../codex/CodexNativeSubagentTracker.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -118,6 +123,7 @@ interface CodexAdapterSessionContext {
   readonly scope: Scope.Closeable;
   readonly runtime: CodexSessionRuntimeShape;
   readonly eventFiber: Fiber.Fiber<void, never>;
+  readonly nativeSubagents: CodexNativeSubagentTracker;
   stopped: boolean;
 }
 
@@ -485,6 +491,8 @@ function providerRefsFromEvent(
   if (event.turnId) refs.providerTurnId = event.turnId;
   if (event.itemId) refs.providerItemId = event.itemId;
   if (event.requestId) refs.providerRequestId = event.requestId;
+  if (event.providerThreadId) refs.providerThreadId = event.providerThreadId;
+  if (event.providerParentThreadId) refs.providerParentThreadId = event.providerParentThreadId;
 
   return Object.keys(refs).length > 0 ? (refs as ProviderRuntimeEvent["providerRefs"]) : undefined;
 }
@@ -497,6 +505,7 @@ function runtimeEventBase(
   return {
     eventId: event.id,
     provider: event.provider,
+    ...(event.providerInstanceId ? { providerInstanceId: event.providerInstanceId } : {}),
     threadId: canonicalThreadId,
     createdAt: event.createdAt,
     ...(event.turnId ? { turnId: event.turnId } : {}),
@@ -551,7 +560,7 @@ function mapItemLifecycle(
   };
 }
 
-function mapToRuntimeEvents(
+function mapBaseRuntimeEvents(
   event: ProviderEvent,
   canonicalThreadId: ThreadId,
 ): ReadonlyArray<ProviderRuntimeEvent> {
@@ -1401,6 +1410,127 @@ function mapToRuntimeEvents(
   return [];
 }
 
+function codexExecutionScope(run: CodexNativeSubagentRecord) {
+  return {
+    kind: "subagent" as const,
+    subagentRunId: run.runId,
+    ...(run.parentRunId ? { parentSubagentRunId: run.parentRunId } : {}),
+    depth: run.depth,
+  };
+}
+
+function codexLifecycleEvent(
+  event: ProviderEvent,
+  canonicalThreadId: ThreadId,
+  run: CodexNativeSubagentRecord,
+): ProviderRuntimeEvent {
+  const isTerminal =
+    run.status === "completed" || run.status === "failed" || run.status === "cancelled";
+  return {
+    ...runtimeEventBase(event, canonicalThreadId),
+    eventId: EventId.make(`${event.id}:subagent:${run.runId}`),
+    type: isTerminal
+      ? "subagent.completed"
+      : run.status === "starting"
+        ? "subagent.started"
+        : "subagent.updated",
+    executionScope: codexExecutionScope(run),
+    providerRefs: {
+      ...providerRefsFromEvent(event),
+      providerThreadId: run.providerThreadId,
+      ...(run.providerParentThreadId ? { providerParentThreadId: run.providerParentThreadId } : {}),
+      ...(run.activeTurnId ? { providerTurnId: run.activeTurnId } : {}),
+    },
+    payload: {
+      source: "native",
+      status: run.status,
+      title: run.title,
+      taskPreview: run.taskPreview,
+      ...(run.agentType ? { agentType: run.agentType } : {}),
+      ...(run.requestedModel ? { requestedModel: run.requestedModel } : {}),
+      modelResolution: run.requestedModel ? "configured" : "unknown",
+      ...(run.lastSummary !== undefined ? { lastSummary: run.lastSummary } : {}),
+      ...(run.error !== undefined ? { error: run.error } : {}),
+      capabilities: {
+        canCancel: !isTerminal && run.activeTurnId !== undefined,
+        canSteer: false,
+        canRespond: false,
+        canResume: false,
+        transcriptQuality: "live",
+      },
+    },
+  };
+}
+
+function mapToRuntimeEvents(
+  event: ProviderEvent,
+  canonicalThreadId: ThreadId,
+  tracker: CodexNativeSubagentTracker,
+): ReadonlyArray<ProviderRuntimeEvent> {
+  const changedRuns: CodexNativeSubagentRecord[] = [];
+  if (event.method === "item/started" || event.method === "item/completed") {
+    const payload =
+      readPayload(EffectCodexSchema.V2ItemStartedNotification, event.payload) ??
+      readPayload(EffectCodexSchema.V2ItemCompletedNotification, event.payload);
+    if (payload?.item.type === "collabAgentToolCall") {
+      changedRuns.push(...tracker.fromCollabItem(payload.item));
+    }
+  }
+  if (event.method === "thread/started") {
+    const payload = readPayload(EffectCodexSchema.V2ThreadStartedNotification, event.payload);
+    const run = payload ? tracker.fromThreadStarted(payload.thread) : undefined;
+    if (run) changedRuns.push(run);
+  } else if (event.providerThreadId && event.method === "thread/status/changed") {
+    const payload = readPayload(EffectCodexSchema.V2ThreadStatusChangedNotification, event.payload);
+    const run = tracker.updateThread(event.providerThreadId, {
+      status:
+        payload?.status.type === "active"
+          ? "running"
+          : payload?.status.type === "systemError"
+            ? "failed"
+            : "unknown",
+    });
+    if (run) changedRuns.push(run);
+  } else if (event.providerThreadId && event.method === "turn/started" && event.turnId) {
+    const run = tracker.updateThread(event.providerThreadId, {
+      activeTurnId: event.turnId,
+      status: "running",
+    });
+    if (run) changedRuns.push(run);
+  } else if (event.providerThreadId && event.method === "turn/completed") {
+    const payload = readPayload(EffectCodexSchema.V2TurnCompletedNotification, event.payload);
+    const status = payload ? toTurnStatus(payload.turn.status) : "completed";
+    const run = tracker.updateThread(event.providerThreadId, {
+      activeTurnId: undefined,
+      status: status === "completed" ? "completed" : status === "failed" ? "failed" : "cancelled",
+      ...(payload?.turn.error?.message ? { error: payload.turn.error.message } : {}),
+    });
+    if (run) changedRuns.push(run);
+  }
+
+  const childRun = tracker.byThreadId(event.providerThreadId);
+  const baseEvents = mapBaseRuntimeEvents(event, canonicalThreadId).map((runtimeEvent) =>
+    childRun
+      ? {
+          ...runtimeEvent,
+          executionScope: codexExecutionScope(childRun),
+          providerRefs: {
+            ...runtimeEvent.providerRefs,
+            providerThreadId: childRun.providerThreadId,
+            ...(childRun.providerParentThreadId
+              ? { providerParentThreadId: childRun.providerParentThreadId }
+              : {}),
+          },
+        }
+      : runtimeEvent,
+  );
+  const uniqueRuns = [...new Map(changedRuns.map((run) => [run.runId, run])).values()];
+  return [
+    ...uniqueRuns.map((run) => codexLifecycleEvent(event, canonicalThreadId, run)),
+    ...baseEvents,
+  ];
+}
+
 /**
  * Build a Codex provider adapter bound to a specific `CodexSettings` payload.
  *
@@ -1533,10 +1663,11 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ),
         );
 
+        const nativeSubagents = new CodexNativeSubagentTracker();
         const eventFiber = yield* Stream.runForEach(runtime.events, (event) =>
           Effect.gen(function* () {
             yield* writeNativeEvent(event);
-            const runtimeEvents = mapToRuntimeEvents(event, event.threadId);
+            const runtimeEvents = mapToRuntimeEvents(event, event.threadId, nativeSubagents);
             if (runtimeEvents.length === 0) {
               yield* Effect.logDebug("ignoring unhandled Codex provider event", {
                 method: event.method,
@@ -1574,6 +1705,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           scope: sessionScope,
           runtime,
           eventFiber,
+          nativeSubagents,
           stopped: false,
         });
         sessionScopeTransferred = true;
@@ -1666,6 +1798,23 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         cause._tag === "ProviderAdapterSessionNotFoundError"
           ? cause
           : mapCodexRuntimeError(threadId, "turn/interrupt", cause),
+      ),
+    );
+
+  const cancelSubagent: NonNullable<CodexAdapterShape["cancelSubagent"]> = (input) =>
+    requireSession(input.rootThreadId).pipe(
+      Effect.flatMap((session) => {
+        const run = session.nativeSubagents.byThreadId(input.runId);
+        return run?.activeTurnId
+          ? session.runtime
+              .interruptChildTurn(run.providerThreadId, run.activeTurnId)
+              .pipe(Effect.as(true))
+          : Effect.succeed(false);
+      }),
+      Effect.mapError((cause) =>
+        cause._tag === "ProviderAdapterSessionNotFoundError"
+          ? cause
+          : mapCodexRuntimeError(input.rootThreadId, "subagent/turn/interrupt", cause),
       ),
     );
 
@@ -1793,6 +1942,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     startSession,
     sendTurn,
     interruptTurn,
+    cancelSubagent,
     readThread,
     rollbackThread,
     respondToRequest,

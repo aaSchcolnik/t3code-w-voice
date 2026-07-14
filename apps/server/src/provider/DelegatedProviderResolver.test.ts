@@ -42,6 +42,46 @@ const optionCapabilities = {
   ],
 };
 
+const codexCapabilities = {
+  optionDescriptors: [
+    {
+      id: "reasoningEffort",
+      label: "Reasoning",
+      type: "select" as const,
+      options: [
+        { id: "medium", label: "Medium", isDefault: true },
+        { id: "high", label: "High" },
+      ],
+      currentValue: "medium",
+    },
+    {
+      id: "serviceTier",
+      label: "Service Tier",
+      type: "select" as const,
+      options: [
+        { id: "default", label: "Standard" },
+        { id: "priority", label: "Fast", description: "Lower latency responses." },
+        { id: "flex", label: "Flex", isDefault: true },
+      ],
+      currentValue: "flex",
+    },
+  ],
+};
+
+const makeCodexSnapshot = (): ServerProvider =>
+  makeSnapshot({
+    instanceId: "codex_work",
+    driver: ProviderDriverKind.make("codex"),
+    models: [
+      {
+        slug: "gpt-5.5",
+        name: "GPT 5.5",
+        isCustom: false,
+        capabilities: codexCapabilities,
+      },
+    ],
+  });
+
 describe("resolveDelegatedProvider", () => {
   it("resolves the default cursor instance and default model", () => {
     const result = resolveDelegatedProvider({
@@ -251,6 +291,54 @@ describe("resolveDelegatedProvider", () => {
       ok: false,
       message: expect.stringContaining("could not be discovered"),
     });
+  });
+
+  it("materializes only the effective Codex service tier and captures stable labels", () => {
+    const result = resolveDelegatedProvider({
+      providers: [makeCodexSnapshot()],
+      provider: "codex",
+      options: [{ id: "reasoningEffort", value: "high" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.requestedOptions).toEqual([{ id: "reasoningEffort", value: "high" }]);
+    expect(result.value.resolvedOptions).toEqual([
+      { id: "reasoningEffort", value: "high" },
+      { id: "serviceTier", value: "flex" },
+    ]);
+    expect(result.value.resolvedOptionDetails).toEqual([
+      { id: "reasoningEffort", label: "Reasoning", value: "high", valueLabel: "High" },
+      { id: "serviceTier", label: "Service Tier", value: "flex", valueLabel: "Flex" },
+    ]);
+    expect(result.value.modelSelection?.instanceId).toBe("codex_work");
+  });
+
+  it("canonicalizes legacy Codex Fast while preserving the original request", () => {
+    const result = resolveDelegatedProvider({
+      providers: [makeCodexSnapshot()],
+      provider: "codex",
+      options: [{ id: "fastMode", value: true }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.requestedOptions).toEqual([{ id: "fastMode", value: true }]);
+    expect(result.value.resolvedOptions).toEqual([{ id: "serviceTier", value: "priority" }]);
+    expect(result.value.resolvedOptionDetails?.[0]).toMatchObject({
+      value: "priority",
+      valueLabel: "Fast",
+      description: "Lower latency responses.",
+    });
+  });
+
+  it("materializes the Codex service tier when the caller supplies no options", () => {
+    const result = resolveDelegatedProvider({
+      providers: [makeCodexSnapshot()],
+      provider: "codex",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.requestedOptions).toBeUndefined();
+    expect(result.value.resolvedOptions).toEqual([{ id: "serviceTier", value: "flex" }]);
   });
 });
 

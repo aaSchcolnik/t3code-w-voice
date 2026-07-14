@@ -22,10 +22,18 @@ import {
   type DelegatedRunProvider,
   type ModelSelection,
   type ProviderOptionSelections,
+  type ResolvedProviderOption,
   type ProviderInstanceId,
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+import {
+  buildProviderOptionSelectionsFromDescriptors,
+  buildResolvedProviderOptionDetails,
+  getProviderOptionDescriptors,
+} from "@t3tools/shared/model";
+
+import { normalizeCodexDelegatedOptions } from "../codexModelOptions.ts";
 
 /**
  * Why a configured instance cannot service a delegated run right now, or
@@ -60,6 +68,9 @@ export interface ResolvedDelegatedProvider {
   readonly requestedModel?: string;
   /** Undefined only when the instance advertises no models at all. */
   readonly resolvedModel?: string;
+  readonly requestedOptions?: ProviderOptionSelections;
+  readonly resolvedOptions?: ProviderOptionSelections;
+  readonly resolvedOptionDetails?: ReadonlyArray<ResolvedProviderOption>;
   readonly modelSelection?: ModelSelection;
 }
 
@@ -207,17 +218,43 @@ export function resolveDelegatedProvider(
       `Provider instance '${instance.instanceId}' advertises no model whose options can be validated.`,
     );
   }
+  const descriptors = resolvedModel?.capabilities?.optionDescriptors ?? [];
+  const normalizedOptions =
+    input.options !== undefined && input.provider === "codex"
+      ? normalizeCodexDelegatedOptions(input.options, descriptors)
+      : input.options !== undefined
+        ? ({ ok: true, options: input.options } as const)
+        : undefined;
+  if (normalizedOptions && !normalizedOptions.ok) return failure(normalizedOptions.message);
   const optionResolution =
-    input.options !== undefined && resolvedModel
-      ? validateOptions(input.provider, instance, resolvedModel, input.options)
+    normalizedOptions !== undefined && resolvedModel
+      ? validateOptions(input.provider, instance, resolvedModel, normalizedOptions.options)
       : undefined;
   if (optionResolution && !optionResolution.ok) return failure(optionResolution.message);
   const validatedOptions = optionResolution?.options;
+  let resolvedOptions = validatedOptions;
+  if (input.provider === "codex" && resolvedModel) {
+    const tierDescriptors = getProviderOptionDescriptors({
+      caps: resolvedModel.capabilities ?? {},
+      selections: validatedOptions,
+    }).filter((descriptor) => descriptor.id === "serviceTier");
+    const effectiveTier = buildProviderOptionSelectionsFromDescriptors(tierDescriptors)?.[0];
+    if (
+      effectiveTier !== undefined &&
+      !validatedOptions?.some((selection) => selection.id === "serviceTier")
+    ) {
+      resolvedOptions = [...(validatedOptions ?? []), effectiveTier];
+    }
+  }
+  const resolvedOptionDetails = buildResolvedProviderOptionDetails({
+    descriptors,
+    selections: resolvedOptions,
+  });
   const modelSelection = resolvedModel
     ? {
         instanceId: instance.instanceId,
         model: resolvedModel.slug,
-        ...(validatedOptions !== undefined ? { options: validatedOptions } : {}),
+        ...(resolvedOptions !== undefined ? { options: resolvedOptions } : {}),
       }
     : undefined;
   return {
@@ -226,6 +263,9 @@ export function resolveDelegatedProvider(
       instance,
       ...(requestedModel !== undefined ? { requestedModel } : {}),
       ...(resolvedModel !== undefined ? { resolvedModel: resolvedModel.slug } : {}),
+      ...(input.options !== undefined ? { requestedOptions: input.options } : {}),
+      ...(resolvedOptions !== undefined ? { resolvedOptions } : {}),
+      ...(resolvedOptionDetails !== undefined ? { resolvedOptionDetails } : {}),
       ...(modelSelection !== undefined ? { modelSelection } : {}),
     },
   };

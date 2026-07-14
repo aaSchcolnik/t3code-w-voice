@@ -33,6 +33,7 @@ import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionT
 import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import { isGitRepository } from "../../git/Utils.ts";
 import { childScopedParentToolUseId } from "../SubagentTranscriptService.ts";
+import { SubagentRunService } from "../SubagentRunService.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
@@ -742,6 +743,7 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const providerService = yield* ProviderService;
+  const subagentRuns = yield* SubagentRunService;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const serverSettingsService = yield* ServerSettingsService;
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
@@ -1345,9 +1347,14 @@ const make = Effect.gen(function* () {
 
   const processRuntimeEvent = (event: ProviderRuntimeEvent) =>
     Effect.gen(function* () {
+      yield* subagentRuns.ingest(event);
       // Child-scoped events (native subagent activity tagged with a parent
       // tool-use id) belong to the child transcript, not the parent timeline.
-      if (childScopedParentToolUseId(event) !== undefined) return;
+      if (
+        event.executionScope?.kind === "subagent" ||
+        childScopedParentToolUseId(event) !== undefined
+      )
+        return;
       const thread = yield* resolveThreadShell(event.threadId);
       if (!thread) return;
 

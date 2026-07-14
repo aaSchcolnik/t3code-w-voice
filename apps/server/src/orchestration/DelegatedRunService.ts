@@ -7,6 +7,7 @@ import {
   EventId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderDriverKind,
+  SubagentRunId,
   ThreadId,
   TurnId,
   type DelegatedRun,
@@ -21,6 +22,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -31,6 +33,8 @@ import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import { buildResolvedProviderOptionDetails } from "@t3tools/shared/model";
 
 import {
   describeDelegatedProviderCapabilities,
@@ -42,6 +46,7 @@ import {
   appendActiveSubagentTranscriptStatus,
   registerActiveSubagentTranscript,
 } from "./SubagentTranscriptService.ts";
+import { SubagentRunService } from "./SubagentRunService.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../config.ts";
@@ -135,6 +140,10 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const serverSettings = yield* ServerSettingsService;
+  const subagentRuns = yield* SubagentRunService;
+  const serviceScope = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+    Scope.close(scope, Exit.void),
+  );
   const persistencePath = path.join(serverConfig.stateDir, "delegated-runs.json");
   const persistedRuns = yield* fs.readFileString(persistencePath).pipe(
     Effect.flatMap(decodeDelegatedRunsJson),
@@ -156,6 +165,69 @@ const make = Effect.gen(function* () {
 
   const isResultReady = (run: DelegatedRun) =>
     isTerminal(run) || run.status === "waiting_for_input";
+
+  const projectRun = Effect.fn("DelegatedRunService.projectRun")(function* (run: DelegatedRun) {
+    const runId = SubagentRunId.make(run.id);
+    let resolvedOptionDetails = run.resolvedOptionDetails;
+    if (!resolvedOptionDetails && run.resolvedOptions) {
+      const providers = yield* providerRegistry.getProviders;
+      const provider = providers.find(
+        (candidate) => candidate.instanceId === run.providerInstanceId,
+      );
+      const modelSlug = run.resolvedModel ?? run.model;
+      const model = provider?.models.find((candidate) => candidate.slug === modelSlug);
+      resolvedOptionDetails = buildResolvedProviderOptionDetails({
+        descriptors: model?.capabilities?.optionDescriptors,
+        selections: run.resolvedOptions,
+      });
+    }
+    yield* subagentRuns.upsert({
+      eventId: `delegated:${run.id}:${run.sequence}`,
+      providerRefs: {
+        ...(run.providerThreadId ? { providerThreadId: run.providerThreadId } : {}),
+        ...(run.providerTurnId ? { providerTurnId: run.providerTurnId } : {}),
+        ...(run.parentToolCallId ? { providerToolUseId: run.parentToolCallId } : {}),
+      },
+      run: {
+        id: runId,
+        source: "delegated",
+        provider: ProviderDriverKind.make(run.provider),
+        providerInstanceId: run.providerInstanceId,
+        rootThreadId: run.parentThreadId,
+        ...(run.parentTurnId ? { rootTurnId: run.parentTurnId } : {}),
+        ...(run.parentRunId ? { parentRunId: SubagentRunId.make(run.parentRunId) } : {}),
+        depth: run.parentRunId ? 1 : 0,
+        title: run.title,
+        taskPreview: run.taskPreview,
+        ...(run.requestedModel ? { requestedModel: run.requestedModel } : {}),
+        ...((run.resolvedModel ?? run.model)
+          ? { resolvedModel: run.resolvedModel ?? run.model }
+          : {}),
+        ...(run.requestedOptions ? { requestedOptions: run.requestedOptions } : {}),
+        ...(run.resolvedOptions ? { resolvedOptions: run.resolvedOptions } : {}),
+        ...(resolvedOptionDetails ? { resolvedOptionDetails } : {}),
+        modelResolution: (run.resolvedModel ?? run.model) ? "configured" : "unknown",
+        status: run.status,
+        lastSummary: run.lastSummary,
+        finalMessage: run.finalMessage,
+        error: run.error,
+        capabilities: {
+          canCancel: !isTerminal(run),
+          canSteer: false,
+          canRespond: run.status === "waiting_for_input",
+          canResume: false,
+          transcriptQuality: "live",
+        },
+        createdAt: run.createdAt,
+        startedAt: run.startedAt,
+        completedAt: run.completedAt,
+        updatedAt: run.updatedAt,
+        sequence: run.sequence,
+      },
+    });
+  });
+
+  yield* Effect.forEach(persistedRuns.filter(isTerminal), projectRun, { discard: true });
 
   const removeResultWaiter = (runId: DelegatedRunId, deferred: Deferred.Deferred<DelegatedRun>) =>
     Ref.update(resultWaitersRef, (waitersByRun) => {
@@ -306,7 +378,7 @@ const make = Effect.gen(function* () {
   ) {
     const fiber = yield* Effect.sleep(remaining).pipe(
       Effect.andThen(flushLatestRun(runId)),
-      Effect.forkDetach,
+      Effect.forkIn(serviceScope),
     );
     yield* Ref.update(emissionRef, (states) => {
       const state = states.get(runId);
@@ -377,6 +449,7 @@ const make = Effect.gen(function* () {
         });
         if (!transition) return undefined;
         yield* emitUpdatedRun(transition.current, transition.updated);
+        yield* projectRun(transition.updated);
         if (isTerminal(transition.updated)) yield* persistTerminalRuns();
         yield* completeResultWaiters(transition.updated);
         return transition.updated;
@@ -548,7 +621,7 @@ const make = Effect.gen(function* () {
 
   const providerEventsFiber = yield* providerService.streamEvents.pipe(
     Stream.runForEach(handleProviderEvent),
-    Effect.forkDetach,
+    Effect.forkIn(serviceScope),
   );
 
   const start: DelegatedRunServiceShape["start"] = Effect.fn("DelegatedRunService.start")(
@@ -729,8 +802,15 @@ const make = Effect.gen(function* () {
         error: null,
         ...(resolvedModel ? { model: resolvedModel, resolvedModel } : {}),
         ...(requestedModel ? { requestedModel } : {}),
-        ...(requestedOptions ? { requestedOptions } : {}),
-        ...(modelSelection?.options ? { resolvedOptions: modelSelection.options } : {}),
+        ...(resolution.value.requestedOptions
+          ? { requestedOptions: resolution.value.requestedOptions }
+          : {}),
+        ...(resolution.value.resolvedOptions
+          ? { resolvedOptions: resolution.value.resolvedOptions }
+          : {}),
+        ...(resolution.value.resolvedOptionDetails
+          ? { resolvedOptionDetails: resolution.value.resolvedOptionDetails }
+          : {}),
         interactionMode,
         approvalPolicy,
         sandboxMode,
@@ -748,15 +828,25 @@ const make = Effect.gen(function* () {
       yield* Ref.update(runByProviderThreadRef, (current) =>
         new Map(current).set(providerThreadId, runId),
       );
+      yield* projectRun(run);
       yield* registerActiveSubagentTranscript({
         id: runId,
+        runId: SubagentRunId.make(runId),
         source: "delegated",
         parentThreadId: input.parentThreadId,
         providerInstanceId: resolvedProviderInstanceId,
         ...(resolvedModel ? { model: resolvedModel } : {}),
-        ...(requestedOptions ? { requestedOptions } : {}),
-        ...(modelSelection?.options ? { resolvedOptions: modelSelection.options } : {}),
+        ...(resolution.value.requestedOptions
+          ? { requestedOptions: resolution.value.requestedOptions }
+          : {}),
+        ...(resolution.value.resolvedOptions
+          ? { resolvedOptions: resolution.value.resolvedOptions }
+          : {}),
+        ...(resolution.value.resolvedOptionDetails
+          ? { resolvedOptionDetails: resolution.value.resolvedOptionDetails }
+          : {}),
         task: input.task,
+        transcriptQuality: "live",
         createdAt: now,
       });
       yield* emissionLock.withPermit(
@@ -821,7 +911,7 @@ const make = Effect.gen(function* () {
             });
           }),
         ),
-        Effect.forkDetach,
+        Effect.forkIn(serviceScope),
       );
 
       return run;

@@ -14,6 +14,14 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
+import { ProviderOptionSelections, ResolvedProviderOption } from "./model.ts";
+import {
+  SubagentCapabilities,
+  SubagentModelResolution,
+  SubagentRunId,
+  SubagentSource,
+  SubagentStatus,
+} from "./subagent.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
@@ -42,12 +50,25 @@ export type RuntimeEventRaw = typeof RuntimeEventRaw.Type;
 const ProviderRequestId = TrimmedNonEmptyStringSchema;
 export type ProviderRequestId = typeof ProviderRequestId.Type;
 
-const ProviderRefs = Schema.Struct({
+export const ProviderRefs = Schema.Struct({
   providerTurnId: Schema.optional(TrimmedNonEmptyStringSchema),
   providerItemId: Schema.optional(ProviderItemId),
   providerRequestId: Schema.optional(ProviderRequestId),
+  providerThreadId: Schema.optional(TrimmedNonEmptyStringSchema),
+  providerParentThreadId: Schema.optional(TrimmedNonEmptyStringSchema),
+  providerToolUseId: Schema.optional(TrimmedNonEmptyStringSchema),
+  providerTaskId: Schema.optional(TrimmedNonEmptyStringSchema),
+  providerAgentId: Schema.optional(TrimmedNonEmptyStringSchema),
 });
 export type ProviderRefs = typeof ProviderRefs.Type;
+
+export const ProviderExecutionScope = Schema.Struct({
+  kind: Schema.Literal("subagent"),
+  subagentRunId: SubagentRunId,
+  parentSubagentRunId: Schema.optional(SubagentRunId),
+  depth: NonNegativeInt,
+});
+export type ProviderExecutionScope = typeof ProviderExecutionScope.Type;
 
 const RuntimeSessionState = Schema.Literals([
   "starting",
@@ -180,6 +201,9 @@ const ProviderRuntimeEventType = Schema.Literals([
   "task.started",
   "task.progress",
   "task.completed",
+  "subagent.started",
+  "subagent.updated",
+  "subagent.completed",
   "hook.started",
   "hook.progress",
   "hook.completed",
@@ -230,6 +254,9 @@ const UserInputResolvedType = Schema.Literal("user-input.resolved");
 const TaskStartedType = Schema.Literal("task.started");
 const TaskProgressType = Schema.Literal("task.progress");
 const TaskCompletedType = Schema.Literal("task.completed");
+const SubagentStartedType = Schema.Literal("subagent.started");
+const SubagentUpdatedType = Schema.Literal("subagent.updated");
+const SubagentCompletedType = Schema.Literal("subagent.completed");
 const HookStartedType = Schema.Literal("hook.started");
 const HookProgressType = Schema.Literal("hook.progress");
 const HookCompletedType = Schema.Literal("hook.completed");
@@ -261,6 +288,7 @@ const ProviderRuntimeEventBase = Schema.Struct({
   itemId: Schema.optional(RuntimeItemId),
   requestId: Schema.optional(RuntimeRequestId),
   providerRefs: Schema.optional(ProviderRefs),
+  executionScope: Schema.optional(ProviderExecutionScope),
   raw: Schema.optional(RuntimeEventRaw),
 });
 export type ProviderRuntimeEventBase = typeof ProviderRuntimeEventBase.Type;
@@ -485,6 +513,26 @@ const TaskCompletedPayload = Schema.Struct({
   usage: Schema.optional(Schema.Unknown),
 });
 export type TaskCompletedPayload = typeof TaskCompletedPayload.Type;
+
+export const SubagentLifecyclePayload = Schema.Struct({
+  source: SubagentSource,
+  status: SubagentStatus,
+  title: Schema.optional(TrimmedNonEmptyStringSchema),
+  taskPreview: Schema.optional(TrimmedNonEmptyStringSchema),
+  agentType: Schema.optional(TrimmedNonEmptyStringSchema),
+  requestedModel: Schema.optional(TrimmedNonEmptyStringSchema),
+  resolvedModel: Schema.optional(TrimmedNonEmptyStringSchema),
+  requestedOptions: Schema.optional(ProviderOptionSelections),
+  resolvedOptions: Schema.optional(ProviderOptionSelections),
+  resolvedOptionDetails: Schema.optional(Schema.Array(ResolvedProviderOption)),
+  modelResolution: Schema.optional(SubagentModelResolution),
+  lastSummary: Schema.optional(Schema.NullOr(Schema.String)),
+  finalMessage: Schema.optional(Schema.NullOr(Schema.String)),
+  error: Schema.optional(Schema.NullOr(Schema.String)),
+  capabilities: Schema.optional(SubagentCapabilities),
+  resumeOfRunId: Schema.optional(SubagentRunId),
+});
+export type SubagentLifecyclePayload = typeof SubagentLifecyclePayload.Type;
 
 const HookStartedPayload = Schema.Struct({
   hookId: TrimmedNonEmptyStringSchema,
@@ -845,6 +893,28 @@ const ProviderRuntimeTaskCompletedEvent = Schema.Struct({
 });
 export type ProviderRuntimeTaskCompletedEvent = typeof ProviderRuntimeTaskCompletedEvent.Type;
 
+const ProviderRuntimeSubagentStartedEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: SubagentStartedType,
+  payload: SubagentLifecyclePayload,
+});
+export type ProviderRuntimeSubagentStartedEvent = typeof ProviderRuntimeSubagentStartedEvent.Type;
+
+const ProviderRuntimeSubagentUpdatedEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: SubagentUpdatedType,
+  payload: SubagentLifecyclePayload,
+});
+export type ProviderRuntimeSubagentUpdatedEvent = typeof ProviderRuntimeSubagentUpdatedEvent.Type;
+
+const ProviderRuntimeSubagentCompletedEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: SubagentCompletedType,
+  payload: SubagentLifecyclePayload,
+});
+export type ProviderRuntimeSubagentCompletedEvent =
+  typeof ProviderRuntimeSubagentCompletedEvent.Type;
+
 const ProviderRuntimeHookStartedEvent = Schema.Struct({
   ...ProviderRuntimeEventBase.fields,
   type: HookStartedType,
@@ -999,6 +1069,9 @@ export const ProviderRuntimeEventV2 = Schema.Union([
   ProviderRuntimeTaskStartedEvent,
   ProviderRuntimeTaskProgressEvent,
   ProviderRuntimeTaskCompletedEvent,
+  ProviderRuntimeSubagentStartedEvent,
+  ProviderRuntimeSubagentUpdatedEvent,
+  ProviderRuntimeSubagentCompletedEvent,
   ProviderRuntimeHookStartedEvent,
   ProviderRuntimeHookProgressEvent,
   ProviderRuntimeHookCompletedEvent,

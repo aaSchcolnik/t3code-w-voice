@@ -1,12 +1,176 @@
-import { WS_METHODS, type SubagentTranscript } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import {
+  SubagentRunId,
+  WS_METHODS,
+  defaultInstanceIdForDriver,
+  type EnvironmentId,
+  type ProviderDriverKind,
+  type ProviderInstanceId,
+  type SubagentRun,
+  type SubagentRunStreamEvent,
+  type SubagentTranscript,
+  type ThreadId,
+} from "@t3tools/contracts";
 import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Stream from "effect/Stream";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
-import { applySubagentTranscriptEvent } from "../session-logic";
+import { applySubagentTranscriptEvent, type SubagentEntry } from "../session-logic";
+
+export interface SubagentRunListState {
+  readonly snapshotSequence: number;
+  readonly runs: ReadonlyArray<SubagentRun>;
+}
+
+const EMPTY_RUN_LIST_STATE: SubagentRunListState = {
+  snapshotSequence: -1,
+  runs: [],
+};
+
+export function applySubagentRunEvent(
+  state: SubagentRunListState,
+  event: SubagentRunStreamEvent,
+): SubagentRunListState {
+  if (event.snapshotSequence <= state.snapshotSequence) return state;
+  if (event.type === "snapshot") {
+    return {
+      snapshotSequence: event.snapshotSequence,
+      runs: [...event.runs].toSorted(compareSubagentRuns),
+    };
+  }
+
+  const existing = state.runs.find((run) => run.id === event.run.id);
+  if (existing && existing.sequence > event.run.sequence) {
+    return { ...state, snapshotSequence: event.snapshotSequence };
+  }
+  return {
+    snapshotSequence: event.snapshotSequence,
+    runs: [...state.runs.filter((run) => run.id !== event.run.id), event.run].toSorted(
+      compareSubagentRuns,
+    ),
+  };
+}
+
+function compareSubagentRuns(left: SubagentRun, right: SubagentRun): number {
+  if (left.depth !== right.depth) return left.depth - right.depth;
+  const timestamp = right.createdAt.localeCompare(left.createdAt);
+  return timestamp === 0 ? left.id.localeCompare(right.id) : timestamp;
+}
+
+export const subagentRunsAtomFamily = createEnvironmentRpcSubscriptionAtomFamily(
+  connectionAtomRuntime,
+  {
+    label: "subagents:runs",
+    tag: WS_METHODS.subscribeSubagentRuns,
+    idleTtlMs: 5_000,
+    transform: (stream) =>
+      Stream.scan(stream, EMPTY_RUN_LIST_STATE, applySubagentRunEvent).pipe(
+        Stream.filter((state) => state.snapshotSequence >= 0),
+      ),
+  },
+);
+
+const EMPTY_RUN_LIST_ATOM = Atom.make(AsyncResult.success(EMPTY_RUN_LIST_STATE)).pipe(
+  Atom.withLabel("subagents:runs-empty"),
+);
+
+export function useSubagentRunList(
+  environmentId: EnvironmentId,
+  rootThreadId: ThreadId | null,
+): { readonly authoritative: boolean; readonly runs: ReadonlyArray<SubagentRun> } {
+  const runsAtom = useMemo(
+    () =>
+      rootThreadId
+        ? subagentRunsAtomFamily({ environmentId, input: { rootThreadId } })
+        : EMPTY_RUN_LIST_ATOM,
+    [environmentId, rootThreadId],
+  );
+  const result = useAtomValue(runsAtom);
+  const state = Option.getOrElse(AsyncResult.value(result), () => EMPTY_RUN_LIST_STATE);
+  return {
+    authoritative: rootThreadId !== null && AsyncResult.isSuccess(result),
+    runs: state.runs,
+  };
+}
+
+export const LEGACY_SUBAGENT_FALLBACK_ENABLED =
+  import.meta.env.VITE_SUBAGENT_LEGACY_FALLBACK !== "0";
+
+export interface LegacySubagentFallbackContext {
+  readonly rootThreadId: ThreadId;
+  readonly provider: ProviderDriverKind;
+  readonly providerInstanceId?: ProviderInstanceId | undefined;
+}
+
+export function mergeSubagentRunsWithLegacyFallback(
+  normalizedRuns: ReadonlyArray<SubagentRun>,
+  legacyEntries: ReadonlyArray<SubagentEntry>,
+  context: LegacySubagentFallbackContext,
+  enabled = LEGACY_SUBAGENT_FALLBACK_ENABLED,
+): ReadonlyArray<SubagentRun> {
+  if (!enabled) return normalizedRuns;
+  const normalizedIds = new Set(normalizedRuns.map((run) => String(run.id)));
+  const fallbackRuns = legacyEntries.flatMap((entry) => {
+    const correlationId = entry.transcriptId ?? entry.id;
+    if (normalizedIds.has(entry.id) || normalizedIds.has(correlationId)) return [];
+    const provider = entry.providerDriver ?? context.provider;
+    const status =
+      entry.status === "active"
+        ? "running"
+        : entry.outcome === "failed"
+          ? "failed"
+          : entry.outcome === "stopped"
+            ? "cancelled"
+            : "completed";
+    return [
+      {
+        id: SubagentRunId.make(correlationId),
+        source: entry.source,
+        provider,
+        providerInstanceId:
+          entry.providerInstanceId ??
+          context.providerInstanceId ??
+          defaultInstanceIdForDriver(provider),
+        rootThreadId: context.rootThreadId,
+        ...(entry.turnId ? { rootTurnId: entry.turnId } : {}),
+        depth: 0,
+        title: entry.name,
+        taskPreview: entry.name,
+        ...(entry.agentType ? { agentType: entry.agentType } : {}),
+        ...(entry.model ? { resolvedModel: entry.model } : {}),
+        ...(entry.requestedOptions ? { requestedOptions: entry.requestedOptions } : {}),
+        ...(entry.resolvedOptions ? { resolvedOptions: entry.resolvedOptions } : {}),
+        ...(entry.resolvedOptionDetails
+          ? { resolvedOptionDetails: entry.resolvedOptionDetails }
+          : {}),
+        modelResolution: entry.model ? "configured" : "unknown",
+        status,
+        lastSummary: entry.lastMessage,
+        finalMessage: status === "completed" ? entry.lastMessage : null,
+        error: status === "failed" ? entry.lastMessage : null,
+        capabilities: {
+          canCancel: false,
+          canSteer: false,
+          canRespond: false,
+          canResume: false,
+          transcriptQuality: entry.transcriptId ? "live" : "none",
+        },
+        createdAt: entry.createdAt,
+        startedAt: entry.createdAt,
+        completedAt: entry.completedAt,
+        updatedAt: entry.completedAt ?? entry.createdAt,
+        sequence: 0,
+      } satisfies SubagentRun,
+    ];
+  });
+  return [...normalizedRuns, ...fallbackRuns].toSorted(compareSubagentRuns);
+}
 
 /**
  * Live view of one subagent child transcript. Mounting the atom subscribes to

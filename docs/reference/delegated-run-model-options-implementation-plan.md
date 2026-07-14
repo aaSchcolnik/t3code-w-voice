@@ -361,6 +361,31 @@ Choose one unambiguous rule before adding profile support:
 Profile resolution must rerun live capability validation. A stored profile is a
 desired configuration, not proof that the provider still supports it.
 
+## Implemented follow-up — effective options in Subagents
+
+Delegated runs now retain three distinct provider-option facts:
+
+- `requestedOptions`: the caller's original decoded request, including
+  supported legacy Codex aliases.
+- `resolvedOptions`: canonical values actually sent to the provider. For Codex,
+  this includes the advertised effective `serviceTier` default even when the
+  caller omitted it; unrelated provider defaults are not materialized.
+- `resolvedOptionDetails`: provider-neutral labels and descriptions captured
+  from the catalog used at resolution time.
+
+Codex legacy `fastMode` and `serviceTier=fast` requests are canonicalized at the
+delegated resolver boundary only when the selected model advertises one
+unambiguous Fast tier. Cursor's boolean `fastMode` remains unchanged. Invalid,
+stale, mixed, or ambiguous aliases still fail before a provider session starts.
+
+The normalized `SubagentRun`, lifecycle, transcript, and legacy-activity
+fallback paths preserve this metadata across updates, persistence, reloads, and
+reconnects. The Subagents list and detail header render the stored Service Tier
+label through one shared accessible badge. Old runs with only raw resolved
+options may reconstruct the label from an exact current provider/model catalog
+match; runs without trustworthy evidence remain unlabeled rather than being
+assumed Standard.
+
 ## Test matrix
 
 - Codex: `gpt-5.5` with `reasoningEffort: high` is accepted and reaches the

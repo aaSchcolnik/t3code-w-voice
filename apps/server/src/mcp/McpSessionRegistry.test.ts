@@ -88,6 +88,7 @@ const makeRegistry = (
   httpServer = fakeHttpServer,
   options: {
     providers?: ReadonlyArray<ServerProvider>;
+    nativeSubagentTracking?: Partial<Readonly<Record<"claudeAgent" | "codex" | "cursor", boolean>>>;
     mcp?: {
       preview?: boolean;
       claudeAgent?: boolean;
@@ -109,6 +110,9 @@ const makeRegistry = (
     .make({
       now,
       livenessWindowMs: 100,
+      ...(options.nativeSubagentTracking
+        ? { nativeSubagentTracking: options.nativeSubagentTracking }
+        : {}),
     })
     .pipe(
       Effect.provide(
@@ -182,6 +186,7 @@ it.effect("withholds Claude delegation from a Claude parent thread", () =>
     const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
       providers: [makeProvider("claudeAgent"), makeProvider("codex")],
       mcp: { preview: false, claudeAgent: true, codexAgent: true },
+      nativeSubagentTracking: { claudeAgent: true },
     });
     const issued = yield* registry.issue({
       threadId: ThreadId.make("thread-claude-parent"),
@@ -191,6 +196,57 @@ it.effect("withholds Claude delegation from a Claude parent thread", () =>
     const resolved = yield* registry.resolve(token);
     expect([...resolved!.capabilities]).toEqual(["codex-agent"]);
     expect(resolved!.providerDriver).toBe("claudeAgent");
+  }),
+);
+
+it.effect("exposes only cross-provider delegation when native tracking is enabled", () =>
+  Effect.gen(function* () {
+    const providers = [makeProvider("claudeAgent"), makeProvider("codex"), makeProvider("cursor")];
+    const mcp = {
+      preview: false,
+      claudeAgent: true,
+      codexAgent: true,
+      cursorAgent: true,
+    };
+    const expectations = [
+      ["claudeAgent", ["codex-agent", "cursor-agent"]],
+      ["codex", ["cursor-agent", "claude-agent"]],
+      ["cursor", ["codex-agent", "claude-agent"]],
+    ] as const;
+
+    for (const [driver, expected] of expectations) {
+      const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+        providers,
+        mcp,
+        nativeSubagentTracking: { claudeAgent: true, codex: true, cursor: true },
+      });
+      const issued = yield* registry.issue({
+        threadId: ThreadId.make(`thread-native-${driver}`),
+        providerInstanceId: ProviderInstanceId.make(driver),
+      });
+      const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+      const resolved = yield* registry.resolve(token);
+      expect([...resolved!.capabilities]).toEqual(expected);
+      expect(issued.config.providerDriver).toBe(driver);
+      expect(issued.config.nativeSubagentTracking).toBe(true);
+    }
+  }),
+);
+
+it.effect("restores the same-provider MCP path when a native tracking flag is disabled", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      providers: [makeProvider("claudeAgent"), makeProvider("codex"), makeProvider("cursor")],
+      mcp: { preview: false, claudeAgent: true, codexAgent: true, cursorAgent: true },
+      nativeSubagentTracking: { codex: false },
+    });
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-codex-rollback"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect([...resolved!.capabilities]).toEqual(["codex-agent", "cursor-agent", "claude-agent"]);
   }),
 );
 

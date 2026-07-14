@@ -23,6 +23,7 @@ import type {
   ProviderStopSessionInput,
   ThreadId,
   ProviderTurnStartResult,
+  SubagentControlInput,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -57,6 +58,11 @@ export interface ProviderServiceShape {
   readonly interruptTurn: (
     input: ProviderInterruptTurnInput,
   ) => Effect.Effect<void, ProviderServiceError>;
+
+  /** Route cancellation to the provider owning the root session. */
+  readonly cancelSubagent?: (
+    input: SubagentControlInput,
+  ) => Effect.Effect<boolean, ProviderServiceError>;
 
   /**
    * Respond to a provider approval request.

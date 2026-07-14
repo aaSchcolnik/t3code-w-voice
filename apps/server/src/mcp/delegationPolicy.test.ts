@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
+import { ProviderDriverKind } from "@t3tools/contracts";
 
 import {
   detectUntrackedDelegationAttempt,
@@ -11,7 +12,11 @@ const capabilities = (...values: McpCapability[]) => new Set(values);
 
 describe("trackedDelegationInstructions", () => {
   it("adds authoritative guidance when tracked delegation is available", () => {
-    const instructions = trackedDelegationInstructions(capabilities("cursor-agent"));
+    const instructions = trackedDelegationInstructions(
+      capabilities("cursor-agent"),
+      ProviderDriverKind.make("codex"),
+      true,
+    );
     expect(instructions).toContain("MUST use");
     expect(instructions).toContain("cursor_start");
     expect(instructions).toContain("Subagents panel");
@@ -21,10 +26,25 @@ describe("trackedDelegationInstructions", () => {
     expect(instructions).toContain("server-locked workspace-write sandbox");
     expect(instructions).toContain("never require user action");
     expect(instructions).toContain("Git read-only policy");
+    expect(instructions).toContain("Codex collaboration tools");
+    expect(instructions).not.toContain("claude_start");
+    expect(instructions).not.toContain("codex_start");
   });
 
   it("does not add guidance without a delegation capability", () => {
     expect(trackedDelegationInstructions(capabilities("preview"))).toBeUndefined();
+  });
+
+  it("names only callable cross-provider tools and the native same-provider path", () => {
+    const instructions = trackedDelegationInstructions(
+      capabilities("codex-agent", "claude-agent"),
+      ProviderDriverKind.make("cursor"),
+      true,
+    );
+    expect(instructions).toContain("codex_start");
+    expect(instructions).toContain("claude_start");
+    expect(instructions).not.toContain("cursor_start");
+    expect(instructions).toContain("Cursor's native Task mechanism");
   });
 });
 

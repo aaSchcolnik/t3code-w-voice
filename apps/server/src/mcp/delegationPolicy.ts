@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import type { ProviderDriverKind } from "@t3tools/contracts";
 
 import { ProjectionProjectRepository } from "../persistence/Services/ProjectionProjects.ts";
 import { SkillRepository } from "../persistence/Services/Skills.ts";
@@ -8,29 +9,75 @@ import type { McpCapability } from "./McpInvocationContext.ts";
 import type { McpProviderSessionConfig } from "./McpProviderSession.ts";
 import { renderSkillCatalogSection } from "./skillCatalog.ts";
 
-const TRACKED_DELEGATION_INSTRUCTIONS = `
-## T3 Code tracked subagents
+const TRACKED_PROVIDER_TOOLS = {
+  "codex-agent": {
+    label: "Codex",
+    start: "codex_start",
+    result: "codex_result",
+  },
+  "cursor-agent": {
+    label: "Cursor",
+    start: "cursor_start",
+    result: "cursor_result",
+  },
+  "claude-agent": {
+    label: "Claude",
+    start: "claude_start",
+    result: "claude_result",
+  },
+} as const;
 
-When delegating work to Codex, Cursor, or Claude (including specific models such as Cursor Composer), you MUST use the T3 Code MCP delegation tools when they are available:
-- Use \`mcp__t3-code__codex_start\` (\`codex_start\`) for Codex.
-- Use \`mcp__t3-code__cursor_start\` (\`cursor_start\`) for Cursor.
-- Use \`mcp__t3-code__claude_start\` (\`claude_start\`) for Claude.
-
-Do not substitute another delegation mechanism: a provider-specific agent/plugin (for example, a \`codex:*\` or \`cursor:*\` subagent type), your own native collaboration or agent-spawning tools (for example \`spawn_agent\`) when the user asked for a Codex, Cursor, or Claude subagent, launching \`codex exec\`, \`cursor-agent -p\`, or \`claude -p\`, or an equivalent companion script through Bash or another shell. Those paths are untracked or run the wrong provider: the user cannot see the actual provider status, transcript, result, or cancellation controls in the Subagents panel.
-
-After starting a tracked run, call the matching \`codex_result\`, \`cursor_result\`, or \`claude_result\` tool exactly once. The result call waits event-driven until the run finishes (or needs structured input). If Cursor needs input, call \`cursor_respond\` and then call \`cursor_result\` exactly once again for the next active phase. NEVER poll the status/result tools and NEVER create shell sleep timers or background polling commands. Use a status tool only when the user explicitly asks for a one-time progress snapshot.
-
-Tracked subagents launch with a server-locked workspace-write sandbox, automatic approval handling, and a mandatory Git read-only policy. They may edit project files, but must never access paths outside the workspace or run Git commands that change local or remote state. The execution configuration is fixed by the server; do not attempt to override it with a profile or start-tool arguments. Permission requests from a tracked subagent are accepted by the server and never require user action; structured questions may still be returned through the result tool.
-`.trim();
+const sameProviderNativeInstruction = (
+  providerDriver: ProviderDriverKind | undefined,
+): string | undefined => {
+  switch (providerDriver) {
+    case "claudeAgent":
+      return "For same-provider Claude delegation, use Claude's native Agent/Task mechanism; native runs are tracked in the Subagents panel.";
+    case "codex":
+      return "For same-provider Codex delegation, use Codex collaboration tools; native child threads are tracked in the Subagents panel.";
+    case "cursor":
+      return "For same-provider Cursor delegation, use Cursor's native Task mechanism; native task runs are tracked in the Subagents panel.";
+    default:
+      return undefined;
+  }
+};
 
 export function trackedDelegationInstructions(
   capabilities: ReadonlySet<McpCapability>,
+  providerDriver?: ProviderDriverKind,
+  nativeSubagentTracking = false,
 ): string | undefined {
-  return capabilities.has("codex-agent") ||
-    capabilities.has("cursor-agent") ||
-    capabilities.has("claude-agent")
-    ? TRACKED_DELEGATION_INSTRUCTIONS
+  const callable = Object.entries(TRACKED_PROVIDER_TOOLS).flatMap(([capability, tool]) =>
+    capabilities.has(capability as McpCapability) ? [tool] : [],
+  );
+  const nativeInstruction = nativeSubagentTracking
+    ? sameProviderNativeInstruction(providerDriver)
     : undefined;
+  if (callable.length === 0 && nativeInstruction === undefined) return undefined;
+
+  const toolLines = callable.map(
+    (tool) =>
+      `- Use \`mcp__t3-code__${tool.start}\` (\`${tool.start}\`) for ${tool.label}, then call \`${tool.result}\` exactly once.`,
+  );
+  return [
+    "## T3 Code tracked subagents",
+    nativeInstruction,
+    callable.length > 0
+      ? "When delegating to another provider, you MUST use only the callable T3 Code tools listed here:"
+      : undefined,
+    ...toolLines,
+    callable.length > 0
+      ? "Do not replace these tools with provider plugins, shell-launched agent subprocesses, or untracked agent runners. The result call waits event-driven until the run finishes or needs structured input. NEVER poll status/result tools and NEVER create shell sleep timers or background polling commands. Use a status tool only for an explicit one-time progress request."
+      : undefined,
+    capabilities.has("cursor-agent")
+      ? "If Cursor needs structured input, call `cursor_respond`, then call `cursor_result` exactly once for the next active phase."
+      : undefined,
+    callable.length > 0
+      ? "Tracked subagents use a server-locked workspace-write sandbox, automatic approval handling, and a Git read-only policy. They may edit project files, but must not access paths outside the workspace or run Git commands that change local or remote state. Permission requests are handled by the server and never require user action; structured questions may still be returned by the result tool."
+      : undefined,
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join("\n\n");
 }
 
 const IMPLEMENTATION_ENGINE_INSTRUCTIONS = `## T3 Code Implementation Engine
@@ -45,9 +92,11 @@ export function implementationEngineInstructions(
 
 export function mcpSessionInstructions(
   capabilities: ReadonlySet<McpCapability>,
+  providerDriver?: ProviderDriverKind,
+  nativeSubagentTracking = false,
 ): string | undefined {
   const sections = [
-    trackedDelegationInstructions(capabilities),
+    trackedDelegationInstructions(capabilities, providerDriver, nativeSubagentTracking),
     implementationEngineInstructions(capabilities),
   ].filter((section): section is string => section !== undefined);
   return sections.length > 0 ? sections.join("\n\n") : undefined;
@@ -64,7 +113,11 @@ const appendInstructionSection = (
 export const buildMcpSessionInstructions = Effect.fn("buildMcpSessionInstructions")(function* (
   session: McpProviderSessionConfig,
 ): Effect.fn.Return<string | undefined, never, SkillRepository | ProjectionProjectRepository> {
-  const fallback = mcpSessionInstructions(session.capabilities);
+  const fallback = mcpSessionInstructions(
+    session.capabilities,
+    session.providerDriver,
+    session.nativeSubagentTracking,
+  );
   const loadCatalog = Effect.gen(function* () {
     const skills = yield* SkillRepository;
     const projects = yield* ProjectionProjectRepository;
@@ -106,7 +159,14 @@ export type McpSessionInstructionBuilder = (
 export class McpSessionInstructionBuilderService extends Context.Reference<McpSessionInstructionBuilder>(
   "t3/mcp/McpSessionInstructionBuilder",
   {
-    defaultValue: () => (session) => Effect.succeed(mcpSessionInstructions(session.capabilities)),
+    defaultValue: () => (session) =>
+      Effect.succeed(
+        mcpSessionInstructions(
+          session.capabilities,
+          session.providerDriver,
+          session.nativeSubagentTracking,
+        ),
+      ),
   },
 ) {}
 

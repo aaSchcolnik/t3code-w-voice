@@ -33,6 +33,7 @@ export * from "./transcription.ts";
 export * from "./voice-local.ts";
 export * from "./voice-models.ts";
 export * from "./delegatedRun.ts";
+export * from "./subagent.ts";
 export * from "./knowledge.ts";
 export * from "./skills.ts";
 export * from "./computerUse.ts";

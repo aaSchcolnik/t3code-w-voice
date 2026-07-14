@@ -86,7 +86,9 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderInstanceRegistry from "./provider/Services/ProviderInstanceRegistry.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
+import * as SubagentRunService from "./orchestration/SubagentRunService.ts";
 import * as SubagentTranscriptService from "./orchestration/SubagentTranscriptService.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -691,7 +693,9 @@ const buildAppUnderTest = (options?: {
       Layer.provide(Layer.succeed(ServerVoiceModelManager, {} as ServerVoiceModelManagerImpl)),
       Layer.provide(
         Layer.mergeAll(
+          Layer.mock(SubagentRunService.SubagentRunService)({}),
           Layer.mock(SubagentTranscriptService.SubagentTranscriptService)({}),
+          Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({}),
           Layer.mock(PreviewManager.PreviewManager)({
             open: () => Effect.die("PreviewManager not stubbed in this test"),
             navigate: () => Effect.die("PreviewManager not stubbed in this test"),

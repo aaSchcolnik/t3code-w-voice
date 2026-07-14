@@ -145,7 +145,12 @@ import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
 import { SubagentsPanel } from "./SubagentsPanel";
+import {
+  findNewActiveSubagentRun,
+  isActiveSubagentStatus,
+} from "./subagents/subagentRunPresentation";
 import { deriveProviderInstanceEntries, getProviderInstanceEntry } from "../providerInstances";
+import { mergeSubagentRunsWithLegacyFallback, useSubagentRunList } from "../state/subagents";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
@@ -1298,7 +1303,7 @@ function ChatViewContent(props: ChatViewProps) {
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   const planSidebarDismissedForTurnRef = useRef<string | null>(null);
   const subagentsPanelDismissedForTurnRef = useRef<string | null>(null);
-  const previousActiveSubagentCountRef = useRef(0);
+  const previousActiveSubagentIdsRef = useRef<ReadonlySet<string>>(new Set());
   // When set, the thread-change reset effect will open the sidebar instead of closing it.
   // Used by "Implement in a new thread" to carry the sidebar-open intent across navigation.
   const planSidebarOpenOnNextThreadRef = useRef(false);
@@ -2039,9 +2044,36 @@ function ChatViewContent(props: ChatViewProps) {
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
-  const subagentEntries = useMemo(
+  const legacySubagentEntries = useMemo(
     () => deriveSubagentEntries(threadActivities),
     [threadActivities],
+  );
+  const normalizedSubagentRunList = useSubagentRunList(environmentId, activeThreadId);
+  const subagentRuns = useMemo(
+    () =>
+      activeThreadId
+        ? mergeSubagentRunsWithLegacyFallback(
+            normalizedSubagentRunList.runs,
+            legacySubagentEntries,
+            {
+              rootThreadId: activeThreadId,
+              provider: activeThread?.session?.providerName
+                ? ProviderDriverKind.make(activeThread.session.providerName)
+                : selectedProvider,
+              ...(activeThread?.modelSelection.instanceId
+                ? { providerInstanceId: activeThread.modelSelection.instanceId }
+                : {}),
+            },
+          )
+        : [],
+    [
+      activeThread?.modelSelection.instanceId,
+      activeThread?.session?.providerName,
+      activeThreadId,
+      legacySubagentEntries,
+      normalizedSubagentRunList.runs,
+      selectedProvider,
+    ],
   );
   const parentProviderInstance = useMemo(
     () =>
@@ -3357,13 +3389,13 @@ function ChatViewContent(props: ChatViewProps) {
       if (!activeThreadRef) return;
       if (surface.kind === "subagents") {
         subagentsPanelDismissedForTurnRef.current =
-          subagentEntries.find((entry) => entry.status === "active")?.turnId ?? "__dismissed__";
+          subagentRuns.find((run) => isActiveSubagentStatus(run.status))?.id ?? "__dismissed__";
       }
       cleanupRightPanelSurfaces([surface]);
       useRightPanelStore.getState().closeSurface(activeThreadRef, surface.id);
       syncActivePreviewSurface();
     },
-    [activeThreadRef, cleanupRightPanelSurfaces, subagentEntries, syncActivePreviewSurface],
+    [activeThreadRef, cleanupRightPanelSurfaces, subagentRuns, syncActivePreviewSurface],
   );
   const closeOtherRightPanelSurfaces = useCallback(
     (surface: RightPanelSurface) => {
@@ -3849,7 +3881,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     planSidebarDismissedForTurnRef.current = null;
     subagentsPanelDismissedForTurnRef.current = null;
-    previousActiveSubagentCountRef.current = 0;
+    previousActiveSubagentIdsRef.current = new Set();
     // activeThreadRef resets transitively with the active thread.
   }, [activeThread?.id]);
 
@@ -3876,15 +3908,15 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
 
   useEffect(() => {
-    const activeEntries = subagentEntries.filter((entry) => entry.status === "active");
-    const previousCount = previousActiveSubagentCountRef.current;
-    previousActiveSubagentCountRef.current = activeEntries.length;
-    if (!autoOpenSubagentsPanel || activeEntries.length === 0 || previousCount > 0) return;
+    const activeRuns = subagentRuns.filter((run) => isActiveSubagentStatus(run.status));
+    const previousIds = previousActiveSubagentIdsRef.current;
+    previousActiveSubagentIdsRef.current = new Set(activeRuns.map((run) => String(run.id)));
+    const startedRun = findNewActiveSubagentRun(activeRuns, previousIds);
+    if (!autoOpenSubagentsPanel || !startedRun) return;
     if (subagentsPanelOpen || !activeThreadRef) return;
-    const turnKey = activeEntries[0]?.turnId ?? "__active__";
-    if (subagentsPanelDismissedForTurnRef.current === turnKey) return;
+    if (subagentsPanelDismissedForTurnRef.current === startedRun.id) return;
     useRightPanelStore.getState().open(activeThreadRef, "subagents");
-  }, [activeThreadRef, autoOpenSubagentsPanel, subagentEntries, subagentsPanelOpen]);
+  }, [activeThreadRef, autoOpenSubagentsPanel, subagentRuns, subagentsPanelOpen]);
 
   useEffect(() => {
     setIsRevertingCheckpoint(false);
@@ -5721,7 +5753,7 @@ function ChatViewContent(props: ChatViewProps) {
       </Suspense>
     ) : activeRightPanelSurface?.kind === "subagents" ? (
       <SubagentsPanel
-        entries={subagentEntries}
+        runs={subagentRuns}
         provider={parentProviderInstance}
         providers={subagentProviderInstances}
         fallbackDriverKind={

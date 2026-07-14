@@ -16,6 +16,7 @@ import {
   AuthSessionId,
   CommandId,
   DelegatedRunError,
+  DelegatedRunId,
   KnowledgeError,
   SkillError,
   type DiscoveredLocalServerList,
@@ -49,6 +50,7 @@ import {
   RpcClientId,
   EnvironmentAuthorizationError,
   ThreadId,
+  SubagentRunError,
   type TerminalAttachStreamEvent,
   type TerminalError,
   type TerminalEvent,
@@ -77,6 +79,7 @@ import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngi
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as DelegatedRunServiceModule from "./orchestration/DelegatedRunService.ts";
 import * as SubagentTranscriptService from "./orchestration/SubagentTranscriptService.ts";
+import * as SubagentRunService from "./orchestration/SubagentRunService.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
   observeRpcStream as instrumentRpcStream,
@@ -392,6 +395,7 @@ const makeWsRpcLayer = (
       const transcription = yield* TranscriptionService.TranscriptionService;
       const voiceModels = yield* ServerVoiceModelManager.ServerVoiceModelManager;
       const subagentTranscripts = yield* SubagentTranscriptService.SubagentTranscriptService;
+      const subagentRuns = yield* SubagentRunService.SubagentRunService;
       const previewManager = yield* PreviewManager.PreviewManager;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
@@ -2150,19 +2154,90 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.subagentsCancelRun,
             Effect.gen(function* () {
-              const run = yield* DelegatedRunServiceModule.getActiveDelegatedRun(input.runId);
-              if (run.parentThreadId !== input.parentThreadId) {
+              const projected = yield* subagentRuns.getOwned(input.rootThreadId, input.runId);
+              if (projected.sequence !== input.expectedSequence) {
+                return yield* new SubagentRunError({
+                  reason: "conflict",
+                  message: "The subagent run changed before the control request was applied.",
+                });
+              }
+              if (projected.source === "native") {
+                if (!projected.capabilities.canCancel) {
+                  return yield* new SubagentRunError({
+                    reason: "unsupported",
+                    message: "This native child run is not cancellable yet.",
+                  });
+                }
+                const instance = yield* providerInstanceRegistry.getInstance(
+                  projected.providerInstanceId,
+                );
+                if (!instance) {
+                  return yield* new SubagentRunError({
+                    reason: "unsupported",
+                    message: "The provider instance for this child run is unavailable.",
+                  });
+                }
+                const adapter = instance.adapter;
+                const accepted = yield* (
+                  adapter.cancelSubagent ? adapter.cancelSubagent(input) : Effect.succeed(false)
+                ).pipe(
+                  Effect.mapError(
+                    () =>
+                      new SubagentRunError({
+                        reason: "unsupported",
+                        message: "The provider rejected the child-run cancellation request.",
+                      }),
+                  ),
+                );
+                return {
+                  runId: input.runId,
+                  accepted,
+                  sequence: projected.sequence,
+                  status: projected.status,
+                };
+              }
+              if (projected.source !== "delegated") {
+                return yield* new SubagentRunError({
+                  reason: "unsupported",
+                  message: "This provider does not expose direct cancellation for the child run.",
+                });
+              }
+              const delegatedRunId = DelegatedRunId.make(input.runId);
+              const run = yield* DelegatedRunServiceModule.getActiveDelegatedRun(delegatedRunId);
+              if (run.parentThreadId !== input.rootThreadId) {
                 return yield* new DelegatedRunError({
                   operation: "cancel",
                   message: "Delegated run not found for this parent thread.",
-                  runId: input.runId,
+                  runId: delegatedRunId,
                 });
               }
-              const cancelled = yield* DelegatedRunServiceModule.cancelActiveDelegatedRun(
-                input.runId,
-              );
-              return { runId: input.runId, cancelled };
+              const cancelled =
+                yield* DelegatedRunServiceModule.cancelActiveDelegatedRun(delegatedRunId);
+              const updatedAt = DateTime.formatIso(yield* DateTime.now);
+              const updated = cancelled
+                ? yield* subagentRuns.upsert({
+                    eventId: `control:cancel:${input.runId}:${input.expectedSequence}`,
+                    run: {
+                      ...projected,
+                      status: "cancelled",
+                      completedAt: updatedAt,
+                      updatedAt,
+                    },
+                  })
+                : projected;
+              return {
+                runId: input.runId,
+                accepted: cancelled,
+                sequence: updated.sequence,
+                status: updated.status,
+              };
             }),
+            { "rpc.aggregate": "subagents" },
+          ),
+        [WS_METHODS.subscribeSubagentRuns]: (input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeSubagentRuns,
+            Stream.unwrap(subagentRuns.subscribe(input)),
             { "rpc.aggregate": "subagents" },
           ),
         [WS_METHODS.subscribeSubagentTranscript]: (input) =>

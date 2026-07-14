@@ -181,4 +181,35 @@ describe("ProviderRuntimeEvent", () => {
     expect(parsed.payload.usage.maxTokens).toBe(200000);
     expect(parsed.payload.usage.usedTokens).toBe(31251);
   });
+
+  it("decodes normalized subagent lifecycle and execution scope", () => {
+    const parsed = decodeRuntimeEvent({
+      type: "subagent.started",
+      eventId: "event-subagent-1",
+      provider: "codex",
+      providerInstanceId: "codex_work",
+      createdAt: "2026-07-14T00:00:00.000Z",
+      threadId: "thread-root",
+      providerRefs: {
+        providerThreadId: "provider-child-thread",
+        providerParentThreadId: "provider-root-thread",
+      },
+      executionScope: {
+        kind: "subagent",
+        subagentRunId: "run-child",
+        depth: 1,
+      },
+      payload: {
+        source: "native",
+        status: "running",
+        title: "Review tests",
+        resolvedModel: "gpt-5.4",
+        modelResolution: "reported",
+      },
+    });
+
+    expect(parsed.type).toBe("subagent.started");
+    expect(parsed.executionScope?.subagentRunId).toBe("run-child");
+    expect(parsed.providerRefs?.providerThreadId).toBe("provider-child-thread");
+  });
 });

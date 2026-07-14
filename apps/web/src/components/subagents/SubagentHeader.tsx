@@ -1,50 +1,36 @@
 import { ArrowLeftIcon, LoaderCircleIcon } from "lucide-react";
-import type { ProviderDriverKind } from "@t3tools/contracts";
+import type { ProviderDriverKind, SubagentRun } from "@t3tools/contracts";
 
-import type { SubagentEntry } from "../../session-logic";
 import { cn } from "../../lib/utils";
+import type { ProviderInstanceEntry } from "../../providerInstances";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { reasoningEffortLabel } from "./subagentMetadata";
+import { isActiveSubagentStatus, subagentStatusLabel } from "./subagentRunPresentation";
+import { SubagentServiceTierBadge } from "./SubagentServiceTierBadge";
 
 interface SubagentHeaderProps {
-  entry: SubagentEntry;
+  run: SubagentRun;
   driverKind: ProviderDriverKind;
   providerLabel: string;
+  provider?: ProviderInstanceEntry | undefined;
   accentColor?: string | undefined;
-  model: string | null;
-  reasoningEffort: string | null;
   onBack: () => void;
   onCancel?: (() => void) | undefined;
   cancelling?: boolean;
 }
 
-function statusLabel(entry: SubagentEntry): string {
-  if (entry.status === "active") return "Running";
-  switch (entry.outcome) {
-    case "failed":
-      return "Failed";
-    case "stopped":
-      return "Stopped";
-    default:
-      return "Completed";
-  }
-}
-
 export function SubagentHeader({
-  entry,
+  run,
   driverKind,
   providerLabel,
+  provider,
   accentColor,
-  model,
-  reasoningEffort,
   onBack,
   onCancel,
   cancelling = false,
 }: SubagentHeaderProps) {
-  const status = statusLabel(entry);
-  const detail = model ?? entry.agentType;
-  const reasoningLabel = reasoningEffortLabel(reasoningEffort);
+  const active = isActiveSubagentStatus(run.status);
 
   return (
     <header className="flex items-center gap-2 border-b border-border/60 px-3 py-2.5">
@@ -70,29 +56,38 @@ export function SubagentHeader({
         />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium text-foreground">{entry.name}</p>
-        <p className="truncate text-[11px] text-muted-foreground/80">
-          {providerLabel}
-          {detail ? <span className="text-muted-foreground/60"> · {detail}</span> : null}
-          {reasoningLabel ? (
-            <span className="text-muted-foreground/60"> · {reasoningLabel}</span>
+        <p className="truncate text-[13px] font-medium text-foreground">{run.title}</p>
+        <div className="mt-0.5 flex min-w-0 gap-1">
+          <Badge variant="outline" className="h-4 max-w-40 truncate px-1.5 text-[9px]">
+            {providerLabel}
+          </Badge>
+          {(run.resolvedModel ?? run.requestedModel) ? (
+            <Badge variant="secondary" className="h-4 max-w-48 truncate px-1.5 text-[9px]">
+              {run.resolvedModel ?? run.requestedModel}
+            </Badge>
           ) : null}
-        </p>
+          <SubagentServiceTierBadge run={run} provider={provider} />
+          {run.agentType ? (
+            <Badge variant="outline" className="h-4 max-w-32 truncate px-1.5 text-[9px]">
+              {run.agentType}
+            </Badge>
+          ) : null}
+        </div>
       </div>
       <span
         className={cn(
           "flex shrink-0 items-center gap-1.5 rounded-full border border-border/60 px-2 py-0.5 text-[10px] font-medium",
-          entry.status === "active"
+          active
             ? "text-primary"
-            : entry.outcome === "failed"
+            : run.status === "failed"
               ? "text-destructive"
               : "text-muted-foreground",
         )}
       >
-        {entry.status === "active" ? <LoaderCircleIcon className="size-3 animate-spin" /> : null}
-        {status}
+        {active ? <LoaderCircleIcon className="size-3 animate-spin" /> : null}
+        {subagentStatusLabel(run.status)}
       </span>
-      {onCancel && entry.status === "active" ? (
+      {onCancel && run.capabilities.canCancel && active ? (
         <Button
           variant="outline"
           size="sm"

@@ -3,6 +3,7 @@ import { ProviderDriverKind, ProviderInstanceId, type ModelCapabilities } from "
 
 import {
   buildProviderOptionSelectionsFromDescriptors,
+  buildResolvedProviderOptionDetails,
   createModelCapabilities,
   createModelSelection,
   getModelSelectionBooleanOptionValue,
@@ -110,6 +111,60 @@ describe("descriptor helpers", () => {
       { id: "reasoningEffort", value: "high" },
       { id: "fastMode", value: true },
     ]);
+  });
+
+  it("captures stable labels only for resolved selections", () => {
+    const descriptors = [
+      {
+        id: "serviceTier",
+        label: "Service Tier",
+        description: "Controls request scheduling.",
+        type: "select" as const,
+        options: [
+          { id: "default", label: "Standard", isDefault: true },
+          { id: "priority", label: "Fast", description: "Priority scheduling." },
+        ],
+      },
+      ...codexCaps.optionDescriptors!,
+    ];
+
+    expect(
+      buildResolvedProviderOptionDetails({
+        descriptors,
+        selections: [{ id: "serviceTier", value: "priority" }],
+      }),
+    ).toEqual([
+      {
+        id: "serviceTier",
+        label: "Service Tier",
+        value: "priority",
+        valueLabel: "Fast",
+        description: "Priority scheduling.",
+      },
+    ]);
+  });
+
+  it("omits stale selections that have no trustworthy catalog label", () => {
+    expect(
+      buildResolvedProviderOptionDetails({
+        descriptors: codexCaps.optionDescriptors,
+        selections: [{ id: "serviceTier", value: "priority" }],
+      }),
+    ).toBeUndefined();
+
+    expect(
+      buildResolvedProviderOptionDetails({
+        descriptors: [
+          {
+            id: "serviceTier",
+            label: "Service Tier",
+            type: "select",
+            options: [{ id: "default", label: "Standard", isDefault: true }],
+          },
+        ],
+        selections: [{ id: "serviceTier", value: "retired-tier" }],
+      }),
+    ).toBeUndefined();
   });
 
   it("stores option selection arrays in model selections", () => {

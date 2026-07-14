@@ -66,5 +66,6 @@ describe("DelegatedRun", () => {
     });
     expect(run.requestedOptions).toBeUndefined();
     expect(run.resolvedOptions).toBeUndefined();
+    expect(run.resolvedOptionDetails).toBeUndefined();
   });
 });

@@ -53,6 +53,20 @@ export const ProviderOptionSelection = Schema.Struct({
 export type ProviderOptionSelection = typeof ProviderOptionSelection.Type;
 
 /**
+ * Provider option metadata captured from the catalog used to resolve a run.
+ * Keeping the display labels with the canonical value prevents historical
+ * runs from being reinterpreted when a provider's live catalog changes.
+ */
+export const ResolvedProviderOption = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  label: TrimmedNonEmptyString,
+  value: ProviderOptionSelectionValue,
+  valueLabel: TrimmedNonEmptyString,
+  description: Schema.optional(TrimmedNonEmptyString),
+});
+export type ResolvedProviderOption = typeof ResolvedProviderOption.Type;
+
+/**
  * Legacy on-disk shape for provider option selections, kept readable by the
  * decoder so we can tolerate stored data written before the v3 array shape.
  *

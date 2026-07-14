@@ -19,6 +19,7 @@ import {
   ProviderSendTurnInput,
   ProviderSessionStartInput,
   ProviderStopSessionInput,
+  SubagentControlInput,
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ProviderRuntimeEvent,
@@ -760,6 +761,23 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  const cancelSubagent: NonNullable<ProviderServiceMethod<"cancelSubagent">> = Effect.fn(
+    "cancelSubagent",
+  )(function* (rawInput) {
+    const input = yield* decodeInputOrValidationError({
+      operation: "ProviderService.cancelSubagent",
+      schema: SubagentControlInput,
+      payload: rawInput,
+    });
+    const routed = yield* resolveRoutableSession({
+      threadId: input.rootThreadId,
+      operation: "ProviderService.cancelSubagent",
+      allowRecovery: true,
+    });
+    if (!routed.adapter.cancelSubagent) return false;
+    return yield* routed.adapter.cancelSubagent(input);
+  });
+
   const respondToRequest: ProviderServiceMethod<"respondToRequest"> = Effect.fn("respondToRequest")(
     function* (rawInput) {
       const input = yield* decodeInputOrValidationError({
@@ -1078,6 +1096,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     startSession,
     sendTurn,
     interruptTurn,
+    cancelSubagent,
     respondToRequest,
     respondToUserInput,
     stopSession,

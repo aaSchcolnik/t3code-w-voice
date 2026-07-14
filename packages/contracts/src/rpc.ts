@@ -61,7 +61,6 @@ import {
   OrchestrationGetTurnDiffInput,
   OrchestrationRpcSchemas,
 } from "./orchestration.ts";
-import { ThreadId } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   RelayClientInstallFailedError,
@@ -172,14 +171,17 @@ import {
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
+import { DelegatedRunError } from "./delegatedRun.ts";
 import {
-  DelegatedRunCancelResult,
-  DelegatedRunError,
-  DelegatedRunId,
+  SubagentControlInput,
+  SubagentControlResult,
+  SubagentRunError,
+  SubagentRunStreamEvent,
+  SubagentRunSubscribeInput,
   SubagentTranscriptError,
   SubagentTranscriptStreamEvent,
   SubagentTranscriptSubscribeInput,
-} from "./delegatedRun.ts";
+} from "./subagent.ts";
 import {
   TranscriptionAudioChunkInput,
   TranscriptionError,
@@ -358,6 +360,7 @@ export const WS_METHODS = {
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
   subscribeVoiceModelState: "subscribeVoiceModelState",
+  subscribeSubagentRuns: "subagents.subscribeRuns",
   subscribeSubagentTranscript: "subagents.subscribeTranscript",
   subagentsCancelRun: "subagents.cancelRun",
 } as const;
@@ -998,10 +1001,17 @@ export const WsSubscribeSubagentTranscriptRpc = Rpc.make(WS_METHODS.subscribeSub
   stream: true,
 });
 
+export const WsSubscribeSubagentRunsRpc = Rpc.make(WS_METHODS.subscribeSubagentRuns, {
+  payload: SubagentRunSubscribeInput,
+  success: SubagentRunStreamEvent,
+  error: Schema.Union([SubagentRunError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 export const WsSubagentsCancelRunRpc = Rpc.make(WS_METHODS.subagentsCancelRun, {
-  payload: Schema.Struct({ parentThreadId: ThreadId, runId: DelegatedRunId }),
-  success: DelegatedRunCancelResult,
-  error: Schema.Union([DelegatedRunError, EnvironmentAuthorizationError]),
+  payload: SubagentControlInput,
+  success: SubagentControlResult,
+  error: Schema.Union([SubagentRunError, DelegatedRunError, EnvironmentAuthorizationError]),
 });
 
 export const WsTranscriptionStartRpc = Rpc.make(WS_METHODS.transcriptionStart, {
@@ -1157,6 +1167,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsVoiceModelsSelectRpc,
   WsSubscribeVoiceModelStateRpc,
   WsSubscribeSubagentTranscriptRpc,
+  WsSubscribeSubagentRunsRpc,
   WsSubagentsCancelRunRpc,
   WsSubscribeTerminalEventsRpc,
   WsSubscribeTerminalMetadataRpc,
