@@ -5,6 +5,7 @@ import {
   DelegatedRunError,
   DelegatedRunId,
   EventId,
+  MessageId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderDriverKind,
   SubagentRunId,
@@ -14,13 +15,14 @@ import {
   type DelegatedRunCapabilities,
   type DelegatedRunProvider,
   type DelegatedRunStartInput,
+  type OrchestrationEvent,
   type ProviderRuntimeEvent,
+  type UserInputQuestion,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -53,11 +55,13 @@ import { ServerConfig } from "../config.ts";
 import { writeFileStringAtomically } from "../atomicWrite.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { registerDelegatedMcpProjectContext } from "../mcp/McpSessionRegistry.ts";
+import { dispatchServerTurnStart } from "./dispatchServerTurnStart.ts";
 
 const MAX_CONCURRENT_RUNS_PER_PARENT = 4;
 const MAX_SUMMARY_CHARS = 4_000;
 const STREAM_ACTIVITY_DETAIL_CHARS = 500;
 const STREAM_ACTIVITY_INTERVAL_MS = 500;
+const MAX_WAKE_DISPATCH_ATTEMPTS = 3;
 const DelegatedRunsJson = Schema.fromJsonString(Schema.Array(DelegatedRunSchema));
 const decodeDelegatedRunsJson = Schema.decodeUnknownEffect(DelegatedRunsJson);
 const encodeDelegatedRunsJson = Schema.encodeEffect(DelegatedRunsJson);
@@ -97,6 +101,81 @@ interface EmissionState {
   readonly flushFiber: Fiber.Fiber<void> | undefined;
 }
 
+interface PendingWake {
+  readonly parentThreadId: ThreadId;
+  readonly kind: "subagents.settled" | "subagent.input-required";
+  readonly runIds: ReadonlyArray<DelegatedRunId>;
+  readonly inputTextByRunId: ReadonlyMap<DelegatedRunId, string>;
+}
+
+interface DispatchedWake extends PendingWake {
+  readonly attemptId: MessageId;
+  readonly attemptNumber: number;
+  readonly providerTurnId: TurnId | undefined;
+}
+
+interface ActiveWake extends DispatchedWake {
+  readonly providerTurnId: TurnId;
+}
+
+interface ParentWakeState {
+  /** Tombstone preventing an exited parent from being recreated by in-flight work. */
+  readonly suppressed: boolean;
+  readonly parentTurnRunning: boolean;
+  readonly outstandingRunIds: ReadonlySet<DelegatedRunId>;
+  readonly pendingResultRunIds: ReadonlySet<DelegatedRunId>;
+  readonly pendingInputByRunId: ReadonlyMap<DelegatedRunId, string>;
+  /**
+   * Wake whose start-server command was accepted by orchestration, but whose
+   * parent turn has not yet observed `turn.started`. Cleared on ack; restored
+   * if the turn never starts so parentTurnRunning cannot wedge.
+   */
+  readonly pendingDispatchedWake: DispatchedWake | undefined;
+  readonly activeWake: ActiveWake | undefined;
+  readonly lastStartedTurnId: TurnId | undefined;
+  readonly lastSettledTurnId: TurnId | undefined;
+  readonly wakeAttemptCount: number;
+  readonly retryBlocked: boolean;
+}
+
+const emptyWakeState = (): ParentWakeState => ({
+  suppressed: false,
+  parentTurnRunning: false,
+  outstandingRunIds: new Set(),
+  pendingResultRunIds: new Set(),
+  pendingInputByRunId: new Map(),
+  pendingDispatchedWake: undefined,
+  activeWake: undefined,
+  lastStartedTurnId: undefined,
+  lastSettledTurnId: undefined,
+  wakeAttemptCount: 0,
+  retryBlocked: false,
+});
+
+const isIdleWakeState = (state: ParentWakeState): boolean =>
+  !state.suppressed &&
+  !state.parentTurnRunning &&
+  state.outstandingRunIds.size === 0 &&
+  state.pendingResultRunIds.size === 0 &&
+  state.pendingInputByRunId.size === 0 &&
+  state.pendingDispatchedWake === undefined &&
+  state.activeWake === undefined &&
+  !state.retryBlocked;
+
+const setWakeState = (
+  states: Map<ThreadId, ParentWakeState>,
+  parentThreadId: ThreadId,
+  next: ParentWakeState,
+): Map<ThreadId, ParentWakeState> => {
+  const copy = new Map(states);
+  if (isIdleWakeState(next)) {
+    copy.delete(parentThreadId);
+  } else {
+    copy.set(parentThreadId, next);
+  }
+  return copy;
+};
+
 export interface StartDelegatedRunInput extends DelegatedRunStartInput {
   readonly provider: DelegatedRunProvider;
   readonly parentThreadId: ThreadId;
@@ -110,7 +189,6 @@ export interface DelegatedRunServiceShape {
     provider: DelegatedRunProvider,
   ) => Effect.Effect<DelegatedRunCapabilities>;
   readonly get: (runId: DelegatedRunId) => Effect.Effect<DelegatedRun, DelegatedRunError>;
-  readonly awaitResult: (runId: DelegatedRunId) => Effect.Effect<DelegatedRun, DelegatedRunError>;
   readonly cancel: (
     runId: DelegatedRunId,
     reason?: "stopped_by_main_thread",
@@ -149,22 +227,36 @@ const make = Effect.gen(function* () {
     Effect.flatMap(decodeDelegatedRunsJson),
     Effect.orElseSucceed(() => []),
   );
+  const recoveredAt = DateTime.formatIso(yield* DateTime.now);
+  const orphanedRuns = persistedRuns
+    .filter((run) => !isTerminal(run))
+    .map(
+      (run): DelegatedRun => ({
+        ...run,
+        status: "failed",
+        error: "Delegated run lost due to server restart.",
+        completedAt: recoveredAt,
+        updatedAt: recoveredAt,
+        sequence: run.sequence + 1,
+      }),
+    );
+  const restoredRuns = [...persistedRuns.filter(isTerminal), ...orphanedRuns];
   const runsRef = yield* Ref.make(
-    new Map(
-      persistedRuns
-        .filter(isTerminal)
-        .map((run): readonly [DelegatedRunId, DelegatedRun] => [run.id, run]),
-    ),
+    new Map(restoredRuns.map((run): readonly [DelegatedRunId, DelegatedRun] => [run.id, run])),
   );
   const runByProviderThreadRef = yield* Ref.make(new Map<ThreadId, DelegatedRunId>());
   const emissionRef = yield* Ref.make(new Map<DelegatedRunId, EmissionState>());
-  const resultWaitersRef = yield* Ref.make(
-    new Map<DelegatedRunId, Set<Deferred.Deferred<DelegatedRun>>>(),
-  );
+  const initialWakeStates = new Map<ThreadId, ParentWakeState>();
+  for (const run of orphanedRuns) {
+    const current = initialWakeStates.get(run.parentThreadId) ?? emptyWakeState();
+    initialWakeStates.set(run.parentThreadId, {
+      ...current,
+      pendingResultRunIds: new Set([...current.pendingResultRunIds, run.id]),
+    });
+  }
+  const wakeStatesRef = yield* Ref.make(initialWakeStates);
   const emissionLock = yield* Semaphore.make(1);
-
-  const isResultReady = (run: DelegatedRun) =>
-    isTerminal(run) || run.status === "waiting_for_input";
+  const persistenceLock = yield* Semaphore.make(1);
 
   const projectRun = Effect.fn("DelegatedRunService.projectRun")(function* (run: DelegatedRun) {
     const runId = SubagentRunId.make(run.id);
@@ -227,50 +319,414 @@ const make = Effect.gen(function* () {
     });
   });
 
-  yield* Effect.forEach(persistedRuns.filter(isTerminal), projectRun, { discard: true });
+  const persistRuns = Effect.fn("DelegatedRunService.persistRuns")(function* () {
+    yield* persistenceLock.withPermit(
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const runs = yield* Ref.get(runsRef);
+          const contents = yield* encodeDelegatedRunsJson([...runs.values()]).pipe(Effect.orDie);
+          yield* writeFileStringAtomically({
+            filePath: persistencePath,
+            contents,
+          }).pipe(
+            Effect.provide(persistenceServices),
+            Effect.catchCause((cause) =>
+              Effect.logWarning("failed to persist delegated runs", { cause: String(cause) }),
+            ),
+          );
+        }),
+      ),
+    );
+  });
 
-  const removeResultWaiter = (runId: DelegatedRunId, deferred: Deferred.Deferred<DelegatedRun>) =>
-    Ref.update(resultWaitersRef, (waitersByRun) => {
-      const waiters = waitersByRun.get(runId);
-      if (!waiters?.has(deferred)) return waitersByRun;
-      const copy = new Map(waitersByRun);
-      const remaining = new Set(waiters);
-      remaining.delete(deferred);
-      if (remaining.size === 0) copy.delete(runId);
-      else copy.set(runId, remaining);
-      return copy;
-    });
+  yield* Effect.forEach(restoredRuns, projectRun, { discard: true });
+  if (orphanedRuns.length > 0) yield* persistRuns();
 
-  const completeResultWaiters = Effect.fn("DelegatedRunService.completeResultWaiters")(function* (
-    run: DelegatedRun,
+  const systemEventRun = (run: DelegatedRun) => ({
+    runId: run.id,
+    provider: run.provider,
+    title: run.title,
+    status: run.status,
+    ...(run.error ? { error: run.error } : {}),
+    ...(run.finalMessage ? { finalMessage: run.finalMessage } : {}),
+  });
+
+  const settledWakeText = (runs: ReadonlyArray<DelegatedRun>) =>
+    [
+      "All delegated runs have ended. Continue the parent task using the results below. Do not restart these runs.",
+      ...runs.map((run) =>
+        [
+          `## ${run.title}`,
+          `Run: ${run.id}`,
+          `Provider: ${run.provider}`,
+          `Status: ${run.status}`,
+          ...(run.error ? [`Error: ${run.error}`] : []),
+          `Final message:\n${run.finalMessage ?? "(No final message was returned.)"}`,
+        ].join("\n"),
+      ),
+    ].join("\n\n");
+
+  const inputQuestionText = (run: DelegatedRun, questions: ReadonlyArray<UserInputQuestion>) =>
+    [
+      `Delegated run '${run.title}' is waiting for structured input.`,
+      `Use cursor_respond once with runId '${run.id}' and the selected answers, then end your turn. Do not restart the run.`,
+      ...questions.map((question) =>
+        [
+          `## ${question.header} (${question.id})`,
+          question.question,
+          ...(question.options.length > 0
+            ? [
+                "Options:",
+                ...question.options.map((option) => `- ${option.label}: ${option.description}`),
+              ]
+            : []),
+          ...(question.multiSelect ? ["Multiple selections are allowed."] : []),
+        ].join("\n"),
+      ),
+    ].join("\n\n");
+
+  const waitingInputText = (
+    wake: PendingWake,
+    runs: ReadonlyMap<DelegatedRunId, DelegatedRun>,
+  ): ReadonlyMap<DelegatedRunId, string> =>
+    new Map(
+      [...wake.inputTextByRunId].filter(
+        ([runId]) => runs.get(runId)?.status === "waiting_for_input",
+      ),
+    );
+
+  const restoreWakeState = (
+    current: ParentWakeState,
+    wake: PendingWake,
+    runs: ReadonlyMap<DelegatedRunId, DelegatedRun>,
+    options?: { readonly retryBlocked?: boolean },
+  ): ParentWakeState => {
+    const inputTextByRunId = waitingInputText(wake, runs);
+    return {
+      ...current,
+      parentTurnRunning: false,
+      pendingDispatchedWake: undefined,
+      activeWake: undefined,
+      retryBlocked: options?.retryBlocked ?? false,
+      pendingResultRunIds:
+        wake.kind === "subagents.settled"
+          ? new Set([...wake.runIds, ...current.pendingResultRunIds])
+          : current.pendingResultRunIds,
+      pendingInputByRunId:
+        wake.kind === "subagent.input-required"
+          ? new Map([...inputTextByRunId, ...current.pendingInputByRunId])
+          : current.pendingInputByRunId,
+    };
+  };
+
+  const takePendingWake = Effect.fn("DelegatedRunService.takePendingWake")(function* (
+    parentThreadId: ThreadId,
+    attemptId: MessageId,
   ) {
-    if (!isResultReady(run)) return;
-    const waiters = yield* Ref.modify(resultWaitersRef, (waitersByRun) => {
-      const current = waitersByRun.get(run.id);
-      if (!current) return [undefined, waitersByRun] as const;
-      const copy = new Map(waitersByRun);
-      copy.delete(run.id);
-      return [current, copy] as const;
-    });
-    if (!waiters) return;
-    yield* Effect.forEach(waiters, (deferred) => Deferred.succeed(deferred, run), {
-      discard: true,
+    const runs = yield* Ref.get(runsRef);
+    return yield* Ref.modify(wakeStatesRef, (states) => {
+      const current = states.get(parentThreadId);
+      if (
+        !current ||
+        current.suppressed ||
+        current.retryBlocked ||
+        current.parentTurnRunning ||
+        current.pendingDispatchedWake ||
+        current.activeWake
+      ) {
+        return [undefined, states] as const;
+      }
+
+      let wake: PendingWake | undefined;
+      let updated: ParentWakeState | undefined;
+      const validPendingInput = new Map(
+        [...current.pendingInputByRunId].filter(
+          ([runId]) => runs.get(runId)?.status === "waiting_for_input",
+        ),
+      );
+      if (validPendingInput.size > 0) {
+        wake = {
+          parentThreadId,
+          kind: "subagent.input-required",
+          runIds: [...validPendingInput.keys()],
+          inputTextByRunId: validPendingInput,
+        };
+        updated = {
+          ...current,
+          parentTurnRunning: true,
+          pendingInputByRunId: new Map(),
+        };
+      } else if (current.outstandingRunIds.size === 0 && current.pendingResultRunIds.size > 0) {
+        wake = {
+          parentThreadId,
+          kind: "subagents.settled",
+          runIds: [...current.pendingResultRunIds],
+          inputTextByRunId: new Map(),
+        };
+        updated = {
+          ...current,
+          parentTurnRunning: true,
+          pendingResultRunIds: new Set(),
+        };
+      }
+      if (!wake || !updated) {
+        if (validPendingInput.size === current.pendingInputByRunId.size) {
+          return [undefined, states] as const;
+        }
+        return [
+          undefined,
+          setWakeState(states, parentThreadId, {
+            ...current,
+            pendingInputByRunId: validPendingInput,
+          }),
+        ] as const;
+      }
+      const dispatchedWake: DispatchedWake = {
+        ...wake,
+        attemptId,
+        attemptNumber: current.wakeAttemptCount + 1,
+        providerTurnId: undefined,
+      };
+      return [
+        dispatchedWake,
+        setWakeState(states, parentThreadId, {
+          ...updated,
+          pendingDispatchedWake: dispatchedWake,
+          wakeAttemptCount: dispatchedWake.attemptNumber,
+          lastStartedTurnId: undefined,
+          lastSettledTurnId: undefined,
+        }),
+      ] as const;
     });
   });
 
-  const persistTerminalRuns = Effect.fn("DelegatedRunService.persistTerminalRuns")(function* () {
+  const restoreDispatchedWake = Effect.fn("DelegatedRunService.restoreDispatchedWake")(function* (
+    parentThreadId: ThreadId,
+    attemptId: MessageId,
+    retryBlocked: boolean,
+  ) {
     const runs = yield* Ref.get(runsRef);
-    const terminalRuns = [...runs.values()].filter(isTerminal);
-    const contents = yield* encodeDelegatedRunsJson(terminalRuns).pipe(Effect.orDie);
-    yield* writeFileStringAtomically({
-      filePath: persistencePath,
-      contents,
-    }).pipe(
-      Effect.provide(persistenceServices),
-      Effect.catchCause((cause) =>
-        Effect.logWarning("failed to persist delegated runs", { cause: String(cause) }),
-      ),
-    );
+    return yield* Ref.modify(wakeStatesRef, (states) => {
+      const current = states.get(parentThreadId);
+      const wake = current?.pendingDispatchedWake;
+      if (!current || current.suppressed || !wake || wake.attemptId !== attemptId) {
+        return [undefined, states] as const;
+      }
+      return [
+        wake,
+        setWakeState(
+          states,
+          parentThreadId,
+          restoreWakeState(current, wake, runs, { retryBlocked }),
+        ),
+      ] as const;
+    });
+  });
+
+  const bindProviderTurnToWake = Effect.fn("DelegatedRunService.bindProviderTurnToWake")(function* (
+    parentThreadId: ThreadId,
+    attemptId: MessageId,
+    providerTurnId: TurnId,
+  ) {
+    const runs = yield* Ref.get(runsRef);
+    const action = yield* Ref.modify(wakeStatesRef, (states) => {
+      const current = states.get(parentThreadId);
+      const wake = current?.pendingDispatchedWake;
+      if (!current || current.suppressed || !wake || wake.attemptId !== attemptId) {
+        return ["ignored" as const, states] as const;
+      }
+      const boundWake = { ...wake, providerTurnId };
+      const started = current.lastStartedTurnId === providerTurnId;
+      if (current.lastSettledTurnId === providerTurnId) {
+        if (started) {
+          return [
+            "settled" as const,
+            setWakeState(states, parentThreadId, {
+              ...current,
+              parentTurnRunning: false,
+              pendingDispatchedWake: undefined,
+              activeWake: undefined,
+              lastStartedTurnId: undefined,
+              lastSettledTurnId: undefined,
+              wakeAttemptCount: 0,
+              retryBlocked: false,
+            }),
+          ] as const;
+        }
+        const capped = wake.attemptNumber >= MAX_WAKE_DISPATCH_ATTEMPTS;
+        return [
+          capped ? ("capped" as const) : ("retry" as const),
+          setWakeState(
+            states,
+            parentThreadId,
+            restoreWakeState(current, wake, runs, { retryBlocked: capped }),
+          ),
+        ] as const;
+      }
+      return [
+        "bound" as const,
+        setWakeState(states, parentThreadId, {
+          ...current,
+          parentTurnRunning: true,
+          pendingDispatchedWake: started ? undefined : boundWake,
+          activeWake: started ? (boundWake as ActiveWake) : current.activeWake,
+        }),
+      ] as const;
+    });
+    return action;
+  });
+
+  const acknowledgeStartedWake = (parentThreadId: ThreadId, providerTurnId: TurnId | undefined) =>
+    Ref.update(wakeStatesRef, (states) => {
+      const current = states.get(parentThreadId);
+      if (!current || current.suppressed || providerTurnId === undefined) return states;
+      const wake = current.pendingDispatchedWake;
+      if (wake?.providerTurnId === providerTurnId) {
+        return setWakeState(states, parentThreadId, {
+          ...current,
+          parentTurnRunning: true,
+          pendingDispatchedWake: undefined,
+          activeWake: wake as ActiveWake,
+          lastStartedTurnId: providerTurnId,
+        });
+      }
+      return setWakeState(states, parentThreadId, {
+        ...current,
+        lastStartedTurnId: providerTurnId,
+      });
+    });
+
+  const tryDispatchWake = Effect.fn("DelegatedRunService.tryDispatchWake")(function* (
+    parentThreadId: ThreadId,
+  ) {
+    for (;;) {
+      const attemptUuid = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+      const attemptId = MessageId.make(`server:turn-start:${attemptUuid}`);
+      const wake = yield* takePendingWake(parentThreadId, attemptId);
+      if (!wake) return;
+      const runs = yield* Ref.get(runsRef);
+      const wakeRuns = wake.runIds.flatMap((runId) => {
+        const run = runs.get(runId);
+        return run &&
+          (wake.kind !== "subagent.input-required" || run.status === "waiting_for_input")
+          ? [run]
+          : [];
+      });
+      if (wakeRuns.length === 0) {
+        yield* restoreDispatchedWake(parentThreadId, wake.attemptId, false);
+        if (wake.kind === "subagent.input-required") continue;
+        return;
+      }
+      const text =
+        wake.kind === "subagents.settled"
+          ? settledWakeText(wakeRuns)
+          : wakeRuns
+              .map(
+                (run) =>
+                  wake.inputTextByRunId.get(run.id) ??
+                  `Delegated run '${run.title}' (${run.id}) is waiting for structured input.`,
+              )
+              .join("\n\n");
+      // Invariant: a wake stays un-acknowledged (pendingDispatchedWake) until the
+      // parent observes turn.started. Orchestration dispatch only commits events;
+      // if the provider turn never starts, restore so parentTurnRunning cannot wedge.
+      yield* dispatchServerTurnStart(parentThreadId, {
+        text,
+        messageId: wake.attemptId,
+        systemEvent: {
+          kind: wake.kind,
+          runs: wakeRuns.map(systemEventRun),
+        },
+      }).pipe(
+        Effect.provideService(Crypto.Crypto, crypto),
+        Effect.provideService(OrchestrationEngineService, orchestrationEngine),
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            yield* restoreDispatchedWake(parentThreadId, wake.attemptId, true);
+            yield* Effect.logWarning("failed to wake parent thread for delegated runs", {
+              parentThreadId,
+              cause: String(cause),
+            });
+          }),
+        ),
+      );
+      return;
+    }
+  });
+
+  const restoreAttemptAndRetry = Effect.fn("DelegatedRunService.restoreAttemptAndRetry")(function* (
+    parentThreadId: ThreadId,
+    attemptId: MessageId,
+  ) {
+    const current = (yield* Ref.get(wakeStatesRef)).get(parentThreadId);
+    const wake = current?.pendingDispatchedWake;
+    if (!wake || wake.attemptId !== attemptId) return false;
+    const capped = wake.attemptNumber >= MAX_WAKE_DISPATCH_ATTEMPTS;
+    const restored = yield* restoreDispatchedWake(parentThreadId, attemptId, capped);
+    if (!restored) return false;
+    if (capped) {
+      yield* Effect.logWarning("abandoned delegated-run parent wake after retry cap", {
+        parentThreadId,
+        attemptId,
+        attempts: wake.attemptNumber,
+        runIds: wake.runIds,
+      });
+    } else {
+      yield* tryDispatchWake(parentThreadId);
+    }
+    return true;
+  });
+
+  const registerOutstandingRun = Effect.fn("DelegatedRunService.registerOutstandingRun")(function* (
+    run: DelegatedRun,
+  ) {
+    yield* Ref.update(wakeStatesRef, (states) => {
+      const current = states.get(run.parentThreadId) ?? emptyWakeState();
+      if (current.suppressed) return states;
+      return setWakeState(states, run.parentThreadId, {
+        ...current,
+        parentTurnRunning: true,
+        outstandingRunIds: new Set([...current.outstandingRunIds, run.id]),
+      });
+    });
+  });
+
+  const recordTerminalRun = Effect.fn("DelegatedRunService.recordTerminalRun")(function* (
+    run: DelegatedRun,
+  ) {
+    yield* Ref.update(wakeStatesRef, (states) => {
+      const current = states.get(run.parentThreadId);
+      if (!current || current.suppressed) return states;
+      const outstandingRunIds = new Set(current.outstandingRunIds);
+      outstandingRunIds.delete(run.id);
+      const pendingInputByRunId = new Map(current.pendingInputByRunId);
+      pendingInputByRunId.delete(run.id);
+      return setWakeState(states, run.parentThreadId, {
+        ...current,
+        outstandingRunIds,
+        pendingResultRunIds: new Set([...current.pendingResultRunIds, run.id]),
+        pendingInputByRunId,
+      });
+    });
+    yield* tryDispatchWake(run.parentThreadId);
+  });
+
+  const recordInputRequired = Effect.fn("DelegatedRunService.recordInputRequired")(function* (
+    run: DelegatedRun,
+    questions: ReadonlyArray<UserInputQuestion>,
+  ) {
+    yield* Ref.update(wakeStatesRef, (states) => {
+      const current = states.get(run.parentThreadId);
+      if (!current || current.suppressed || run.status !== "waiting_for_input") return states;
+      return setWakeState(states, run.parentThreadId, {
+        ...current,
+        pendingInputByRunId: new Map([
+          ...current.pendingInputByRunId,
+          [run.id, inputQuestionText(run, questions)] as const,
+        ]),
+      });
+    });
+    yield* tryDispatchWake(run.parentThreadId);
   });
 
   const appendActivity = Effect.fn("DelegatedRunService.appendActivity")(function* (
@@ -450,8 +906,10 @@ const make = Effect.gen(function* () {
         if (!transition) return undefined;
         yield* emitUpdatedRun(transition.current, transition.updated);
         yield* projectRun(transition.updated);
-        if (isTerminal(transition.updated)) yield* persistTerminalRuns();
-        yield* completeResultWaiters(transition.updated);
+        if (isTerminal(transition.updated)) yield* recordTerminalRun(transition.updated);
+        if (transition.updated.status === "waiting_for_input" || isTerminal(transition.updated)) {
+          yield* persistRuns();
+        }
         return transition.updated;
       }),
     );
@@ -496,6 +954,93 @@ const make = Effect.gen(function* () {
       createdAt: now,
     });
     return true;
+  });
+
+  const activityMessageId = (payload: unknown): MessageId | undefined => {
+    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+    const messageId = (payload as { readonly messageId?: unknown }).messageId;
+    return typeof messageId === "string" ? MessageId.make(messageId) : undefined;
+  };
+
+  const settleParentTurn = Effect.fn("DelegatedRunService.settleParentTurn")(function* (
+    parentThreadId: ThreadId,
+    providerTurnId: TurnId | undefined,
+  ) {
+    const runs = yield* Ref.get(runsRef);
+    const action = yield* Ref.modify(wakeStatesRef, (states) => {
+      const current = states.get(parentThreadId);
+      if (!current || current.suppressed) return ["ignored" as const, states] as const;
+
+      const pending = current.pendingDispatchedWake;
+      if (pending) {
+        if (providerTurnId === undefined) {
+          return ["ignored" as const, states] as const;
+        }
+        if (pending.providerTurnId === undefined) {
+          return [
+            "ignored" as const,
+            setWakeState(states, parentThreadId, {
+              ...current,
+              lastSettledTurnId: providerTurnId,
+            }),
+          ] as const;
+        }
+        if (pending.providerTurnId !== providerTurnId) return ["ignored" as const, states] as const;
+        const capped = pending.attemptNumber >= MAX_WAKE_DISPATCH_ATTEMPTS;
+        return [
+          capped ? ("capped" as const) : ("retry" as const),
+          setWakeState(
+            states,
+            parentThreadId,
+            restoreWakeState(current, pending, runs, { retryBlocked: capped }),
+          ),
+        ] as const;
+      }
+
+      const active = current.activeWake;
+      if (active) {
+        if (providerTurnId === undefined || active.providerTurnId !== providerTurnId) {
+          return ["ignored" as const, states] as const;
+        }
+        return [
+          "settled" as const,
+          setWakeState(states, parentThreadId, {
+            ...current,
+            parentTurnRunning: false,
+            activeWake: undefined,
+            lastStartedTurnId: undefined,
+            lastSettledTurnId: undefined,
+            wakeAttemptCount: 0,
+            retryBlocked: false,
+          }),
+        ] as const;
+      }
+
+      return [
+        "settled" as const,
+        setWakeState(states, parentThreadId, {
+          ...current,
+          parentTurnRunning: false,
+          lastStartedTurnId: undefined,
+          lastSettledTurnId: undefined,
+          wakeAttemptCount: 0,
+          retryBlocked: false,
+        }),
+      ] as const;
+    });
+
+    if (action === "capped") {
+      yield* Effect.logWarning(
+        "abandoned unacknowledged delegated-run parent wake after retry cap",
+        {
+          parentThreadId,
+          providerTurnId,
+          attempts: MAX_WAKE_DISPATCH_ATTEMPTS,
+        },
+      );
+    } else if (action === "retry" || action === "settled") {
+      yield* tryDispatchWake(parentThreadId);
+    }
   });
 
   const handleProviderEvent = Effect.fn("DelegatedRunService.handleProviderEvent")(function* (
@@ -563,13 +1108,41 @@ const make = Effect.gen(function* () {
             );
         }
       } else if (event.type === "user-input.requested") {
-        yield* updateRun(runId, (run) => ({
-          ...run,
-          status: "waiting_for_input",
-          ...(event.requestId ? { providerRequestId: event.requestId } : {}),
-          updatedAt: now,
-          sequence: run.sequence + 1,
-        }));
+        const current = (yield* Ref.get(runsRef)).get(runId);
+        if (
+          current?.status === "waiting_for_input" &&
+          current.providerRequestId === event.requestId
+        ) {
+          return;
+        }
+        if (!event.requestId) {
+          yield* updateRun(runId, (run) => ({
+            ...run,
+            status: "failed",
+            error: "The provider requested structured input without a request identifier.",
+            completedAt: now,
+            updatedAt: now,
+            sequence: run.sequence + 1,
+          }));
+          yield* providerService
+            .stopSession({ threadId: event.threadId })
+            .pipe(Effect.ignoreCause({ log: false }));
+          yield* Ref.update(runByProviderThreadRef, (mapping) => {
+            const copy = new Map(mapping);
+            copy.delete(event.threadId);
+            return copy;
+          });
+        } else {
+          const requestId = event.requestId;
+          const updated = yield* updateRun(runId, (run) => ({
+            ...run,
+            status: "waiting_for_input",
+            providerRequestId: requestId,
+            updatedAt: now,
+            sequence: run.sequence + 1,
+          }));
+          if (updated) yield* recordInputRequired(updated, event.payload.questions);
+        }
       } else if (event.type === "runtime.error") {
         yield* updateRun(runId, (run) => ({
           ...run,
@@ -600,14 +1173,41 @@ const make = Effect.gen(function* () {
           copy.delete(event.threadId);
           return copy;
         });
+      } else if (event.type === "turn.aborted" || event.type === "session.exited") {
+        yield* updateRun(runId, (run) => ({
+          ...run,
+          status: "failed",
+          error:
+            event.type === "turn.aborted"
+              ? `Child turn aborted: ${event.payload.reason}`
+              : `Child session exited before completion${event.payload.reason ? `: ${event.payload.reason}` : "."}`,
+          completedAt: now,
+          updatedAt: now,
+          sequence: run.sequence + 1,
+        }));
+        if (event.type === "turn.aborted") {
+          yield* providerService
+            .stopSession({ threadId: event.threadId })
+            .pipe(Effect.ignoreCause({ log: false }));
+        }
+        yield* Ref.update(runByProviderThreadRef, (mapping) => {
+          const copy = new Map(mapping);
+          copy.delete(event.threadId);
+          return copy;
+        });
       }
       return;
     }
 
-    if (
-      (event.type === "turn.completed" && event.payload.state !== "completed") ||
-      event.type === "session.exited"
-    ) {
+    if (event.type === "session.exited") {
+      yield* Ref.update(wakeStatesRef, (states) => {
+        const current = states.get(event.threadId) ?? emptyWakeState();
+        return setWakeState(states, event.threadId, {
+          ...emptyWakeState(),
+          suppressed: true,
+          outstandingRunIds: current.outstandingRunIds,
+        });
+      });
       const runs = yield* Ref.get(runsRef);
       yield* Effect.forEach(
         [...runs.values()].filter(
@@ -616,12 +1216,104 @@ const make = Effect.gen(function* () {
         (run) => cancelInternal(run.id, "stopped_by_main_thread"),
         { discard: true },
       );
+    } else if (event.type === "turn.started") {
+      yield* acknowledgeStartedWake(event.threadId, event.turnId);
+    } else if (event.type === "turn.completed" || event.type === "turn.aborted") {
+      yield* settleParentTurn(event.threadId, event.turnId);
+    }
+  });
+
+  const handleDomainEvent = Effect.fn("DelegatedRunService.handleDomainEvent")(function* (
+    event: OrchestrationEvent,
+  ) {
+    if (event.type === "thread.turn-start-requested") {
+      yield* Ref.update(wakeStatesRef, (states) => {
+        const current = states.get(event.payload.threadId) ?? emptyWakeState();
+        const isServerWake = String(event.payload.messageId).startsWith("server:turn-start:");
+        if (isServerWake) {
+          if (
+            current.suppressed ||
+            current.pendingDispatchedWake?.attemptId !== event.payload.messageId
+          ) {
+            return states;
+          }
+          return setWakeState(states, event.payload.threadId, {
+            ...current,
+            parentTurnRunning: true,
+          });
+        }
+        return setWakeState(states, event.payload.threadId, {
+          ...current,
+          suppressed: false,
+          parentTurnRunning: true,
+          retryBlocked: false,
+          wakeAttemptCount: 0,
+        });
+      });
+      return;
+    }
+    if (
+      event.type === "thread.activity-appended" &&
+      event.payload.activity.kind === "provider.turn.start.accepted"
+    ) {
+      const attemptId = activityMessageId(event.payload.activity.payload);
+      const providerTurnId = event.payload.activity.turnId;
+      if (attemptId && providerTurnId) {
+        const action = yield* bindProviderTurnToWake(
+          event.payload.threadId,
+          attemptId,
+          providerTurnId,
+        );
+        if (action === "retry" || action === "settled") {
+          yield* tryDispatchWake(event.payload.threadId);
+        } else if (action === "capped") {
+          yield* Effect.logWarning("abandoned delegated-run parent wake after retry cap", {
+            parentThreadId: event.payload.threadId,
+            attemptId,
+            attempts: MAX_WAKE_DISPATCH_ATTEMPTS,
+          });
+        }
+      }
+      return;
+    }
+    if (
+      event.type === "thread.activity-appended" &&
+      event.payload.activity.kind === "provider.turn.start.failed"
+    ) {
+      const attemptId = activityMessageId(event.payload.activity.payload);
+      if (attemptId && String(attemptId).startsWith("server:turn-start:")) {
+        yield* restoreAttemptAndRetry(event.payload.threadId, attemptId);
+        return;
+      }
+      yield* Ref.update(wakeStatesRef, (states) => {
+        const current = states.get(event.payload.threadId);
+        if (!current || current.suppressed) return states;
+        // A stale/unknown server attempt must not disturb a newer wake.
+        if (current.pendingDispatchedWake || current.activeWake) return states;
+        return setWakeState(states, event.payload.threadId, {
+          ...current,
+          parentTurnRunning: false,
+          retryBlocked: false,
+          wakeAttemptCount: 0,
+        });
+      });
+      yield* tryDispatchWake(event.payload.threadId);
     }
   });
 
   const providerEventsFiber = yield* providerService.streamEvents.pipe(
     Stream.runForEach(handleProviderEvent),
     Effect.forkIn(serviceScope),
+  );
+  const domainEventsFiber = yield* orchestrationEngine.streamDomainEvents.pipe(
+    Stream.runForEach(handleDomainEvent),
+    Effect.forkIn(serviceScope),
+  );
+
+  yield* Effect.forEach(
+    [...new Set(orphanedRuns.map((run) => run.parentThreadId))],
+    tryDispatchWake,
+    { discard: true },
   );
 
   const start: DelegatedRunServiceShape["start"] = Effect.fn("DelegatedRunService.start")(
@@ -825,6 +1517,8 @@ const make = Effect.gen(function* () {
         updatedAt: now,
       };
       yield* Ref.update(runsRef, (current) => new Map(current).set(runId, run));
+      yield* registerOutstandingRun(run);
+      yield* persistRuns();
       yield* Ref.update(runByProviderThreadRef, (current) =>
         new Map(current).set(providerThreadId, runId),
       );
@@ -933,6 +1627,7 @@ const make = Effect.gen(function* () {
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
       yield* Fiber.interrupt(providerEventsFiber).pipe(Effect.ignore);
+      yield* Fiber.interrupt(domainEventsFiber).pipe(Effect.ignore);
       const states = yield* Ref.getAndSet(emissionRef, new Map());
       yield* Effect.forEach(
         [...states.values()],
@@ -940,6 +1635,10 @@ const make = Effect.gen(function* () {
           state.flushFiber ? Fiber.interrupt(state.flushFiber).pipe(Effect.ignore) : Effect.void,
         { discard: true },
       );
+      // Atomic filesystem operations can outlive interruption at the Node callback
+      // boundary. Drain the persistence critical section before the service's
+      // state directory is released so shutdown never races an in-flight rename.
+      yield* persistenceLock.withPermit(Effect.void);
     }),
   );
 
@@ -954,35 +1653,6 @@ const make = Effect.gen(function* () {
         message: "Delegated run not found.",
         runId,
       });
-    }),
-    awaitResult: Effect.fn("DelegatedRunService.awaitResult")(function* (runId) {
-      const registration = yield* emissionLock.withPermit(
-        Effect.gen(function* () {
-          const run = (yield* Ref.get(runsRef)).get(runId);
-          if (!run) {
-            return yield* new DelegatedRunError({
-              operation: "result",
-              message: "Delegated run not found.",
-              runId,
-            });
-          }
-          if (isResultReady(run)) return { _tag: "ready" as const, run };
-
-          const deferred = yield* Deferred.make<DelegatedRun>();
-          yield* Ref.update(resultWaitersRef, (waitersByRun) => {
-            const copy = new Map(waitersByRun);
-            const waiters = new Set(copy.get(runId) ?? []);
-            waiters.add(deferred);
-            copy.set(runId, waiters);
-            return copy;
-          });
-          return { _tag: "waiting" as const, deferred };
-        }),
-      );
-      if (registration._tag === "ready") return registration.run;
-      return yield* Deferred.await(registration.deferred).pipe(
-        Effect.ensuring(removeResultWaiter(runId, registration.deferred)),
-      );
     }),
     cancel: Effect.fn("DelegatedRunService.cancel")(function* (runId, reason) {
       const run = (yield* Ref.get(runsRef)).get(runId);
@@ -1069,7 +1739,7 @@ export const layer = Layer.effect(
 );
 
 const unavailable = (
-  operation: "start" | "status" | "result" | "cancel" | "respond",
+  operation: "start" | "status" | "cancel" | "respond",
   runId?: DelegatedRunId,
 ) =>
   new DelegatedRunError({
@@ -1094,11 +1764,6 @@ export const getActiveDelegatedRun = (runId: DelegatedRunId) =>
   activeDelegatedRunService
     ? activeDelegatedRunService.get(runId)
     : Effect.fail(unavailable("status", runId));
-
-export const awaitActiveDelegatedRunResult = (runId: DelegatedRunId) =>
-  activeDelegatedRunService
-    ? activeDelegatedRunService.awaitResult(runId)
-    : Effect.fail(unavailable("result", runId));
 
 export const cancelActiveDelegatedRun = (runId: DelegatedRunId) =>
   activeDelegatedRunService

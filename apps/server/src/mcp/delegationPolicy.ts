@@ -13,17 +13,14 @@ const TRACKED_PROVIDER_TOOLS = {
   "codex-agent": {
     label: "Codex",
     start: "codex_start",
-    result: "codex_result",
   },
   "cursor-agent": {
     label: "Cursor",
     start: "cursor_start",
-    result: "cursor_result",
   },
   "claude-agent": {
     label: "Claude",
     start: "claude_start",
-    result: "claude_result",
   },
 } as const;
 
@@ -56,8 +53,7 @@ export function trackedDelegationInstructions(
   if (callable.length === 0 && nativeInstruction === undefined) return undefined;
 
   const toolLines = callable.map(
-    (tool) =>
-      `- Use \`mcp__t3-code__${tool.start}\` (\`${tool.start}\`) for ${tool.label}, then call \`${tool.result}\` exactly once.`,
+    (tool) => `- Use \`mcp__t3-code__${tool.start}\` (\`${tool.start}\`) for ${tool.label}.`,
   );
   return [
     "## T3 Code tracked subagents",
@@ -67,13 +63,13 @@ export function trackedDelegationInstructions(
       : undefined,
     ...toolLines,
     callable.length > 0
-      ? "Do not replace these tools with provider plugins, shell-launched agent subprocesses, or untracked agent runners. The result call waits event-driven until the run finishes or needs structured input. NEVER poll status/result tools and NEVER create shell sleep timers or background polling commands. Use a status tool only for an explicit one-time progress request."
+      ? "Call `*_start` for each subagent you need, then end your turn. Results are delivered automatically as one new server message when all runs finish. NEVER wait, poll, sleep, or create background polling commands."
       : undefined,
     capabilities.has("cursor-agent")
-      ? "If Cursor needs structured input, call `cursor_respond`, then call `cursor_result` exactly once for the next active phase."
+      ? "If Cursor needs structured input, the server wakes you with the question. Call `cursor_respond`, then end your turn; the final result is delivered automatically."
       : undefined,
     callable.length > 0
-      ? "Tracked subagents use a server-locked workspace-write sandbox, automatic approval handling, and a Git read-only policy. They may edit project files, but must not access paths outside the workspace or run Git commands that change local or remote state. Permission requests are handled by the server and never require user action; structured questions may still be returned by the result tool."
+      ? "Tracked subagents use a server-locked workspace-write sandbox, automatic approval handling, and a Git read-only policy. They may edit project files, but must not access paths outside the workspace or run Git commands that change local or remote state. Permission requests are handled by the server and never require user action; structured questions are delivered by a server wake-up."
       : undefined,
   ]
     .filter((line): line is string => line !== undefined)

@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
+  DelegatedRunId,
   EventId,
   ProjectId,
   ProviderDriverKind,
@@ -9,19 +10,22 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationCommand,
+  type OrchestrationEvent,
   type ProviderRuntimeEvent,
   type ProviderRespondToRequestInput,
   type ProviderSendTurnInput,
   type ProviderSessionStartInput,
+  type DelegatedRun,
   type SubagentRun,
   type ServerProvider,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
-import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -29,6 +33,7 @@ import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
 import { ProviderService } from "../provider/Services/ProviderService.ts";
 import * as DelegatedRunService from "./DelegatedRunService.ts";
 import * as SubagentRunService from "./SubagentRunService.ts";
+import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../config.ts";
@@ -125,10 +130,13 @@ const makeStubbedProviderService = (
     streamEvents,
   });
 
-const makeStubbedEngine = (commands: OrchestrationCommand[]) =>
+const makeStubbedEngine = (
+  commands: OrchestrationCommand[],
+  streamDomainEvents: Stream.Stream<OrchestrationEvent> = Stream.empty,
+) =>
   OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
-    streamDomainEvents: Stream.empty,
+    streamDomainEvents,
     dispatch: (command) =>
       Effect.sync(() => {
         commands.push(command);
@@ -146,6 +154,16 @@ const appendCommands = (commands: ReadonlyArray<OrchestrationCommand>) =>
     (command): command is AppendActivityCommand => command.type === "thread.activity.append",
   );
 
+type ServerWakeCommand = Extract<
+  OrchestrationCommand,
+  { readonly type: "thread.turn.start-server" }
+>;
+
+const serverWakeCommands = (commands: ReadonlyArray<OrchestrationCommand>) =>
+  commands.filter(
+    (command): command is ServerWakeCommand => command.type === "thread.turn.start-server",
+  );
+
 let eventCounter = 0;
 const makeEvent = (
   partial: Omit<ProviderRuntimeEvent, "eventId" | "provider" | "createdAt">,
@@ -157,20 +175,101 @@ const makeEvent = (
     ...partial,
   }) as ProviderRuntimeEvent;
 
+const PersistedRunSequencesJson = Schema.fromJsonString(
+  Schema.Array(
+    Schema.Struct({
+      id: Schema.optional(Schema.String),
+      sequence: Schema.optional(Schema.Number),
+    }),
+  ),
+);
+const decodePersistedRunSequences = Schema.decodeUnknownOption(PersistedRunSequencesJson);
+
+const waitForPersistedRun = Effect.fn("waitForPersistedRun")(function* (run: DelegatedRun) {
+  const fs = yield* FileSystem.FileSystem;
+  const config = yield* ServerConfig;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const contents = yield* fs
+      .readFileString(`${config.stateDir}/delegated-runs.json`)
+      .pipe(Effect.orElseSucceed(() => "[]"));
+    const persisted = Option.getOrElse(decodePersistedRunSequences(contents), () => []);
+    const matching = persisted.find((candidate) => candidate.id === run.id);
+    if (matching && (matching.sequence ?? -1) >= run.sequence) return;
+    yield* Effect.yieldNow;
+  }
+  expect.fail(`Delegated run '${run.id}' sequence ${run.sequence} was not persisted.`);
+});
+
+const hasPersistedStatus = (run: DelegatedRun) =>
+  run.status === "waiting_for_input" ||
+  run.status === "completed" ||
+  run.status === "failed" ||
+  run.status === "cancelled";
+
 const waitForStatus = Effect.fn("waitForStatus")(function* (
   service: DelegatedRunService.DelegatedRunServiceShape,
   runId: Parameters<DelegatedRunService.DelegatedRunServiceShape["get"]>[0],
-  status: "running" | "waiting_for_input" | "completed",
+  status: "running" | "waiting_for_input" | "completed" | "failed" | "cancelled",
 ) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const run = yield* service.get(runId);
-    if (run.status === status) return run;
+    if (run.status === status) {
+      if (hasPersistedStatus(run)) {
+        yield* waitForPersistedRun(run);
+      }
+      return run;
+    }
     yield* Effect.yieldNow;
   }
   const run = yield* service.get(runId);
   expect(run.status).toBe(status);
+  if (hasPersistedStatus(run)) {
+    yield* waitForPersistedRun(run);
+  }
   return run;
 });
+
+const waitForWakeCount = Effect.fn("waitForWakeCount")(function* (
+  commands: ReadonlyArray<OrchestrationCommand>,
+  count: number,
+) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const wakes = serverWakeCommands(commands);
+    if (wakes.length === count) return wakes;
+    yield* Effect.yieldNow;
+  }
+  const wakes = serverWakeCommands(commands);
+  expect(wakes).toHaveLength(count);
+  return wakes;
+});
+
+const makeTurnStartActivityEvent = (input: {
+  readonly kind: "provider.turn.start.accepted" | "provider.turn.start.failed";
+  readonly messageId: string;
+  readonly turnId?: TurnId;
+}): OrchestrationEvent =>
+  ({
+    eventId: EventId.make(`turn-start-activity-${++eventCounter}`),
+    sequence: eventCounter,
+    aggregateKind: "thread",
+    aggregateId: parentThreadId,
+    commandId: `test-command-${eventCounter}`,
+    actor: { kind: "server" },
+    occurredAt: now,
+    type: "thread.activity-appended",
+    payload: {
+      threadId: parentThreadId,
+      activity: {
+        id: EventId.make(`turn-start-activity-payload-${eventCounter}`),
+        tone: input.kind === "provider.turn.start.failed" ? "error" : "info",
+        kind: input.kind,
+        summary: input.kind,
+        payload: { messageId: input.messageId },
+        turnId: input.turnId ?? null,
+        createdAt: now,
+      },
+    },
+  }) as unknown as OrchestrationEvent;
 
 const waitForFinalMessage = Effect.fn("waitForFinalMessage")(function* (
   service: DelegatedRunService.DelegatedRunServiceShape,
@@ -179,11 +278,15 @@ const waitForFinalMessage = Effect.fn("waitForFinalMessage")(function* (
 ) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const run = yield* service.get(runId);
-    if (run.finalMessage === expected) return run;
+    if (run.finalMessage === expected) {
+      yield* waitForPersistedRun(run);
+      return run;
+    }
     yield* Effect.yieldNow;
   }
   const run = yield* service.get(runId);
   expect(run.finalMessage).toBe(expected);
+  yield* waitForPersistedRun(run);
   return run;
 });
 
@@ -191,6 +294,7 @@ const makeStreamingHarness = Effect.gen(function* () {
   const commands: OrchestrationCommand[] = [];
   const approvalResponses: ProviderRespondToRequestInput[] = [];
   const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+  const domainEvents = yield* PubSub.unbounded<OrchestrationEvent>();
   const stopped = yield* Deferred.make<void>();
   const service = yield* DelegatedRunService.__testing.make.pipe(
     Effect.provideService(
@@ -204,7 +308,10 @@ const makeStreamingHarness = Effect.gen(function* () {
           }),
       ),
     ),
-    Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+    Effect.provideService(
+      OrchestrationEngineService,
+      makeStubbedEngine(commands, Stream.fromPubSub(domainEvents)),
+    ),
   );
   const queued = yield* service.start({
     provider: "codex",
@@ -215,6 +322,8 @@ const makeStreamingHarness = Effect.gen(function* () {
   const childThreadId = ThreadId.make(running.providerThreadId!);
   const publish = (event: ProviderRuntimeEvent) =>
     PubSub.publish(events, event).pipe(Effect.andThen(Effect.yieldNow));
+  const publishDomain = (event: OrchestrationEvent) =>
+    PubSub.publish(domainEvents, event).pipe(Effect.andThen(Effect.yieldNow));
   return {
     commands,
     approvalResponses,
@@ -222,6 +331,7 @@ const makeStreamingHarness = Effect.gen(function* () {
     queued,
     childThreadId,
     publish,
+    publishDomain,
     awaitStopped: Deferred.await(stopped),
   } as const;
 });
@@ -846,24 +956,17 @@ it.effect("cancels a pending flush before the terminal activity", () =>
   }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
 );
 
-it.effect("awaits a result without resolving for streamed progress", () =>
+it.effect("wakes once with mixed results after every run and the parent turn settle", () =>
   Effect.gen(function* () {
     const harness = yield* makeStreamingHarness;
-    const resultFiber = yield* harness.service
-      .awaitResult(harness.queued.id)
-      .pipe(Effect.forkChild);
-    yield* Effect.yieldNow;
-    expect(resultFiber.pollUnsafe()).toBeUndefined();
-
-    yield* harness.publish(
-      makeEvent({
-        type: "content.delta",
-        threadId: harness.childThreadId,
-        turnId: TurnId.make("child-turn"),
-        payload: { streamKind: "assistant_text", delta: "still working" },
-      } as never),
-    );
-    expect(resultFiber.pollUnsafe()).toBeUndefined();
+    const second = yield* harness.service.start({
+      provider: "codex",
+      parentThreadId,
+      task: "Inspect the web state",
+      title: "Web state review",
+    });
+    const secondRunning = yield* waitForStatus(harness.service, second.id, "running");
+    const secondChildThreadId = ThreadId.make(secondRunning.providerThreadId!);
 
     yield* harness.publish(
       makeEvent({
@@ -873,12 +976,10 @@ it.effect("awaits a result without resolving for streamed progress", () =>
         payload: {
           itemType: "assistant_message",
           status: "completed",
-          detail: "Final delegated answer",
+          detail: "Persistence is sound.",
         },
       } as never),
     );
-    expect(resultFiber.pollUnsafe()).toBeUndefined();
-
     yield* harness.publish(
       makeEvent({
         type: "turn.completed",
@@ -887,20 +988,94 @@ it.effect("awaits a result without resolving for streamed progress", () =>
         payload: { state: "completed" },
       } as never),
     );
+    yield* harness.publish(
+      makeEvent({
+        type: "runtime.error",
+        threadId: secondChildThreadId,
+        turnId: TurnId.make("child-turn"),
+        payload: { message: "Web inspection failed." },
+      } as never),
+    );
+    yield* waitForStatus(harness.service, harness.queued.id, "completed");
+    yield* waitForStatus(harness.service, second.id, "failed");
+    expect(serverWakeCommands(harness.commands)).toHaveLength(0);
 
-    const result = yield* Fiber.join(resultFiber);
-    expect(result.status).toBe("completed");
-    expect(result.finalMessage).toBe("Final delegated answer");
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+
+    const wakes = yield* waitForWakeCount(harness.commands, 1);
+    expect(wakes[0]!.message.systemEvent).toMatchObject({
+      kind: "subagents.settled",
+      runs: [
+        { runId: harness.queued.id, status: "completed", finalMessage: "Persistence is sound." },
+        { runId: second.id, status: "failed", error: "Web inspection failed." },
+      ],
+    });
+    expect(wakes[0]!.message.text).toContain("Do not restart these runs");
   }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
 );
 
-it.effect("unblocks a result waiter when structured input is required", () =>
+it.effect("wakes for structured input without waiting for sibling runs", () =>
   Effect.gen(function* () {
     const harness = yield* makeStreamingHarness;
-    const resultFiber = yield* harness.service
-      .awaitResult(harness.queued.id)
-      .pipe(Effect.forkChild);
-    yield* Effect.yieldNow;
+    yield* harness.service.start({
+      provider: "codex",
+      parentThreadId,
+      task: "Keep working in parallel",
+    });
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+
+    yield* harness.publish(
+      makeEvent({
+        type: "user-input.requested",
+        threadId: harness.childThreadId,
+        turnId: TurnId.make("child-turn"),
+        requestId: "request-1",
+        payload: {
+          questions: [
+            {
+              id: "scope",
+              header: "Scope",
+              question: "Which package should I inspect?",
+              options: [
+                { label: "Server", description: "Inspect server orchestration." },
+                { label: "Web", description: "Inspect the client state." },
+              ],
+              multiSelect: false,
+            },
+          ],
+        },
+      } as never),
+    );
+
+    const wakes = yield* waitForWakeCount(harness.commands, 1);
+    expect(wakes[0]!.message.systemEvent).toMatchObject({
+      kind: "subagent.input-required",
+      runs: [{ runId: harness.queued.id, status: "waiting_for_input" }],
+    });
+    expect(wakes[0]!.message.text).toContain("Which package should I inspect?");
+    expect(wakes[0]!.message.text).toContain(`runId '${harness.queued.id}'`);
+
+    yield* harness.publishDomain(
+      makeTurnStartActivityEvent({
+        kind: "provider.turn.start.accepted",
+        messageId: wakes[0]!.message.messageId,
+        turnId: TurnId.make("input-wake-turn"),
+      }),
+    );
 
     yield* harness.publish(
       makeEvent({
@@ -911,9 +1086,492 @@ it.effect("unblocks a result waiter when structured input is required", () =>
         payload: { questions: [] },
       } as never),
     );
-
-    const result = yield* Fiber.join(resultFiber);
-    expect(result.status).toBe("waiting_for_input");
-    expect(result.providerRequestId).toBe("request-1");
+    // Ack the wake turn before completing it so the un-acked restore path
+    // does not re-dispatch the same wake.
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.started",
+        threadId: parentThreadId,
+        turnId: TurnId.make("input-wake-turn"),
+        payload: {},
+      } as never),
+    );
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("input-wake-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* Effect.yieldNow;
+    expect(serverWakeCommands(harness.commands)).toHaveLength(1);
   }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
 );
+
+it.effect("restores an unacked wake when the parent turn completes without turn.started", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeStreamingHarness;
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* harness.publish(
+      makeEvent({
+        type: "item.completed",
+        threadId: harness.childThreadId,
+        turnId: TurnId.make("child-turn"),
+        payload: {
+          itemType: "assistant_message",
+          status: "completed",
+          detail: "Child finished.",
+        },
+      } as never),
+    );
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: harness.childThreadId,
+        turnId: TurnId.make("child-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* waitForStatus(harness.service, harness.queued.id, "completed");
+    const firstWakes = yield* waitForWakeCount(harness.commands, 1);
+    expect(firstWakes[0]!.message.systemEvent).toMatchObject({
+      kind: "subagents.settled",
+      runs: [{ runId: harness.queued.id, status: "completed" }],
+    });
+    yield* harness.publishDomain(
+      makeTurnStartActivityEvent({
+        kind: "provider.turn.start.accepted",
+        messageId: firstWakes[0]!.message.messageId,
+        turnId: TurnId.make("wake-turn-never-started"),
+      }),
+    );
+
+    // Completing the parent without turn.started means the wake turn never
+    // started — restore and re-dispatch so parentTurnRunning cannot wedge.
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("wake-turn-never-started"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    const wakes = yield* waitForWakeCount(harness.commands, 2);
+    expect(wakes[1]!.message.systemEvent).toMatchObject({
+      kind: "subagents.settled",
+      runs: [{ runId: harness.queued.id, status: "completed" }],
+    });
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("caps immediate provider turn-start retries for one wake", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeStreamingHarness;
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: harness.childThreadId,
+        turnId: TurnId.make("child-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* waitForStatus(harness.service, harness.queued.id, "completed");
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const wakes = yield* waitForWakeCount(harness.commands, attempt);
+      yield* harness.publishDomain(
+        makeTurnStartActivityEvent({
+          kind: "provider.turn.start.failed",
+          messageId: wakes[attempt - 1]!.message.messageId,
+        }),
+      );
+    }
+
+    yield* Effect.yieldNow;
+    expect(serverWakeCommands(harness.commands)).toHaveLength(3);
+
+    // A later ordinary parent turn can reopen one bounded retry series, so the
+    // completed run remains retrievable instead of being discarded.
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("later-user-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* waitForWakeCount(harness.commands, 4);
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("unwedges a failed ordinary user turn before turn.started", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeStreamingHarness;
+    yield* harness.publishDomain(
+      makeTurnStartActivityEvent({
+        kind: "provider.turn.start.failed",
+        messageId: "user-message-that-never-started",
+      }),
+    );
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: harness.childThreadId,
+        turnId: TurnId.make("child-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* waitForStatus(harness.service, harness.queued.id, "completed");
+    yield* waitForWakeCount(harness.commands, 1);
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("ignores stale attempt lifecycle signals after dispatching a retry", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeStreamingHarness;
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: harness.childThreadId,
+        turnId: TurnId.make("child-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* waitForStatus(harness.service, harness.queued.id, "completed");
+    const first = (yield* waitForWakeCount(harness.commands, 1))[0]!;
+    yield* harness.publishDomain(
+      makeTurnStartActivityEvent({
+        kind: "provider.turn.start.accepted",
+        messageId: first.message.messageId,
+        turnId: TurnId.make("wake-turn-a"),
+      }),
+    );
+    yield* harness.publishDomain(
+      makeTurnStartActivityEvent({
+        kind: "provider.turn.start.failed",
+        messageId: first.message.messageId,
+      }),
+    );
+    const second = (yield* waitForWakeCount(harness.commands, 2))[1]!;
+    yield* harness.publishDomain(
+      makeTurnStartActivityEvent({
+        kind: "provider.turn.start.accepted",
+        messageId: second.message.messageId,
+        turnId: TurnId.make("wake-turn-b"),
+      }),
+    );
+
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.started",
+        threadId: parentThreadId,
+        turnId: TurnId.make("wake-turn-a"),
+        payload: {},
+      } as never),
+    );
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.aborted",
+        threadId: parentThreadId,
+        turnId: TurnId.make("wake-turn-a"),
+        payload: { reason: "stale attempt" },
+      } as never),
+    );
+    expect(serverWakeCommands(harness.commands)).toHaveLength(2);
+
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.started",
+        threadId: parentThreadId,
+        turnId: TurnId.make("wake-turn-b"),
+        payload: {},
+      } as never),
+    );
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("wake-turn-b"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    expect(serverWakeCommands(harness.commands)).toHaveLength(2);
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("drops a cancelled run's input question when restoring an unacked wake", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeStreamingHarness;
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* harness.publish(
+      makeEvent({
+        type: "user-input.requested",
+        threadId: harness.childThreadId,
+        turnId: TurnId.make("child-turn"),
+        requestId: "request-to-cancel",
+        payload: {
+          questions: [
+            {
+              id: "scope",
+              header: "Scope",
+              question: "Which package?",
+              options: [],
+              multiSelect: false,
+            },
+          ],
+        },
+      } as never),
+    );
+    const first = (yield* waitForWakeCount(harness.commands, 1))[0]!;
+    yield* harness.publishDomain(
+      makeTurnStartActivityEvent({
+        kind: "provider.turn.start.accepted",
+        messageId: first.message.messageId,
+        turnId: TurnId.make("input-wake"),
+      }),
+    );
+    yield* harness.service.cancel(harness.queued.id);
+    yield* waitForStatus(harness.service, harness.queued.id, "cancelled");
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("input-wake"),
+        payload: { state: "completed" },
+      } as never),
+    );
+
+    const wakes = yield* waitForWakeCount(harness.commands, 2);
+    expect(wakes[1]!.message.systemEvent).toMatchObject({
+      kind: "subagents.settled",
+      runs: [{ runId: harness.queued.id, status: "cancelled" }],
+    });
+    expect(wakes[1]!.message.text).not.toContain("Which package?");
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("restores a wake when server turn-start dispatch is rejected", () =>
+  Effect.gen(function* () {
+    const commands: OrchestrationCommand[] = [];
+    const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+    const stopped = yield* Deferred.make<void>();
+    let rejectNextWake = false;
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(
+        ProviderService,
+        makeStubbedProviderService(
+          Stream.fromPubSub(events),
+          Deferred.succeed(stopped, undefined).pipe(Effect.asVoid),
+        ),
+      ),
+      Effect.provideService(
+        OrchestrationEngineService,
+        OrchestrationEngineService.of({
+          readEvents: () => Stream.empty,
+          streamDomainEvents: Stream.empty,
+          dispatch: (command) =>
+            Effect.gen(function* () {
+              if (command.type === "thread.turn.start-server" && rejectNextWake) {
+                return yield* new OrchestrationCommandInvariantError({
+                  commandType: command.type,
+                  detail: "Thread 'parent-thread' already has an active turn.",
+                });
+              }
+              commands.push(command);
+              return { sequence: commands.length };
+            }),
+        }),
+      ),
+    );
+    const queued = yield* service.start({
+      provider: "codex",
+      parentThreadId,
+      task: "Research package tooling",
+    });
+    const running = yield* waitForStatus(service, queued.id, "running");
+    const childThreadId = ThreadId.make(running.providerThreadId!);
+    const publish = (event: ProviderRuntimeEvent) =>
+      PubSub.publish(events, event).pipe(Effect.andThen(Effect.yieldNow));
+
+    yield* publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    rejectNextWake = true;
+    yield* publish(
+      makeEvent({
+        type: "item.completed",
+        threadId: childThreadId,
+        turnId: TurnId.make("child-turn"),
+        payload: {
+          itemType: "assistant_message",
+          status: "completed",
+          detail: "Child finished.",
+        },
+      } as never),
+    );
+    yield* publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: childThreadId,
+        turnId: TurnId.make("child-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* waitForStatus(service, queued.id, "completed");
+    yield* Effect.yieldNow;
+    expect(serverWakeCommands(commands)).toHaveLength(0);
+
+    rejectNextWake = false;
+    yield* publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("user-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    const wakes = yield* waitForWakeCount(commands, 1);
+    expect(wakes[0]!.message.systemEvent).toMatchObject({
+      kind: "subagents.settled",
+      runs: [{ runId: queued.id, status: "completed" }],
+    });
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("fails and wakes a run when its child session exits before turn completion", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const config = yield* ServerConfig;
+    const harness = yield* makeStreamingHarness;
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* harness.publish(
+      makeEvent({
+        type: "session.exited",
+        threadId: harness.childThreadId,
+        payload: { reason: "provider process crashed" },
+      } as never),
+    );
+
+    const failed = yield* waitForStatus(harness.service, harness.queued.id, "failed");
+    expect(failed.error).toContain("provider process crashed");
+    const wakes = yield* waitForWakeCount(harness.commands, 1);
+    expect(wakes[0]!.message.systemEvent).toMatchObject({
+      kind: "subagents.settled",
+      runs: [{ runId: harness.queued.id, status: "failed" }],
+    });
+    let persisted = "";
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      persisted = yield* fs.readFileString(`${config.stateDir}/delegated-runs.json`);
+      if (persisted.includes('"status":"failed"')) break;
+      yield* Effect.yieldNow;
+    }
+    expect(persisted).toContain('"status":"failed"');
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("keeps children alive after parent turn failure and cancels them on session exit", () =>
+  Effect.gen(function* () {
+    const harness = yield* makeStreamingHarness;
+    yield* harness.publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "failed", errorMessage: "Parent provider failed." },
+      } as never),
+    );
+    expect((yield* harness.service.get(harness.queued.id)).status).toBe("running");
+
+    yield* harness.publish(
+      makeEvent({
+        type: "session.exited",
+        threadId: parentThreadId,
+        payload: { reason: "stopped" },
+      } as never),
+    );
+    yield* waitForStatus(harness.service, harness.queued.id, "cancelled");
+    expect(serverWakeCommands(harness.commands)).toHaveLength(0);
+    yield* Effect.yieldNow;
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("fails and wakes persisted non-terminal runs after restart", () => {
+  const commands: OrchestrationCommand[] = [];
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const config = yield* ServerConfig;
+    yield* fs.writeFileString(
+      `${config.stateDir}/delegated-runs.json`,
+      `[{"id":"orphan-run","provider":"codex","providerInstanceId":"codex","parentThreadId":"parent-thread","providerThreadId":"delegated-orphan-run","title":"Interrupted review","taskPreview":"Review persistence","status":"running","lastSummary":"Partially inspected","finalMessage":null,"error":null,"workspaceRoot":"/workspace","sequence":2,"startedAt":"${now}","completedAt":null,"createdAt":"${now}","updatedAt":"${now}"}]`,
+    );
+
+    const service = yield* DelegatedRunService.__testing.make;
+    const recovered = yield* service.get(DelegatedRunId.make("orphan-run"));
+    expect(recovered).toMatchObject({
+      status: "failed",
+      error: "Delegated run lost due to server restart.",
+    });
+    expect(serverWakeCommands(commands)).toHaveLength(1);
+    expect(serverWakeCommands(commands)[0]!.message.systemEvent).toMatchObject({
+      kind: "subagents.settled",
+      runs: [{ runId: "orphan-run", status: "failed" }],
+    });
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.succeed(ProviderService, makeStubbedProviderService()),
+        Layer.succeed(OrchestrationEngineService, makeStubbedEngine(commands)),
+        Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
+        providerRegistryStub([codexSnapshot]),
+        subagentRunLayer,
+        configLayer,
+        ServerSettings.layerTest(),
+        NodeServices.layer,
+      ),
+    ),
+    Effect.scoped,
+  );
+});

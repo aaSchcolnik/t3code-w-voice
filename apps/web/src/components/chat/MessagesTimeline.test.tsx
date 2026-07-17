@@ -239,6 +239,44 @@ describe("MessagesTimeline", () => {
     expect(fadedMarkup).toContain("chat-timeline-scroll-fade");
   });
 
+  it("renders a compact delegated-results row without the wake prompt", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "wake-message",
+            kind: "system-event",
+            createdAt: MESSAGE_CREATED_AT,
+            systemEvent: {
+              kind: "subagents.settled",
+              runs: [
+                {
+                  runId: "run-1",
+                  provider: "codex",
+                  title: "Review persistence",
+                  status: "completed",
+                  finalMessage: "Looks good.",
+                },
+                {
+                  runId: "run-2",
+                  provider: "cursor",
+                  title: "Review UI",
+                  status: "failed",
+                  error: "Could not inspect the route.",
+                },
+              ],
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("2 subagents finished");
+    expect(markup).toContain('data-timeline-row-kind="system-event"');
+    expect(markup).not.toContain("Private model-facing wake instructions");
+  });
+
   it("keeps assistant changed-files headers sticky below the thread header", () => {
     const assistantMessageId = MessageId.make("message-assistant-with-files");
     const turnId = TurnId.make("turn-with-files");

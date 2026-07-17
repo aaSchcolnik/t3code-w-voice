@@ -146,7 +146,6 @@ const renderTarget = (role: string, target: EngineDelegationTarget): string => {
     return `- **${role}:** run this lane inline on the main thread${model}.${focus}`;
   }
   const tool = `${target.provider}_start`;
-  const resultTool = `${target.provider}_result`;
   const parameters = {
     ...(target.providerInstanceId === undefined
       ? {}
@@ -157,7 +156,7 @@ const renderTarget = (role: string, target: EngineDelegationTarget): string => {
   const renderedParameters =
     Object.keys(parameters).length === 0 ? "" : ` with ${JSON.stringify(parameters)}`;
   const focus = target.focus === undefined ? "" : ` Focus lens: ${target.focus}.`;
-  return `- **${role}:** call \`${tool}\`${renderedParameters}, then call \`${resultTool}\` exactly once for that active phase.${focus}`;
+  return `- **${role}:** call \`${tool}\`${renderedParameters}.${focus}`;
 };
 
 export const renderConsensusPanelTargets = (panel: ReadonlyArray<EngineDelegationTarget>): string =>
@@ -271,7 +270,8 @@ ${targets.join("\n")}
 ${roleSteps.join("\n")}
 
 ### Guardrails
-- Use only the tracked \`cursor_start\`/\`codex_start\` tools and their matching result tool.
+- Use only the tracked \`cursor_start\`/\`codex_start\` tools. Start every selected target, then end the main-thread turn; results arrive automatically in one server wake-up after all runs finish.
+- Never wait, poll, sleep, or create background polling commands while delegated runs are active.
 - Subagents report findings or diffs to the Judge. They never mark chunks complete, write engine artifacts, or adjudicate findings.
 - Parallelize only Scouts with disjoint scopes and Workers with disjoint files. Consensus panelists always run in parallel over the identical subject.
 - Verify every subagent result against source, tests, and artifacts. If verification fails, retry inline; do not re-delegate the same work more than once.${trailingSections}`;

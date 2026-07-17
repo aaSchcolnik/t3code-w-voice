@@ -8,6 +8,7 @@ import {
   type ProviderInstanceId,
   type SubagentRun,
   type SubagentRunStreamEvent,
+  type SubagentStatus,
   type SubagentTranscript,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -33,6 +34,9 @@ const EMPTY_RUN_LIST_STATE: SubagentRunListState = {
   runs: [],
 };
 
+const ENVIRONMENT_WIDE_SUBSCRIBE_INPUT = {} as const;
+const TERMINAL_SUBAGENT_STATUSES = new Set<SubagentStatus>(["completed", "failed", "cancelled"]);
+
 export function applySubagentRunEvent(
   state: SubagentRunListState,
   event: SubagentRunStreamEvent,
@@ -57,6 +61,17 @@ export function applySubagentRunEvent(
   };
 }
 
+export function activeSubagentCountsByRootThread(
+  runs: ReadonlyArray<SubagentRun>,
+): ReadonlyMap<ThreadId, number> {
+  const counts = new Map<ThreadId, number>();
+  for (const run of runs) {
+    if (TERMINAL_SUBAGENT_STATUSES.has(run.status)) continue;
+    counts.set(run.rootThreadId, (counts.get(run.rootThreadId) ?? 0) + 1);
+  }
+  return counts;
+}
+
 function compareSubagentRuns(left: SubagentRun, right: SubagentRun): number {
   if (left.depth !== right.depth) return left.depth - right.depth;
   const timestamp = right.createdAt.localeCompare(left.createdAt);
@@ -75,6 +90,41 @@ export const subagentRunsAtomFamily = createEnvironmentRpcSubscriptionAtomFamily
       ),
   },
 );
+
+export const makeActiveSubagentCountsAtom = (
+  runsAtom: Atom.Atom<AsyncResult.AsyncResult<SubagentRunListState, unknown>>,
+) =>
+  runsAtom.pipe(
+    Atom.map((result) => {
+      const state = Option.getOrElse(AsyncResult.value(result), () => EMPTY_RUN_LIST_STATE);
+      return activeSubagentCountsByRootThread(state.runs);
+    }),
+  );
+
+export const activeSubagentCountsAtomFamily = Atom.family((environmentId: EnvironmentId) =>
+  makeActiveSubagentCountsAtom(
+    subagentRunsAtomFamily({ environmentId, input: ENVIRONMENT_WIDE_SUBSCRIBE_INPUT }),
+  ).pipe(Atom.withLabel(`subagents:active-counts:${environmentId}`)),
+);
+
+const activeSubagentCountAtomFamily = Atom.family((key: string) => {
+  const [environmentId, rootThreadId] = JSON.parse(key) as [EnvironmentId, ThreadId];
+  return activeSubagentCountsAtomFamily(environmentId).pipe(
+    Atom.map((counts) => counts.get(rootThreadId) ?? 0),
+    Atom.withLabel(`subagents:active-count:${environmentId}:${rootThreadId}`),
+  );
+});
+
+const activeSubagentCountsForEnvironmentsAtomFamily = Atom.family((key: string) => {
+  const environmentIds = JSON.parse(key) as ReadonlyArray<EnvironmentId>;
+  return Atom.make((get) => {
+    const countsByEnvironment = new Map<EnvironmentId, ReadonlyMap<ThreadId, number>>();
+    for (const environmentId of environmentIds) {
+      countsByEnvironment.set(environmentId, get(activeSubagentCountsAtomFamily(environmentId)));
+    }
+    return countsByEnvironment as ReadonlyMap<EnvironmentId, ReadonlyMap<ThreadId, number>>;
+  }).pipe(Atom.withLabel(`subagents:active-counts-for:${environmentIds.join(",")}`));
+});
 
 const EMPTY_RUN_LIST_ATOM = Atom.make(AsyncResult.success(EMPTY_RUN_LIST_STATE)).pipe(
   Atom.withLabel("subagents:runs-empty"),
@@ -97,6 +147,27 @@ export function useSubagentRunList(
     authoritative: rootThreadId !== null && AsyncResult.isSuccess(result),
     runs: state.runs,
   };
+}
+
+/**
+ * One environment-wide subscription shared by all sidebar rows. Counts active
+ * runs by root thread id so each row avoids its own WS subscription.
+ */
+export function useActiveSubagentCount(
+  environmentId: EnvironmentId,
+  rootThreadId: ThreadId,
+): number {
+  return useAtomValue(activeSubagentCountAtomFamily(JSON.stringify([environmentId, rootThreadId])));
+}
+
+export function useActiveSubagentCounts(
+  environmentIds: ReadonlyArray<EnvironmentId>,
+): ReadonlyMap<EnvironmentId, ReadonlyMap<ThreadId, number>> {
+  const key = useMemo(
+    () => JSON.stringify([...new Set(environmentIds)].toSorted()),
+    [environmentIds],
+  );
+  return useAtomValue(activeSubagentCountsForEnvironmentsAtomFamily(key));
 }
 
 export const LEGACY_SUBAGENT_FALLBACK_ENABLED =

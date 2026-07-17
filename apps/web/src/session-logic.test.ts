@@ -2098,6 +2098,73 @@ describe("deriveTimelineEntries", () => {
       },
     });
   });
+
+  it("projects structured system messages without exposing their model-facing body", () => {
+    const entries = deriveTimelineEntries(
+      [
+        {
+          id: MessageId.make("wake-message"),
+          role: "system",
+          text: "Private model-facing wake instructions",
+          systemEvent: {
+            kind: "subagents.settled",
+            runs: [
+              {
+                runId: "run-1",
+                provider: "codex",
+                title: "Review persistence",
+                status: "completed",
+                finalMessage: "Looks good.",
+              },
+            ],
+          },
+          createdAt: "2026-02-23T00:00:01.000Z",
+          turnId: null,
+          updatedAt: "2026-02-23T00:00:01.000Z",
+          streaming: false,
+        },
+      ],
+      [],
+      [],
+    );
+
+    expect(entries).toEqual([
+      expect.objectContaining({
+        kind: "system-event",
+        systemEvent: expect.objectContaining({ kind: "subagents.settled" }),
+      }),
+    ]);
+    expect(entries[0]).not.toHaveProperty("message");
+  });
+
+  it("keeps legacy system messages without systemEvent as plain timeline rows", () => {
+    const entries = deriveTimelineEntries(
+      [
+        {
+          id: MessageId.make("legacy-system"),
+          role: "system",
+          text: "Recovered system notice",
+          createdAt: "2026-02-23T00:00:01.000Z",
+          turnId: null,
+          updatedAt: "2026-02-23T00:00:01.000Z",
+          streaming: false,
+        },
+      ],
+      [],
+      [],
+    );
+
+    expect(entries).toEqual([
+      expect.objectContaining({
+        kind: "message",
+        message: expect.objectContaining({
+          id: MessageId.make("legacy-system"),
+          role: "system",
+          text: "Recovered system notice",
+        }),
+      }),
+    ]);
+  });
 });
 
 describe("deriveWorkLogEntries context window handling", () => {

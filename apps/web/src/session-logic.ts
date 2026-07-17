@@ -4,6 +4,7 @@ import {
   ApprovalRequestId,
   isToolLifecycleItemType,
   type OrchestrationLatestTurn,
+  type OrchestrationSystemEvent,
   type ModelSelection,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
@@ -178,6 +179,12 @@ export type TimelineEntry =
       kind: "message";
       createdAt: string;
       message: ChatMessage;
+    }
+  | {
+      id: string;
+      kind: "system-event";
+      createdAt: string;
+      systemEvent: OrchestrationSystemEvent;
     }
   | {
       id: string;
@@ -1702,12 +1709,28 @@ export function deriveTimelineEntries(
   proposedPlans: ReadonlyArray<ProposedPlan>,
   workEntries: ReadonlyArray<WorkLogEntry>,
 ): TimelineEntry[] {
-  const messageRows: TimelineEntry[] = messages.map((message) => ({
-    id: message.id,
-    kind: "message",
-    createdAt: message.createdAt,
-    message,
-  }));
+  const messageRows = messages.flatMap<TimelineEntry>((message): TimelineEntry[] => {
+    if (message.role === "system" && message.systemEvent) {
+      return [
+        {
+          id: message.id,
+          kind: "system-event" as const,
+          createdAt: message.createdAt,
+          systemEvent: message.systemEvent,
+        },
+      ];
+    }
+    // Legacy/undecodable system messages fall through as plain message rows
+    // rather than disappearing from the timeline.
+    return [
+      {
+        id: message.id,
+        kind: "message" as const,
+        createdAt: message.createdAt,
+        message,
+      },
+    ];
+  });
   const proposedPlanRows: TimelineEntry[] = proposedPlans.map((proposedPlan) => ({
     id: proposedPlan.id,
     kind: "proposed-plan",

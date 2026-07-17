@@ -94,6 +94,7 @@ import {
   normalizeClaudeCliEffort,
   resolveClaudeApiModelId,
   resolveClaudeContextWindow,
+  resolveClaudeNativeSubagentModelId,
   resolveClaudeEffort,
 } from "./ClaudeProvider.ts";
 import {
@@ -1505,6 +1506,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const stamp = yield* makeEventStamp();
     const isTerminal =
       run.status === "completed" || run.status === "failed" || run.status === "cancelled";
+    const resolvedModel = resolveClaudeNativeSubagentModelId(
+      run.requestedModel,
+      context.currentApiModelId,
+    );
     yield* offerRuntimeEvent({
       type: isTerminal
         ? "subagent.completed"
@@ -1525,10 +1530,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         taskPreview: run.taskPreview,
         ...(run.agentType ? { agentType: run.agentType } : {}),
         ...(run.requestedModel ? { requestedModel: run.requestedModel } : {}),
-        ...(context.currentApiModelId
+        ...(resolvedModel
           ? {
-              resolvedModel: context.currentApiModelId,
-              modelResolution: "inherited" as const,
+              resolvedModel,
+              modelResolution: run.requestedModel
+                ? ("configured" as const)
+                : ("inherited" as const),
             }
           : { modelResolution: "unknown" as const }),
         ...(run.lastSummary !== undefined ? { lastSummary: run.lastSummary } : {}),

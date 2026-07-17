@@ -4,10 +4,9 @@ import type { ProviderDriverKind, SubagentRun } from "@t3tools/contracts";
 import { cn } from "../../lib/utils";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
-import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { isActiveSubagentStatus, subagentStatusLabel } from "./subagentRunPresentation";
-import { SubagentServiceTierBadge } from "./SubagentServiceTierBadge";
+import { SubagentMetadataLine } from "./SubagentMetadataLine";
 
 interface SubagentHeaderProps {
   run: SubagentRun;
@@ -57,21 +56,8 @@ export function SubagentHeader({
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium text-foreground">{run.title}</p>
-        <div className="mt-0.5 flex min-w-0 gap-1">
-          <Badge variant="outline" className="h-4 max-w-40 truncate px-1.5 text-[9px]">
-            {providerLabel}
-          </Badge>
-          {(run.resolvedModel ?? run.requestedModel) ? (
-            <Badge variant="secondary" className="h-4 max-w-48 truncate px-1.5 text-[9px]">
-              {run.resolvedModel ?? run.requestedModel}
-            </Badge>
-          ) : null}
-          <SubagentServiceTierBadge run={run} provider={provider} />
-          {run.agentType ? (
-            <Badge variant="outline" className="h-4 max-w-32 truncate px-1.5 text-[9px]">
-              {run.agentType}
-            </Badge>
-          ) : null}
+        <div className="mt-0.5">
+          <SubagentMetadataLine run={run} provider={provider} />
         </div>
       </div>
       <span

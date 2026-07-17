@@ -733,13 +733,30 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
-    case "thread.turn.start": {
+    case "thread.turn.start":
+    case "thread.turn.start-server": {
       const targetThread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
-      const sourceProposedPlan = command.sourceProposedPlan;
+      if (command.type === "thread.turn.start-server") {
+        // Reject wakes while a turn is already in flight (including the
+        // turn-start-requested → turn.started race window, which marks
+        // latestTurn as running in the command read model).
+        const hasActiveTurn =
+          targetThread.session?.activeTurnId != null ||
+          targetThread.session?.status === "running" ||
+          targetThread.latestTurn?.state === "running";
+        if (hasActiveTurn) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `Thread '${command.threadId}' already has an active turn.`,
+          });
+        }
+      }
+      const sourceProposedPlan =
+        command.type === "thread.turn.start" ? command.sourceProposedPlan : undefined;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({
             readModel,
@@ -763,7 +780,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `Proposed plan '${sourceProposedPlan?.planId}' belongs to thread '${sourceThread.id}' in a different project.`,
         });
       }
-      const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
+      const messageSentEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
           aggregateId: command.threadId,
@@ -774,9 +791,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           messageId: command.message.messageId,
-          role: "user",
+          role: command.message.role,
           text: command.message.text,
-          attachments: command.message.attachments,
+          ...(command.type === "thread.turn.start"
+            ? { attachments: command.message.attachments }
+            : command.message.systemEvent !== undefined
+              ? { systemEvent: command.message.systemEvent }
+              : {}),
           turnId: null,
           streaming: false,
           createdAt: command.createdAt,
@@ -790,15 +811,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           occurredAt: command.createdAt,
           commandId: command.commandId,
         })),
-        causationEventId: userMessageEvent.eventId,
+        causationEventId: messageSentEvent.eventId,
         type: "thread.turn-start-requested",
         payload: {
           threadId: command.threadId,
           messageId: command.message.messageId,
-          ...(command.modelSelection !== undefined
+          ...(command.type === "thread.turn.start" && command.modelSelection !== undefined
             ? { modelSelection: command.modelSelection }
             : {}),
-          ...(command.titleSeed !== undefined ? { titleSeed: command.titleSeed } : {}),
+          ...(command.type === "thread.turn.start" && command.titleSeed !== undefined
+            ? { titleSeed: command.titleSeed }
+            : {}),
           runtimeMode: targetThread.runtimeMode,
           interactionMode: targetThread.interactionMode,
           ...(sourceProposedPlan !== undefined ? { sourceProposedPlan } : {}),
@@ -843,7 +866,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           },
         });
       }
-      return [...lifecycleResetEvents, userMessageEvent, turnStartRequestedEvent];
+      return [...lifecycleResetEvents, messageSentEvent, turnStartRequestedEvent];
     }
 
     case "thread.turn.interrupt": {

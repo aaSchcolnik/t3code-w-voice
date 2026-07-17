@@ -3,7 +3,6 @@ import * as Effect from "effect/Effect";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import {
-  awaitActiveDelegatedRunResult,
   cancelActiveDelegatedRun,
   getActiveDelegatedCapabilities,
   getActiveDelegatedRun,
@@ -47,9 +46,6 @@ export const CursorAgentToolkitHandlersLive = CursorAgentToolkit.toLayer({
         parentThreadId: scope.threadId,
       });
     }),
-  cursor_status: ({ runId }) => ownedRun(runId),
-  cursor_result: ({ runId }) =>
-    ownedRun(runId).pipe(Effect.andThen(awaitActiveDelegatedRunResult(runId))),
   cursor_cancel: ({ runId }) =>
     ownedRun(runId).pipe(
       Effect.andThen(cancelActiveDelegatedRun(runId)),

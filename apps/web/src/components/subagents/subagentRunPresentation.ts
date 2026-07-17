@@ -1,42 +1,85 @@
-import type { SubagentRun, SubagentStatus } from "@t3tools/contracts";
+import type { ResolvedProviderOption, SubagentRun, SubagentStatus } from "@t3tools/contracts";
 import { buildResolvedProviderOptionDetails } from "@t3tools/shared/model";
 
 import type { ProviderInstanceEntry } from "../../providerInstances";
 
+const REASONING_OPTION_IDS = new Set(["reasoningEffort", "reasoning", "effort"]);
 const SERVICE_TIER_OPTION_ID = "serviceTier";
+const FAST_MODE_OPTION_ID = "fastMode";
 
-export interface SubagentServiceTierPresentation {
-  readonly label: string;
-  readonly description?: string | undefined;
+function stripClaudeContextSuffix(model: string): string {
+  return model.replace(/\[(?:1m|200k)\]$/iu, "");
 }
 
-export function resolveSubagentServiceTierPresentation(
+function humanizeModelSlug(model: string): string {
+  const words = stripClaudeContextSuffix(model)
+    .split(/[-_\s]+/u)
+    .filter(Boolean);
+  return words
+    .map((word) => {
+      if (/^gpt$/iu.test(word)) return "GPT";
+      if (/^\d+(?:\.\d+)*$/u.test(word)) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
+function normalizeCatalogModelName(name: string): string {
+  return name.replace(/[-_]+/gu, " ").replace(/\s+/gu, " ").trim();
+}
+
+function resolvedOptionDetails(
   run: SubagentRun,
   provider?: Pick<ProviderInstanceEntry, "instanceId" | "models"> | undefined,
-): SubagentServiceTierPresentation | null {
-  const stored = run.resolvedOptionDetails?.find((detail) => detail.id === SERVICE_TIER_OPTION_ID);
-  if (stored) {
-    return {
-      label: stored.valueLabel,
-      ...(stored.description ? { description: stored.description } : {}),
-    };
-  }
+): ReadonlyArray<ResolvedProviderOption> {
+  if (run.resolvedOptionDetails) return run.resolvedOptionDetails;
+  if (!provider || provider.instanceId !== run.providerInstanceId || !run.resolvedOptions)
+    return [];
 
-  if (!provider || provider.instanceId !== run.providerInstanceId || !run.resolvedOptions) {
-    return null;
-  }
-  const modelSlug = run.resolvedModel ?? run.requestedModel;
+  const modelSlug = stripClaudeContextSuffix(run.resolvedModel ?? run.requestedModel ?? "");
   const model = provider.models.find((candidate) => candidate.slug === modelSlug);
-  const reconstructed = buildResolvedProviderOptionDetails({
-    descriptors: model?.capabilities?.optionDescriptors,
-    selections: run.resolvedOptions,
-  })?.find((detail) => detail.id === SERVICE_TIER_OPTION_ID);
-  return reconstructed
-    ? {
-        label: reconstructed.valueLabel,
-        ...(reconstructed.description ? { description: reconstructed.description } : {}),
-      }
+  return (
+    buildResolvedProviderOptionDetails({
+      descriptors: model?.capabilities?.optionDescriptors,
+      selections: run.resolvedOptions,
+    }) ?? []
+  );
+}
+
+function reasoningLabel(detail: ResolvedProviderOption | undefined): string | null {
+  if (!detail) return null;
+  return /reasoning$/iu.test(detail.valueLabel)
+    ? detail.valueLabel
+    : `${detail.valueLabel} Reasoning`;
+}
+
+export function resolveSubagentMetadata(
+  run: SubagentRun,
+  provider?: Pick<ProviderInstanceEntry, "instanceId" | "models"> | undefined,
+): ReadonlyArray<string> {
+  const rawModel = run.resolvedModel ?? run.requestedModel;
+  const modelSlug = rawModel ? stripClaudeContextSuffix(rawModel) : null;
+  const catalogModel = modelSlug
+    ? provider?.models.find((candidate) => candidate.slug === modelSlug)
+    : undefined;
+  const modelLabel = modelSlug
+    ? catalogModel
+      ? normalizeCatalogModelName(catalogModel.name)
+      : humanizeModelSlug(modelSlug)
     : null;
+  const details = resolvedOptionDetails(run, provider);
+  const reasoning = reasoningLabel(details.find((detail) => REASONING_OPTION_IDS.has(detail.id)));
+  const serviceTier = details.find((detail) => detail.id === SERVICE_TIER_OPTION_ID)?.valueLabel;
+  const fastMode = details.find((detail) => detail.id === FAST_MODE_OPTION_ID);
+  const mode =
+    serviceTier ??
+    (fastMode && typeof fastMode.value === "boolean"
+      ? fastMode.value
+        ? "Fast"
+        : "Standard"
+      : null);
+
+  return [modelLabel, reasoning, mode].filter((value): value is string => Boolean(value));
 }
 
 const TERMINAL_STATUSES = new Set<SubagentStatus>(["completed", "failed", "cancelled"]);

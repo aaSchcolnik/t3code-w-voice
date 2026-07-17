@@ -9,6 +9,7 @@ import {
   SubagentRun as SubagentRunSchema,
   SubagentRunError,
   SubagentRunId,
+  ThreadId,
   type ProviderRuntimeEvent,
   type SubagentCapabilities,
   type SubagentRun,
@@ -118,7 +119,7 @@ export interface SubagentRunServiceShape {
   readonly upsert: (input: UpsertSubagentRunInput) => Effect.Effect<SubagentRun>;
   readonly ingest: (event: ProviderRuntimeEvent) => Effect.Effect<void>;
   readonly getOwned: (
-    rootThreadId: SubagentRunSubscribeInput["rootThreadId"],
+    rootThreadId: ThreadId,
     runId: SubagentRunId,
   ) => Effect.Effect<SubagentRun, SubagentRunError>;
   readonly subscribe: (
@@ -459,22 +460,23 @@ const make = Effect.gen(function* () {
     subscribe: Effect.fn("SubagentRunService.subscribe")(function* (input) {
       const state = yield* SynchronizedRef.get(stateRef);
       const snapshotSequence = state.snapshotSequence;
+      const rootThreadId = input.rootThreadId;
       const runs = Array.from(state.runs.values())
         .map((entry) => entry.run)
-        .filter((run) => run.rootThreadId === input.rootThreadId)
+        .filter((run) => rootThreadId === undefined || run.rootThreadId === rootThreadId)
         .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
       const live = Stream.fromPubSub(updates).pipe(
         Stream.filter(
           (event) =>
             event.type === "run.upserted" &&
-            event.run.rootThreadId === input.rootThreadId &&
+            (rootThreadId === undefined || event.run.rootThreadId === rootThreadId) &&
             event.snapshotSequence > snapshotSequence,
         ),
       );
       return Stream.concat(
         Stream.make({
           type: "snapshot" as const,
-          rootThreadId: input.rootThreadId,
+          ...(rootThreadId !== undefined ? { rootThreadId } : {}),
           snapshotSequence,
           runs,
         }),

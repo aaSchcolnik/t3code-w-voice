@@ -5,6 +5,7 @@ import {
   MessageId,
   ProjectId,
   ThreadId,
+  TurnId,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -13,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 import { decideOrchestrationCommand } from "./decider.ts";
+import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import { createEmptyReadModel, projectEvent } from "./projector.ts";
 
 const asEventId = (value: string): EventId => EventId.make(value);
@@ -298,6 +300,214 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
           { id: "fastMode", value: true },
         ]),
         runtimeMode: "approval-required",
+      });
+    }),
+  );
+
+  it.effect("emits system message and turn-start-requested events for server turn starts", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const initial = createEmptyReadModel(now);
+      const withProject = yield* projectEvent(initial, {
+        sequence: 1,
+        eventId: asEventId("evt-project-create-system-turn"),
+        aggregateKind: "project",
+        aggregateId: asProjectId("project-1"),
+        type: "project.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-project-create-system-turn"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-project-create-system-turn"),
+        metadata: {},
+        payload: {
+          projectId: asProjectId("project-1"),
+          title: "Project",
+          workspaceRoot: "/tmp/project",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      const readModel = yield* projectEvent(withProject, {
+        sequence: 2,
+        eventId: asEventId("evt-thread-create-system-turn"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-thread-create-system-turn"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-thread-create-system-turn"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          projectId: asProjectId("project-1"),
+          title: "Thread",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      const systemEvent = {
+        kind: "subagents.settled" as const,
+        runs: [
+          {
+            runId: "run-1",
+            provider: "codex" as const,
+            title: "Inspect orchestration",
+            status: "completed" as const,
+            finalMessage: "Done.",
+          },
+        ],
+      };
+
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.turn.start-server",
+          commandId: CommandId.make("server:turn-start:1"),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId("server:turn-start:message-1"),
+            role: "system",
+            text: "Delegated runs settled.",
+            systemEvent,
+          },
+          createdAt: now,
+        },
+        readModel,
+      });
+
+      expect(Array.isArray(result)).toBe(true);
+      const events = Array.isArray(result) ? result : [result];
+      expect(events).toHaveLength(2);
+      expect(events[0]).toMatchObject({
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: asMessageId("server:turn-start:message-1"),
+          role: "system",
+          text: "Delegated runs settled.",
+          systemEvent,
+        },
+      });
+      expect(events[1]).toMatchObject({
+        type: "thread.turn-start-requested",
+        causationEventId: events[0]?.eventId,
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: asMessageId("server:turn-start:message-1"),
+          runtimeMode: "approval-required",
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        },
+      });
+    }),
+  );
+
+  it.effect("rejects server turn starts while a turn is already active", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const initial = createEmptyReadModel(now);
+      const withProject = yield* projectEvent(initial, {
+        sequence: 1,
+        eventId: asEventId("evt-project-create-active-turn"),
+        aggregateKind: "project",
+        aggregateId: asProjectId("project-1"),
+        type: "project.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-project-create-active-turn"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-project-create-active-turn"),
+        metadata: {},
+        payload: {
+          projectId: asProjectId("project-1"),
+          title: "Project",
+          workspaceRoot: "/tmp/project",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      const withThread = yield* projectEvent(withProject, {
+        sequence: 2,
+        eventId: asEventId("evt-thread-create-active-turn"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-thread-create-active-turn"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-thread-create-active-turn"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          projectId: asProjectId("project-1"),
+          title: "Thread",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      const readModel = yield* projectEvent(withThread, {
+        sequence: 3,
+        eventId: asEventId("evt-session-set-active-turn"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.session-set",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-session-set-active-turn"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-session-set-active-turn"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          session: {
+            threadId: ThreadId.make("thread-1"),
+            status: "running",
+            providerName: "codex",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "approval-required",
+            activeTurnId: TurnId.make("turn-1"),
+            lastError: null,
+            updatedAt: now,
+          },
+        },
+      });
+
+      const error = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.turn.start-server",
+          commandId: CommandId.make("server:turn-start:active"),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId("server:turn-start:message-active"),
+            role: "system",
+            text: "Delegated runs settled.",
+          },
+          createdAt: now,
+        },
+        readModel,
+      }).pipe(Effect.flip);
+
+      expect(error).toBeInstanceOf(OrchestrationCommandInvariantError);
+      expect(error).toMatchObject({
+        commandType: "thread.turn.start-server",
+        detail: "Thread 'thread-1' already has an active turn.",
       });
     }),
   );

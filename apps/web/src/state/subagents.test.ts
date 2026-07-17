@@ -5,10 +5,16 @@ import {
   ThreadId,
   type SubagentRun,
 } from "@t3tools/contracts";
+import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { SubagentEntry } from "../session-logic";
-import { applySubagentRunEvent, mergeSubagentRunsWithLegacyFallback } from "./subagents";
+import {
+  activeSubagentCountsByRootThread,
+  applySubagentRunEvent,
+  makeActiveSubagentCountsAtom,
+  mergeSubagentRunsWithLegacyFallback,
+} from "./subagents";
 
 const run = (overrides: Partial<SubagentRun> = {}): SubagentRun => ({
   id: SubagentRunId.make("run-1"),
@@ -37,6 +43,56 @@ const run = (overrides: Partial<SubagentRun> = {}): SubagentRun => ({
   updatedAt: "2026-07-14T00:00:00.000Z",
   sequence: 0,
   ...overrides,
+});
+
+describe("activeSubagentCountsByRootThread", () => {
+  it("aggregates only non-terminal runs by root thread", () => {
+    const counts = activeSubagentCountsByRootThread([
+      run({
+        id: SubagentRunId.make("a"),
+        rootThreadId: ThreadId.make("thread-1"),
+        status: "running",
+      }),
+      run({
+        id: SubagentRunId.make("b"),
+        rootThreadId: ThreadId.make("thread-1"),
+        status: "waiting_for_input",
+      }),
+      run({
+        id: SubagentRunId.make("c"),
+        rootThreadId: ThreadId.make("thread-2"),
+        status: "completed",
+      }),
+      run({
+        id: SubagentRunId.make("d"),
+        rootThreadId: ThreadId.make("thread-2"),
+        status: "queued",
+      }),
+    ]);
+
+    expect(counts.get(ThreadId.make("thread-1"))).toBe(2);
+    expect(counts.get(ThreadId.make("thread-2"))).toBe(1);
+    expect(counts.has(ThreadId.make("thread-3"))).toBe(false);
+  });
+
+  it("derives one memoized count map from environment run-list updates", () => {
+    const source = Atom.make(AsyncResult.success({ snapshotSequence: 1, runs: [run()] }));
+    const countsAtom = makeActiveSubagentCountsAtom(source);
+    const registry = AtomRegistry.make();
+    registry.mount(countsAtom);
+
+    expect(registry.get(countsAtom).get(ThreadId.make("thread-1"))).toBe(1);
+
+    registry.set(
+      source,
+      AsyncResult.success({
+        snapshotSequence: 2,
+        runs: [run({ status: "completed", sequence: 1 })],
+      }),
+    );
+    expect(registry.get(countsAtom).has(ThreadId.make("thread-1"))).toBe(false);
+    registry.dispose();
+  });
 });
 
 describe("applySubagentRunEvent", () => {

@@ -6,7 +6,5 @@ export const NATIVE_CLAUDE_KNOWLEDGE_SCANNER_PROMPT = `You are T3 Code's dedicat
 export const CLAUDE_DELEGATION_MCP_TOOL_NAMES = [
   "mcp__t3-code__claude_capabilities",
   "mcp__t3-code__claude_start",
-  "mcp__t3-code__claude_status",
-  "mcp__t3-code__claude_result",
   "mcp__t3-code__claude_cancel",
 ] as const;

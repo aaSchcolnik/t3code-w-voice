@@ -6,12 +6,11 @@ import { driverKindLabel, type ProviderInstanceEntry } from "../providerInstance
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { cn } from "../lib/utils";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
-import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
 import { SubagentTranscriptPanel } from "./subagents/SubagentTranscriptPanel";
 import { isActiveSubagentStatus, subagentStatusLabel } from "./subagents/subagentRunPresentation";
-import { SubagentServiceTierBadge } from "./subagents/SubagentServiceTierBadge";
+import { SubagentMetadataLine } from "./subagents/SubagentMetadataLine";
 
 interface SubagentsPanelProps {
   runs: ReadonlyArray<SubagentRun>;
@@ -58,19 +57,6 @@ function resolveRowIdentity(
     driverKind,
     providerLabel: rowProvider?.displayName ?? driverKindLabel(driverKind),
   };
-}
-
-function transcriptQualityLabel(run: SubagentRun): string {
-  switch (run.capabilities.transcriptQuality) {
-    case "live":
-      return "Live transcript";
-    case "replay":
-      return "Replayed transcript";
-    case "summary":
-      return "Summary only";
-    case "none":
-      return "No transcript";
-  }
 }
 
 function sortRuns(runs: ReadonlyArray<SubagentRun>): SubagentRun[] {
@@ -191,24 +177,8 @@ function SubagentRow({
               {formatRelativeTimeLabel(timestamp)}
             </time>
           </div>
-          <div className="mt-1 flex flex-wrap gap-1">
-            <Badge variant="outline" className="h-4 px-1.5 text-[9px]">
-              {providerLabel}
-            </Badge>
-            {(run.resolvedModel ?? run.requestedModel) ? (
-              <Badge variant="secondary" className="h-4 max-w-48 truncate px-1.5 text-[9px]">
-                {run.resolvedModel ?? run.requestedModel}
-              </Badge>
-            ) : null}
-            <SubagentServiceTierBadge run={run} provider={rowProvider} />
-            {run.agentType ? (
-              <Badge variant="outline" className="h-4 px-1.5 text-[9px]">
-                {run.agentType}
-              </Badge>
-            ) : null}
-            <Badge variant="outline" className="h-4 px-1.5 text-[9px]">
-              {transcriptQualityLabel(run)}
-            </Badge>
+          <div className="mt-1">
+            <SubagentMetadataLine run={run} provider={rowProvider} />
           </div>
           <p className="mt-1 text-[10px] font-medium text-muted-foreground">
             {subagentStatusLabel(run.status)}

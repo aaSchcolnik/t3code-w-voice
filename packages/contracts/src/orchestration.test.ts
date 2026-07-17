@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
+  ClientOrchestrationCommand,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   ModelSelection,
@@ -20,6 +21,7 @@ import {
   ProjectCreateCommand,
   ThreadMetaUpdatedPayload,
   ThreadTurnStartCommand,
+  ThreadTurnStartServerCommand,
   ThreadCreatedPayload,
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
@@ -33,6 +35,8 @@ const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateComma
 const decodeProjectCreatedPayload = Schema.decodeUnknownEffect(ProjectCreatedPayload);
 const decodeProjectMetaUpdatedPayload = Schema.decodeUnknownEffect(ProjectMetaUpdatedPayload);
 const decodeThreadTurnStartCommand = Schema.decodeUnknownEffect(ThreadTurnStartCommand);
+const decodeThreadTurnStartServerCommand = Schema.decodeUnknownEffect(ThreadTurnStartServerCommand);
+const decodeClientOrchestrationCommand = Schema.decodeUnknownEffect(ClientOrchestrationCommand);
 const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
   ThreadTurnStartRequestedPayload,
 );
@@ -248,6 +252,59 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
     assert.strictEqual(parsed.modelSelection?.instanceId, "codex");
     assert.strictEqual(parsed.runtimeMode, "full-access");
     assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
+  }),
+);
+
+it.effect("decodes internal system-authored turn starts with structured UI metadata", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadTurnStartServerCommand({
+      type: "thread.turn.start-server",
+      commandId: "server:turn-start:command-1",
+      threadId: "thread-1",
+      message: {
+        messageId: "server:turn-start:message-1",
+        role: "system",
+        text: "The delegated runs have settled.",
+        systemEvent: {
+          kind: "subagents.settled",
+          runs: [
+            {
+              runId: "run-1",
+              provider: "codex",
+              title: "Inspect the orchestration flow",
+              status: "completed",
+              finalMessage: "Inspection complete.",
+            },
+          ],
+        },
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(parsed.type, "thread.turn.start-server");
+    assert.strictEqual(parsed.message.role, "system");
+    assert.strictEqual(parsed.message.systemEvent?.kind, "subagents.settled");
+    assert.strictEqual(parsed.message.systemEvent?.runs[0]?.provider, "codex");
+  }),
+);
+
+it.effect("rejects internal system-authored turn starts on the client dispatch schema", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decodeClientOrchestrationCommand({
+        type: "thread.turn.start-server",
+        commandId: "server:turn-start:command-1",
+        threadId: "thread-1",
+        message: {
+          messageId: "server:turn-start:message-1",
+          role: "system",
+          text: "The delegated runs have settled.",
+        },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    assert.strictEqual(result._tag, "Failure");
   }),
 );
 

@@ -3,7 +3,6 @@ import * as Effect from "effect/Effect";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import {
-  awaitActiveDelegatedRunResult,
   cancelActiveDelegatedRun,
   getActiveDelegatedCapabilities,
   getActiveDelegatedRun,
@@ -46,9 +45,6 @@ export const ClaudeAgentToolkitHandlersLive = ClaudeAgentToolkit.toLayer({
         parentThreadId: scope.threadId,
       });
     }),
-  claude_status: ({ runId }) => ownedRun(runId),
-  claude_result: ({ runId }) =>
-    ownedRun(runId).pipe(Effect.andThen(awaitActiveDelegatedRunResult(runId))),
   claude_cancel: ({ runId }) =>
     ownedRun(runId).pipe(
       Effect.andThen(cancelActiveDelegatedRun(runId)),

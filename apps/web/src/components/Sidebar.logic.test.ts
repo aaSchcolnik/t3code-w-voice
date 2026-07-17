@@ -866,6 +866,31 @@ describe("resolveThreadStatusPill", () => {
     ).toMatchObject({ label: "Working", pulse: true });
   });
 
+  it("shows waiting on subagents when the parent turn is settled with active runs", () => {
+    expect(
+      resolveThreadStatusPill({
+        activeSubagentCount: 2,
+        thread: {
+          ...baseThread,
+          session: {
+            ...baseThread.session,
+            status: "ready",
+            activeTurnId: null,
+          },
+        },
+      }),
+    ).toMatchObject({ label: "Waiting on Subagents", pulse: true });
+  });
+
+  it("keeps the working status while the parent turn is still running", () => {
+    expect(
+      resolveThreadStatusPill({
+        activeSubagentCount: 1,
+        thread: baseThread,
+      }),
+    ).toMatchObject({ label: "Working" });
+  });
+
   it("shows plan ready when a settled plan turn has a proposed plan ready for follow-up", () => {
     expect(
       resolveThreadStatusPill({

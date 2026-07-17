@@ -448,6 +448,21 @@ export function resolveClaudeApiModelId(modelSelection: ModelSelection): string 
   }
 }
 
+/** Remove Claude API transport modifiers before exposing a model in product UI. */
+export function resolveClaudeDisplayModelId(model: string): string {
+  return model.replace(/\[(?:1m|200k)\]$/iu, "");
+}
+
+export function resolveClaudeNativeSubagentModelId(
+  requestedModel: string | undefined,
+  currentApiModelId: string | undefined,
+): string | undefined {
+  return (
+    requestedModel ??
+    (currentApiModelId ? resolveClaudeDisplayModelId(currentApiModelId) : undefined)
+  );
+}
+
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
   for (const part of value.split(/[\s_-]+/g)) {

@@ -333,8 +333,6 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual(queryOptions?.disallowedTools, [
         "mcp__t3-code__claude_capabilities",
         "mcp__t3-code__claude_start",
-        "mcp__t3-code__claude_status",
-        "mcp__t3-code__claude_result",
         "mcp__t3-code__claude_cancel",
       ]);
     }).pipe(

@@ -261,6 +261,44 @@ describe("resolveAssistantMessageCopyState", () => {
 });
 
 describe("deriveMessagesTimelineRows", () => {
+  it("derives a compact system-event row for delegated results", () => {
+    const systemEvent = {
+      kind: "subagents.settled" as const,
+      runs: [
+        {
+          runId: "run-1",
+          provider: "codex",
+          title: "Review persistence",
+          status: "completed" as const,
+          finalMessage: "Looks good.",
+        },
+      ],
+    };
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "wake-message",
+          kind: "system-event",
+          createdAt: "2026-01-01T00:00:00Z",
+          systemEvent,
+        },
+      ],
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows).toEqual([
+      {
+        id: "wake-message",
+        kind: "system-event",
+        createdAt: "2026-01-01T00:00:00Z",
+        systemEvent,
+      },
+    ]);
+  });
+
   it("only enables assistant copy for the terminal assistant message in a turn", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [

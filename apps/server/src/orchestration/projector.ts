@@ -4,6 +4,7 @@ import {
   OrchestrationMessage,
   OrchestrationSession,
   OrchestrationThread,
+  TurnId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -479,6 +480,7 @@ export function projectEvent(
             role: payload.role,
             text: payload.text,
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
+            ...(payload.systemEvent !== undefined ? { systemEvent: payload.systemEvent } : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
             createdAt: payload.createdAt,
@@ -505,6 +507,9 @@ export function projectEvent(
                     ...(message.attachments !== undefined
                       ? { attachments: message.attachments }
                       : {}),
+                    ...(message.systemEvent !== undefined
+                      ? { systemEvent: message.systemEvent }
+                      : {}),
                   }
                 : entry,
             )
@@ -519,6 +524,32 @@ export function projectEvent(
           }),
         };
       });
+
+    case "thread.turn-start-requested": {
+      // Mark the turn in-flight as soon as orchestration accepts the start so
+      // concurrent server wakes cannot race a second sendTurn before turn.started.
+      const thread = nextBase.threads.find((entry) => entry.id === event.payload.threadId);
+      if (!thread) {
+        return Effect.succeed(nextBase);
+      }
+      return Effect.succeed({
+        ...nextBase,
+        threads: updateThread(nextBase.threads, event.payload.threadId, {
+          latestTurn: {
+            turnId: TurnId.make(`pending:${event.payload.messageId}`),
+            state: "running",
+            requestedAt: event.payload.createdAt,
+            startedAt: null,
+            completedAt: null,
+            assistantMessageId: null,
+            ...(event.payload.sourceProposedPlan !== undefined
+              ? { sourceProposedPlan: event.payload.sourceProposedPlan }
+              : {}),
+          },
+          updatedAt: event.occurredAt,
+        }),
+      });
+    }
 
     case "thread.session-set":
       return Effect.gen(function* () {
@@ -543,6 +574,8 @@ export function projectEvent(
         // Leaving the "running" session status is the turn-end signal: settle
         // a still-running latest turn so its duration reflects the whole turn.
         const settledTurnState = settledTurnStateForSessionStatus(session.status);
+        const inheritsPendingRequest =
+          thread.latestTurn?.state === "running" && thread.latestTurn.startedAt === null;
         return {
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
@@ -553,8 +586,8 @@ export function projectEvent(
                     turnId: session.activeTurnId,
                     state: "running",
                     requestedAt:
-                      thread.latestTurn?.turnId === session.activeTurnId
-                        ? thread.latestTurn.requestedAt
+                      inheritsPendingRequest || thread.latestTurn?.turnId === session.activeTurnId
+                        ? (thread.latestTurn?.requestedAt ?? session.updatedAt)
                         : session.updatedAt,
                     startedAt:
                       thread.latestTurn?.turnId === session.activeTurnId
@@ -565,6 +598,12 @@ export function projectEvent(
                       thread.latestTurn?.turnId === session.activeTurnId
                         ? thread.latestTurn.assistantMessageId
                         : null,
+                    ...(inheritsPendingRequest && thread.latestTurn?.sourceProposedPlan
+                      ? { sourceProposedPlan: thread.latestTurn.sourceProposedPlan }
+                      : thread.latestTurn?.turnId === session.activeTurnId &&
+                          thread.latestTurn.sourceProposedPlan
+                        ? { sourceProposedPlan: thread.latestTurn.sourceProposedPlan }
+                        : {}),
                   }
                 : thread.latestTurn !== null &&
                     thread.latestTurn.state === "running" &&
@@ -761,10 +800,23 @@ export function projectEvent(
             .toSorted(compareThreadActivities)
             .slice(-500);
 
+          const settlePendingTurnStart =
+            payload.activity.kind === "provider.turn.start.failed" &&
+            thread.latestTurn?.state === "running";
+
           return {
             ...nextBase,
             threads: updateThread(nextBase.threads, payload.threadId, {
               activities,
+              ...(settlePendingTurnStart && thread.latestTurn
+                ? {
+                    latestTurn: {
+                      ...thread.latestTurn,
+                      state: "error" as const,
+                      completedAt: payload.activity.createdAt,
+                    },
+                  }
+                : {}),
               updatedAt: event.occurredAt,
             }),
           };

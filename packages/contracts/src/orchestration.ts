@@ -173,11 +173,41 @@ export type OrchestrationProject = typeof OrchestrationProject.Type;
 export const OrchestrationMessageRole = Schema.Literals(["user", "assistant", "system"]);
 export type OrchestrationMessageRole = typeof OrchestrationMessageRole.Type;
 
+export const OrchestrationSystemEventRunStatus = Schema.Literals([
+  "queued",
+  "starting",
+  "running",
+  "waiting_for_input",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+export type OrchestrationSystemEventRunStatus = typeof OrchestrationSystemEventRunStatus.Type;
+
+export const OrchestrationSystemEventRun = Schema.Struct({
+  runId: TrimmedNonEmptyString,
+  provider: TrimmedNonEmptyString,
+  title: TrimmedNonEmptyString,
+  status: OrchestrationSystemEventRunStatus,
+  error: Schema.optional(Schema.String),
+  finalMessage: Schema.optional(Schema.String),
+});
+export type OrchestrationSystemEventRun = typeof OrchestrationSystemEventRun.Type;
+
+export const OrchestrationSystemEvent = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literals(["subagents.settled", "subagent.input-required"]),
+    runs: Schema.Array(OrchestrationSystemEventRun),
+  }),
+]);
+export type OrchestrationSystemEvent = typeof OrchestrationSystemEvent.Type;
+
 export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  systemEvent: Schema.optional(OrchestrationSystemEvent),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -642,6 +672,20 @@ export const ThreadTurnStartCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+export const ThreadTurnStartServerCommand = Schema.Struct({
+  type: Schema.Literal("thread.turn.start-server"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  message: Schema.Struct({
+    messageId: MessageId,
+    role: Schema.Literal("system"),
+    text: Schema.String,
+    systemEvent: Schema.optional(OrchestrationSystemEvent),
+  }),
+  createdAt: IsoDateTime,
+});
+export type ThreadTurnStartServerCommand = typeof ThreadTurnStartServerCommand.Type;
+
 const ClientThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
   commandId: CommandId,
@@ -819,6 +863,7 @@ const ThreadRevertCompleteCommand = Schema.Struct({
 });
 
 const InternalOrchestrationCommand = Schema.Union([
+  ThreadTurnStartServerCommand,
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
@@ -992,6 +1037,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   role: OrchestrationMessageRole,
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  systemEvent: Schema.optional(OrchestrationSystemEvent),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,

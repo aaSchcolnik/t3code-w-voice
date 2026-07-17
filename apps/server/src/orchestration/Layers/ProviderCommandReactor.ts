@@ -2,6 +2,7 @@ import {
   type ChatAttachment,
   CommandId,
   EventId,
+  type MessageId,
   type ModelSelection,
   type OrchestrationEvent,
   ProviderDriverKind,
@@ -230,6 +231,7 @@ const make = Effect.gen(function* () {
     readonly turnId: TurnId | null;
     readonly createdAt: string;
     readonly requestId?: string;
+    readonly messageId?: MessageId;
   }) =>
     Effect.all({
       commandId: serverCommandId("provider-failure-activity"),
@@ -248,7 +250,37 @@ const make = Effect.gen(function* () {
             payload: {
               detail: input.detail,
               ...(input.requestId ? { requestId: input.requestId } : {}),
+              ...(input.messageId ? { messageId: input.messageId } : {}),
             },
+            turnId: input.turnId,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        }),
+      ),
+    );
+
+  const appendProviderTurnStartAcceptedActivity = (input: {
+    readonly threadId: ThreadId;
+    readonly messageId: MessageId;
+    readonly turnId: TurnId;
+    readonly createdAt: string;
+  }) =>
+    Effect.all({
+      commandId: serverCommandId("provider-turn-start-accepted"),
+      eventId: serverEventId(),
+    }).pipe(
+      Effect.flatMap(({ commandId, eventId }) =>
+        orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId,
+          threadId: input.threadId,
+          activity: {
+            id: eventId,
+            tone: "info",
+            kind: "provider.turn.start.accepted",
+            summary: "Provider accepted delegated-run wake",
+            payload: { messageId: input.messageId },
             turnId: input.turnId,
             createdAt: input.createdAt,
           },
@@ -787,23 +819,36 @@ const make = Effect.gen(function* () {
 
     const thread = yield* resolveThread(event.payload.threadId);
     if (!thread) {
-      return;
-    }
-
-    const message = thread.messages.find((entry) => entry.id === event.payload.messageId);
-    if (!message || message.role !== "user") {
+      // Emit a failure activity so DelegatedRunService can restore an
+      // un-acknowledged wake instead of wedging parentTurnRunning.
       yield* appendProviderFailureActivity({
         threadId: event.payload.threadId,
         kind: "provider.turn.start.failed",
         summary: "Provider turn start failed",
-        detail: `User message '${event.payload.messageId}' was not found for turn start request.`,
+        detail: `Thread '${event.payload.threadId}' was not found for turn start request.`,
         turnId: null,
         createdAt: event.payload.createdAt,
+        messageId: event.payload.messageId,
+      });
+      return;
+    }
+
+    const message = thread.messages.find((entry) => entry.id === event.payload.messageId);
+    if (!message || (message.role !== "user" && message.role !== "system")) {
+      yield* appendProviderFailureActivity({
+        threadId: event.payload.threadId,
+        kind: "provider.turn.start.failed",
+        summary: "Provider turn start failed",
+        detail: `User or system message '${event.payload.messageId}' was not found for turn start request.`,
+        turnId: null,
+        createdAt: event.payload.createdAt,
+        messageId: event.payload.messageId,
       });
       return;
     }
 
     const isFirstUserMessageTurn =
+      message.role === "user" &&
       thread.messages.filter((entry) => entry.role === "user").length === 1;
     if (isFirstUserMessageTurn) {
       const project = yield* resolveProject(thread.projectId);
@@ -852,6 +897,7 @@ const make = Effect.gen(function* () {
             detail,
             turnId: null,
             createdAt: event.payload.createdAt,
+            messageId: event.payload.messageId,
           }),
         ),
         Effect.asVoid,
@@ -888,9 +934,20 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    yield* providerService
-      .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
+    yield* providerService.sendTurn(sendTurnRequest.value).pipe(
+      Effect.flatMap((started) =>
+        message.role === "system" && message.systemEvent !== undefined
+          ? appendProviderTurnStartAcceptedActivity({
+              threadId: event.payload.threadId,
+              messageId: event.payload.messageId,
+              turnId: started.turnId,
+              createdAt: event.payload.createdAt,
+            })
+          : Effect.void,
+      ),
+      Effect.catchCause(recoverTurnStartFailure),
+      Effect.forkScoped,
+    );
   });
 
   const processTurnInterruptRequested = Effect.fn("processTurnInterruptRequested")(function* (

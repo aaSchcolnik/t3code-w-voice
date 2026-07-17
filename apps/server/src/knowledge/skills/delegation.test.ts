@@ -110,7 +110,9 @@ describe("renderDelegationSection", () => {
     expect(section).toContain("`codex_start`");
     expect(section).toContain('"model":"gpt-5.6-terra"');
     expect(section).toContain('"reasoningEffort"');
-    expect(section).toContain("`codex_result` exactly once");
+    expect(section).toContain("then end the main-thread turn");
+    expect(section).toContain("results arrive automatically");
+    expect(section).not.toContain("codex_result");
   });
 
   it("renders the engine_consensus pointer for plans when available", () => {

@@ -108,6 +108,7 @@ import { readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
+import { useActiveSubagentCount, useActiveSubagentCounts } from "../state/subagents";
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import { projectEnvironment } from "../state/projects";
@@ -367,6 +368,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   } = props;
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
+  const activeSubagentCount = useActiveSubagentCount(thread.environmentId, thread.id);
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
   const runningTerminalIds = useThreadRunningTerminalIds({
@@ -444,6 +446,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   const isThreadRunning =
     thread.session?.status === "running" && thread.session.activeTurnId != null;
   const threadStatus = resolveThreadStatusPill({
+    activeSubagentCount,
     thread: {
       ...thread,
       lastVisitedAt,
@@ -1164,6 +1167,11 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   });
   const openPrLink = useOpenPrLink();
   const sidebarThreads = useThreadShellsForProjectRefs(project.memberProjectRefs);
+  const projectEnvironmentIds = useMemo(
+    () => project.memberProjects.map((member) => member.environmentId),
+    [project.memberProjects],
+  );
+  const activeSubagentCountsByEnvironment = useActiveSubagentCounts(projectEnvironmentIds);
   const sidebarThreadByKey = useMemo(
     () =>
       new Map(
@@ -1247,6 +1255,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
       );
       return resolveThreadStatusPill({
+        activeSubagentCount:
+          activeSubagentCountsByEnvironment.get(thread.environmentId)?.get(thread.id) ?? 0,
         thread: {
           ...thread,
           ...(lastVisitedAt !== null && lastVisitedAt !== undefined ? { lastVisitedAt } : {}),
@@ -1267,7 +1277,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       projectStatus,
       visibleProjectThreads,
     };
-  }, [projectThreads, threadLastVisitedAts, threadSortOrder]);
+  }, [activeSubagentCountsByEnvironment, projectThreads, threadLastVisitedAts, threadSortOrder]);
   const pinnedCollapsedThread = useMemo(() => {
     const activeThreadKey = activeRouteThreadKey ?? undefined;
     if (!activeThreadKey || projectExpanded) {
@@ -1299,6 +1309,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
       );
       return resolveThreadStatusPill({
+        activeSubagentCount:
+          activeSubagentCountsByEnvironment.get(thread.environmentId)?.get(thread.id) ?? 0,
         thread: {
           ...thread,
           ...(lastVisitedAt !== null && lastVisitedAt !== undefined ? { lastVisitedAt } : {}),
@@ -1334,6 +1346,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       shouldShowThreadPanel: projectExpanded || pinnedCollapsedThread !== null,
     };
   }, [
+    activeSubagentCountsByEnvironment,
     isThreadListExpanded,
     pinnedCollapsedThread,
     projectExpanded,

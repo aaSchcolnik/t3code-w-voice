@@ -158,19 +158,13 @@ it.effect("registers the built-in delegation toolkits", () =>
       expect.arrayContaining([
         "codex_capabilities",
         "codex_start",
-        "codex_status",
-        "codex_result",
         "codex_cancel",
         "cursor_capabilities",
         "cursor_start",
-        "cursor_status",
-        "cursor_result",
         "cursor_cancel",
         "cursor_respond",
         "claude_capabilities",
         "claude_start",
-        "claude_status",
-        "claude_result",
         "claude_cancel",
         "engine_knowledge_status",
         "engine_knowledge_search",
@@ -641,17 +635,17 @@ it.effect("gates hydrated implementation preview verification on session capabil
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
 
-it.effect("describes delegated results as event-driven waits instead of polling", () =>
+it.effect("advertises fire-and-forget starts without polling tools", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
-    for (const provider of ["codex", "cursor"] as const) {
+    for (const provider of ["codex", "cursor", "claude"] as const) {
       const start = server.tools.find(({ tool }) => tool.name === `${provider}_start`)?.tool;
       const status = server.tools.find(({ tool }) => tool.name === `${provider}_status`)?.tool;
       const result = server.tools.find(({ tool }) => tool.name === `${provider}_result`)?.tool;
-      expect(start?.description).toContain("exactly once");
-      expect(start?.description).toContain("Do not poll");
-      expect(status?.description).toContain("never poll");
-      expect(result?.description).toContain("blocks without polling");
+      expect(start?.description).toContain("then end your turn");
+      expect(start?.description).toContain("automatically");
+      expect(status).toBeUndefined();
+      expect(result).toBeUndefined();
     }
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );

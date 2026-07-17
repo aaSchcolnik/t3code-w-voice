@@ -147,6 +147,35 @@ it.live("subscribes before snapshotting and emits gap-free monotonic updates", (
   ),
 );
 
+it.live("subscribes to all runs when rootThreadId is omitted", () =>
+  withTestServices(
+    "subagent-run-environment-subscribe-test-",
+    Effect.gen(function* () {
+      const service = yield* SubagentRunService.__testing.make;
+      yield* service.upsert({ eventId: "event-root-a", run: makeRun() });
+      yield* service.upsert({
+        eventId: "event-root-b",
+        run: makeRun({
+          id: SubagentRunId.make("run-other"),
+          rootThreadId: otherThreadId,
+          title: "Other",
+          taskPreview: "Other",
+        }),
+      });
+
+      const stream = yield* service.subscribe({});
+      const events = [...(yield* Stream.runCollect(Stream.take(stream, 1)))];
+      expect(events[0]?.type).toBe("snapshot");
+      if (events[0]?.type === "snapshot") {
+        expect(events[0].rootThreadId).toBeUndefined();
+        expect(events[0].runs.map((run) => run.id).toSorted()).toEqual(
+          [runId, SubagentRunId.make("run-other")].toSorted(),
+        );
+      }
+    }),
+  ),
+);
+
 it.live("creates provisional native runs from execution scope and refines lifecycle data", () =>
   withTestServices(
     "subagent-run-ingestion-test-",

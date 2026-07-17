@@ -35,8 +35,14 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
-import { MousePointerClickIcon, PaintbrushIcon, Undo2Icon } from "lucide-react";
+import {
+  ChevronRightIcon,
+  MousePointerClickIcon,
+  PaintbrushIcon,
+  Undo2Icon,
+} from "lucide-react";
 import { Button } from "../ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
@@ -839,7 +845,11 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
       ) : null}
+      {row.kind === "message" && row.message.role === "system" ? (
+        <SystemMessageTimelineRow row={row} />
+      ) : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
+      {row.kind === "system-event" ? <SubagentSystemEventTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
     </div>
   );
@@ -1081,6 +1091,83 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
         </span>
       </div>
     </div>
+  );
+}
+
+function SystemMessageTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const text = row.message.text.trim();
+  return (
+    <div className="mx-1 rounded-lg border border-border/60 bg-card/35 px-2.5 py-1.5">
+      <p className="whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground">
+        {text.length > 0 ? text : "System message"}
+      </p>
+    </div>
+  );
+}
+
+function SubagentSystemEventTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "system-event" }>;
+}) {
+  const runs = row.systemEvent.runs;
+  const count = runs.length;
+  const label =
+    row.systemEvent.kind === "subagent.input-required"
+      ? count === 1
+        ? "Subagent needs input"
+        : `${count} subagents need input`
+      : `${count} subagent${count === 1 ? "" : "s"} finished`;
+
+  return (
+    <Collapsible className="mx-1 rounded-lg border border-border/60 bg-card/35 px-2.5 py-1.5">
+      <CollapsibleTrigger className="flex w-full items-center gap-2 text-left text-[11px] text-muted-foreground data-panel-open:[&>svg]:rotate-90">
+        <ChevronRightIcon className="size-3 shrink-0 transition-transform" aria-hidden="true" />
+        <span className="font-medium text-foreground/80">{label}</span>
+        <span className="ml-auto inline-flex items-center gap-1" aria-label="Subagent statuses">
+          {runs.map((run) => (
+            <span
+              key={run.runId}
+              aria-label={`${run.title}: ${run.status}`}
+              className={cn(
+                "size-1.5 rounded-full",
+                run.status === "failed"
+                  ? "bg-destructive"
+                  : run.status === "completed"
+                    ? "bg-primary"
+                    : run.status === "waiting_for_input"
+                      ? "bg-primary animate-pulse"
+                      : "bg-muted-foreground/50",
+              )}
+            />
+          ))}
+        </span>
+      </CollapsibleTrigger>
+      <CollapsiblePanel>
+        <div className="flex flex-col gap-2 border-t border-border/50 pt-2 mt-1.5">
+          {runs.map((run) => (
+            <div key={run.runId} className="min-w-0 pl-5">
+              <div className="flex min-w-0 items-center gap-1.5 text-[11px]">
+                <span className="truncate font-medium text-foreground/85">{run.title}</span>
+                <span className="shrink-0 text-muted-foreground/60">
+                  {run.provider} · {run.status.replaceAll("_", " ")}
+                </span>
+              </div>
+              {run.error ? (
+                <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-destructive">
+                  {run.error}
+                </p>
+              ) : null}
+              {run.finalMessage ? (
+                <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-muted-foreground">
+                  {run.finalMessage}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </CollapsiblePanel>
+    </Collapsible>
   );
 }
 

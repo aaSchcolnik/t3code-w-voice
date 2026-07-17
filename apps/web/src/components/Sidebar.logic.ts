@@ -101,6 +101,7 @@ export interface ThreadStatusPill {
     | "Completed"
     | "Pending Approval"
     | "Awaiting Input"
+    | "Waiting on Subagents"
     | "Plan Ready";
   colorClass: string;
   dotClass: string;
@@ -108,8 +109,9 @@ export interface ThreadStatusPill {
 }
 
 const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
-  "Pending Approval": 5,
-  "Awaiting Input": 4,
+  "Pending Approval": 6,
+  "Awaiting Input": 5,
+  "Waiting on Subagents": 4,
   Working: 3,
   Connecting: 3,
   "Plan Ready": 2,
@@ -540,8 +542,9 @@ export function formatWorkingDurationLabel(elapsedMs: number): string {
 
 export function resolveThreadStatusPill(input: {
   thread: ThreadStatusInput;
+  activeSubagentCount?: number;
 }): ThreadStatusPill | null {
-  const { thread } = input;
+  const { thread, activeSubagentCount = 0 } = input;
 
   if (thread.hasPendingApprovals) {
     return {
@@ -558,6 +561,21 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-indigo-600 dark:text-indigo-300/90",
       dotClass: "bg-indigo-500 dark:bg-indigo-300/90",
       pulse: false,
+    };
+  }
+
+  const parentCanBeWoken =
+    thread.session === null ||
+    thread.session.status === "idle" ||
+    thread.session.status === "ready" ||
+    thread.session.status === "interrupted" ||
+    thread.session.status === "error";
+  if (activeSubagentCount > 0 && parentCanBeWoken) {
+    return {
+      label: "Waiting on Subagents",
+      colorClass: "text-primary",
+      dotClass: "bg-primary",
+      pulse: true,
     };
   }
 

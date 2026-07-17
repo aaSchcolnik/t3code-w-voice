@@ -3,7 +3,6 @@ import * as Effect from "effect/Effect";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import {
-  awaitActiveDelegatedRunResult,
   cancelActiveDelegatedRun,
   getActiveDelegatedRun,
   getActiveDelegatedCapabilities,
@@ -46,9 +45,6 @@ export const CodexAgentToolkitHandlersLive = CodexAgentToolkit.toLayer({
         parentThreadId: scope.threadId,
       });
     }),
-  codex_status: ({ runId }) => ownedRun(runId),
-  codex_result: ({ runId }) =>
-    ownedRun(runId).pipe(Effect.andThen(awaitActiveDelegatedRunResult(runId))),
   codex_cancel: ({ runId }) =>
     ownedRun(runId).pipe(
       Effect.andThen(cancelActiveDelegatedRun(runId)),

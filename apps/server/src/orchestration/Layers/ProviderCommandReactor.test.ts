@@ -586,6 +586,56 @@ describe("ProviderCommandReactor", () => {
       expect(thread?.session?.lastError).toBeNull();
     }),
   );
+  it("accepts a system-authored turn start and sends its text to the provider", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start-server",
+        commandId: CommandId.make("server:turn-start:reactor-1"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("server:turn-start:message-reactor-1"),
+          role: "system",
+          text: "Use these delegated-run results to continue.",
+          systemEvent: {
+            kind: "subagents.settled",
+            runs: [
+              {
+                runId: "run-1",
+                provider: ProviderDriverKind.make("codex"),
+                title: "Inspect orchestration",
+                status: "completed",
+                finalMessage: "Inspection complete.",
+              },
+            ],
+          },
+        },
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      threadId: ThreadId.make("thread-1"),
+      input: "Use these delegated-run results to continue.",
+    });
+    expect(harness.generateBranchName).not.toHaveBeenCalled();
+    expect(harness.generateThreadTitle).not.toHaveBeenCalled();
+
+    const readModel = await harness.readModel();
+    const message = readModel.threads
+      .find((entry) => entry.id === ThreadId.make("thread-1"))
+      ?.messages.find((entry) => entry.id === "server:turn-start:message-reactor-1");
+    expect(message).toMatchObject({
+      role: "system",
+      systemEvent: {
+        kind: "subagents.settled",
+      },
+    });
+  });
 
   it("generates a thread title on the first turn", async () => {
     const harness = await createHarness();
@@ -2179,30 +2229,29 @@ describe("ProviderCommandReactor", () => {
     const now = "2026-01-01T00:00:00.000Z";
 
     await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.session.set",
-        commandId: CommandId.make("cmd-session-set-for-stop"),
-        threadId: ThreadId.make("thread-1"),
-        session: {
+      Effect.gen(function* () {
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-session-set-for-stop"),
           threadId: ThreadId.make("thread-1"),
-          status: "ready",
-          providerName: "codex",
-          providerInstanceId: ProviderInstanceId.make("codex_work"),
-          runtimeMode: "approval-required",
-          activeTurnId: null,
-          lastError: null,
-          updatedAt: now,
-        },
-        createdAt: now,
-      }),
-    );
-
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.session.stop",
-        commandId: CommandId.make("cmd-session-stop"),
-        threadId: ThreadId.make("thread-1"),
-        createdAt: now,
+          session: {
+            threadId: ThreadId.make("thread-1"),
+            status: "ready",
+            providerName: "codex",
+            providerInstanceId: ProviderInstanceId.make("codex_work"),
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: now,
+          },
+          createdAt: now,
+        });
+        yield* harness.engine.dispatch({
+          type: "thread.session.stop",
+          commandId: CommandId.make("cmd-session-stop"),
+          threadId: ThreadId.make("thread-1"),
+          createdAt: now,
+        });
       }),
     );
 

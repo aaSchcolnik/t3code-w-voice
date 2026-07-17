@@ -76,13 +76,16 @@ export const SubagentRun = Schema.Struct({
 });
 export type SubagentRun = typeof SubagentRun.Type;
 
-export const SubagentRunSubscribeInput = Schema.Struct({ rootThreadId: ThreadId });
+export const SubagentRunSubscribeInput = Schema.Struct({
+  /** When omitted, subscribe to all subagent runs in the environment. */
+  rootThreadId: Schema.optional(ThreadId),
+});
 export type SubagentRunSubscribeInput = typeof SubagentRunSubscribeInput.Type;
 
 export const SubagentRunStreamEvent = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("snapshot"),
-    rootThreadId: ThreadId,
+    rootThreadId: Schema.optional(ThreadId),
     snapshotSequence: NonNegativeInt,
     runs: Schema.Array(SubagentRun),
   }),

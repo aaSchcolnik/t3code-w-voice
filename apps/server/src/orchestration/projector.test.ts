@@ -137,6 +137,79 @@ describe("orchestration projector", () => {
     ).rejects.toBeDefined();
   });
 
+  it("preserves structured metadata on system-authored messages", async () => {
+    const now = "2026-01-01T00:00:00.000Z";
+    const afterCreate = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(now),
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: now,
+          commandId: "cmd-thread-create",
+          payload: {
+            threadId: "thread-1",
+            projectId: "project-1",
+            title: "demo",
+            modelSelection: {
+              provider: ProviderDriverKind.make("codex"),
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+    const systemEvent = {
+      kind: "subagent.input-required" as const,
+      runs: [
+        {
+          runId: "run-1",
+          provider: ProviderDriverKind.make("codex"),
+          title: "Inspect orchestration",
+          status: "waiting_for_input" as const,
+        },
+      ],
+    };
+
+    const next = await Effect.runPromise(
+      projectEvent(
+        afterCreate,
+        makeEvent({
+          sequence: 2,
+          type: "thread.message-sent",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: now,
+          commandId: "server:turn-start:1",
+          payload: {
+            threadId: "thread-1",
+            messageId: "server:turn-start:message-1",
+            role: "system",
+            text: "A delegated run requires input.",
+            systemEvent,
+            turnId: null,
+            streaming: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+
+    expect(next.threads[0]?.messages[0]).toMatchObject({
+      role: "system",
+      text: "A delegated run requires input.",
+      systemEvent,
+    });
+  });
+
   it("applies thread.archived and thread.unarchived events", async () => {
     const now = "2026-01-01T00:00:00.000Z";
     const later = "2026-01-01T00:00:01.000Z";
@@ -860,32 +933,30 @@ describe("orchestration projector", () => {
     const createdAt = "2026-03-01T10:00:00.000Z";
     const model = createEmptyReadModel(createdAt);
 
-    const afterCreate = await Effect.runPromise(
-      projectEvent(
-        model,
-        makeEvent({
-          sequence: 1,
-          type: "thread.created",
-          aggregateKind: "thread",
-          aggregateId: "thread-capped",
-          occurredAt: createdAt,
-          commandId: "cmd-create-capped",
-          payload: {
-            threadId: "thread-capped",
-            projectId: "project-1",
-            title: "capped",
-            modelSelection: {
-              provider: ProviderDriverKind.make("codex"),
-              model: "gpt-5-codex",
-            },
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-            updatedAt: createdAt,
+    const createThread = projectEvent(
+      model,
+      makeEvent({
+        sequence: 1,
+        type: "thread.created",
+        aggregateKind: "thread",
+        aggregateId: "thread-capped",
+        occurredAt: createdAt,
+        commandId: "cmd-create-capped",
+        payload: {
+          threadId: "thread-capped",
+          projectId: "project-1",
+          title: "capped",
+          modelSelection: {
+            provider: ProviderDriverKind.make("codex"),
+            model: "gpt-5-codex",
           },
-        }),
-      ),
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      }),
     );
 
     const messageEvents: ReadonlyArray<OrchestrationEvent> = Array.from(
@@ -910,14 +981,6 @@ describe("orchestration projector", () => {
           },
         }),
     );
-    const afterMessages = await messageEvents.reduce<
-      Promise<ReturnType<typeof createEmptyReadModel>>
-    >(
-      (statePromise, event) =>
-        statePromise.then((state) => Effect.runPromise(projectEvent(state, event))),
-      Promise.resolve(afterCreate),
-    );
-
     const checkpointEvents: ReadonlyArray<OrchestrationEvent> = Array.from(
       { length: 600 },
       (_, index) =>
@@ -940,12 +1003,17 @@ describe("orchestration projector", () => {
           },
         }),
     );
-    const finalState = await checkpointEvents.reduce<
-      Promise<ReturnType<typeof createEmptyReadModel>>
-    >(
-      (statePromise, event) =>
-        statePromise.then((state) => Effect.runPromise(projectEvent(state, event))),
-      Promise.resolve(afterMessages),
+    const finalState = await Effect.runPromise(
+      Effect.gen(function* () {
+        let state = yield* createThread;
+        for (const event of messageEvents) {
+          state = yield* projectEvent(state, event);
+        }
+        for (const event of checkpointEvents) {
+          state = yield* projectEvent(state, event);
+        }
+        return state;
+      }),
     );
 
     const thread = finalState.threads[0];

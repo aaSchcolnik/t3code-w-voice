@@ -1,7 +1,12 @@
 import * as Equal from "effect/Equal";
 import { type TimelineEntry, type WorkLogEntry } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import {
+  type MessageId,
+  type OrchestrationLatestTurn,
+  type OrchestrationSystemEvent,
+  type TurnId,
+} from "@t3tools/contracts";
 import { partitionWorkLogEntries } from "./workLogPresentation";
 import {
   deriveTerminalAssistantMessageIds as deriveSharedTerminalAssistantMessageIds,
@@ -158,6 +163,12 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string;
       proposedPlan: ProposedPlan;
+    }
+  | {
+      kind: "system-event";
+      id: string;
+      createdAt: string;
+      systemEvent: OrchestrationSystemEvent;
     }
   | { kind: "working"; id: string; createdAt: string | null };
 
@@ -403,6 +414,16 @@ export function deriveMessagesTimelineRows(input: {
       continue;
     }
 
+    if (timelineEntry.kind === "system-event") {
+      nextRows.push({
+        kind: "system-event",
+        id: timelineEntry.id,
+        createdAt: timelineEntry.createdAt,
+        systemEvent: timelineEntry.systemEvent,
+      });
+      continue;
+    }
+
     const assistantTurnStillInProgress =
       timelineEntry.message.role === "assistant" &&
       unsettledTurnId !== null &&
@@ -485,6 +506,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "proposed-plan":
       return a.proposedPlan === (b as typeof a).proposedPlan;
+
+    case "system-event":
+      return a.systemEvent === (b as typeof a).systemEvent;
 
     case "work":
       return Equal.equals(a.groupedEntries, (b as typeof a).groupedEntries);

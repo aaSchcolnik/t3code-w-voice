@@ -14,7 +14,6 @@ import type { SubagentEntry } from "../../session-logic";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { subagentsCancelRun, subagentTranscriptAtomFamily } from "../../state/subagents";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { Badge } from "../ui/badge";
 import { SubagentHeader } from "./SubagentHeader";
 import { SubagentTimeline } from "./SubagentTimeline";
 import { isActiveSubagentStatus, subagentStatusLabel } from "./subagentRunPresentation";
@@ -32,19 +31,6 @@ interface SubagentTranscriptPanelProps {
   onBack: () => void;
 }
 
-function transcriptQualityLabel(run: SubagentRun): string {
-  switch (run.capabilities.transcriptQuality) {
-    case "live":
-      return "Live transcript";
-    case "replay":
-      return "Replayed transcript";
-    case "summary":
-      return "Summary supplied by provider";
-    case "none":
-      return "Detailed transcript unavailable";
-  }
-}
-
 function RunSummary({ run }: { run: SubagentRun }) {
   const result = run.finalMessage ?? run.lastSummary ?? run.error;
   return (
@@ -52,7 +38,6 @@ function RunSummary({ run }: { run: SubagentRun }) {
       <div className="mx-auto max-w-2xl space-y-4">
         <div className="flex items-center gap-2">
           <ScrollTextIcon className="size-4 text-muted-foreground" />
-          <Badge variant="outline">{transcriptQualityLabel(run)}</Badge>
           <span className="text-xs font-medium text-muted-foreground">
             {subagentStatusLabel(run.status)}
           </span>

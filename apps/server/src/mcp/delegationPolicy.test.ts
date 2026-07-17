@@ -20,9 +20,10 @@ describe("trackedDelegationInstructions", () => {
     expect(instructions).toContain("MUST use");
     expect(instructions).toContain("cursor_start");
     expect(instructions).toContain("Subagents panel");
-    expect(instructions).toContain("cursor_result");
-    expect(instructions).toContain("NEVER poll");
-    expect(instructions).toContain("NEVER create shell sleep timers");
+    expect(instructions).toContain("then end your turn");
+    expect(instructions).toContain("delivered automatically");
+    expect(instructions).toContain("NEVER wait, poll, sleep");
+    expect(instructions).not.toContain("cursor_result");
     expect(instructions).toContain("server-locked workspace-write sandbox");
     expect(instructions).toContain("never require user action");
     expect(instructions).toContain("Git read-only policy");

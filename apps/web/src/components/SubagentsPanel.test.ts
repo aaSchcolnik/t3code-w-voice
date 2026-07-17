@@ -14,10 +14,9 @@ import { flattenSubagentRunTree, partitionSubagentRuns, SubagentsPanel } from ".
 import {
   findNewActiveSubagentRun,
   isActiveSubagentStatus,
+  resolveSubagentMetadata,
   subagentStatusLabel,
-  resolveSubagentServiceTierPresentation,
 } from "./subagents/subagentRunPresentation";
-import { SubagentServiceTierBadge } from "./subagents/SubagentServiceTierBadge";
 
 const run = (id: string, overrides: Partial<SubagentRun> = {}): SubagentRun => ({
   id: SubagentRunId.make(id),
@@ -110,6 +109,41 @@ describe("SubagentsPanel", () => {
     expect(html).toContain('aria-label="Active subagents"');
     expect(html).toContain('aria-label="Done subagents"');
   });
+
+  it("renders plain metadata without provider or transcript badges", () => {
+    const html = renderToStaticMarkup(
+      createElement(SubagentsPanel, {
+        runs: [
+          run("metadata", {
+            resolvedModel: "gpt-5.6-sol",
+            resolvedOptionDetails: [
+              {
+                id: "reasoningEffort",
+                label: "Reasoning",
+                value: "medium",
+                valueLabel: "Medium",
+              },
+              {
+                id: "serviceTier",
+                label: "Service Tier",
+                value: "default",
+                valueLabel: "Standard",
+              },
+            ],
+          }),
+        ],
+        provider: undefined,
+        providers: [],
+        fallbackDriverKind: ProviderDriverKind.make("codex"),
+        environmentId: EnvironmentId.make("environment-1"),
+        threadId: ThreadId.make("thread-1"),
+      }),
+    );
+
+    expect(html).toContain("GPT 5.6 Sol · Medium Reasoning · Standard");
+    expect(html).not.toContain("Live transcript");
+    expect(html).not.toContain(">Codex<");
+  });
 });
 
 describe("subagent status presentation", () => {
@@ -132,54 +166,53 @@ describe("subagent status presentation", () => {
   });
 });
 
-describe("subagent service tier presentation", () => {
-  it("prefers stable stored labels and renders an accessible shared badge", () => {
-    const fastRun = run("fast", {
+describe("subagent metadata presentation", () => {
+  it("orders model, reasoning, and mode as plain-language metadata", () => {
+    const metadataRun = run("metadata", {
+      resolvedModel: "gpt-5.6-sol",
       resolvedOptionDetails: [
         {
           id: "serviceTier",
           label: "Service Tier",
-          value: "priority",
-          valueLabel: "Fast",
-          description: "Lower latency responses.",
+          value: "default",
+          valueLabel: "Standard",
+        },
+        {
+          id: "reasoningEffort",
+          label: "Reasoning",
+          value: "medium",
+          valueLabel: "Medium",
         },
       ],
     });
-    expect(resolveSubagentServiceTierPresentation(fastRun)).toEqual({
-      label: "Fast",
-      description: "Lower latency responses.",
-    });
-    const html = renderToStaticMarkup(createElement(SubagentServiceTierBadge, { run: fastRun }));
-    expect(html).toContain('aria-label="Service Tier: Fast"');
-    expect(html).toContain("Fast");
+
+    expect(resolveSubagentMetadata(metadataRun)).toEqual([
+      "GPT 5.6 Sol",
+      "Medium Reasoning",
+      "Standard",
+    ]);
   });
 
-  it("reconstructs old raw records only from a matching live descriptor", () => {
-    const oldRun = run("old", {
-      resolvedModel: "gpt-5.5",
-      resolvedOptions: [{ id: "serviceTier", value: "flex" }],
-    });
+  it("removes Claude context transport suffixes from historical runs", () => {
+    expect(resolveSubagentMetadata(run("claude", { resolvedModel: "claude-fable-5[1m]" }))).toEqual(
+      ["Claude Fable 5"],
+    );
+  });
+
+  it("uses a catalog model name without tag-like slug separators", () => {
+    const metadataRun = run("catalog", { resolvedModel: "gpt-5.6-sol" });
     const provider = {
       instanceId: ProviderInstanceId.make("codex"),
       models: [
         {
-          slug: "gpt-5.5",
-          name: "GPT 5.5",
+          slug: "gpt-5.6-sol",
+          name: "GPT-5.6-Sol",
           isCustom: false,
-          capabilities: {
-            optionDescriptors: [
-              {
-                id: "serviceTier",
-                label: "Service Tier",
-                type: "select" as const,
-                options: [{ id: "flex", label: "Flex" }],
-              },
-            ],
-          },
+          capabilities: { optionDescriptors: [] },
         },
       ],
     };
-    expect(resolveSubagentServiceTierPresentation(oldRun, provider)).toEqual({ label: "Flex" });
-    expect(resolveSubagentServiceTierPresentation(oldRun)).toBeNull();
+
+    expect(resolveSubagentMetadata(metadataRun, provider)).toEqual(["GPT 5.6 Sol"]);
   });
 });
