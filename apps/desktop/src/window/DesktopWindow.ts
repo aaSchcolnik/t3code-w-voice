@@ -213,8 +213,8 @@ function isAllowedRendererOrigin(input: {
   });
 }
 
-async function requestMicrophonePermission(): Promise<boolean> {
-  if (process.platform !== "darwin") return true;
+async function requestMicrophonePermission(platform: NodeJS.Platform): Promise<boolean> {
+  if (platform !== "darwin") return true;
 
   const status = Electron.systemPreferences.getMediaAccessStatus("microphone");
   if (status === "granted") return true;
@@ -495,7 +495,7 @@ export const make = Effect.gen(function* () {
         if (permission !== "media") return false;
         if (!mediaCheckIncludesAudio(details)) return false;
         if (!isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin })) return false;
-        if (process.platform !== "darwin") return true;
+        if (environment.platform !== "darwin") return true;
         // `not-determined` must pass the check so getUserMedia can reach the
         // request handler, which calls `askForMediaAccess` to show the macOS
         // prompt. Returning false here for `not-determined` rejects the request
@@ -527,7 +527,7 @@ export const make = Effect.gen(function* () {
           return;
         }
 
-        void requestMicrophonePermission()
+        void requestMicrophonePermission(environment.platform)
           .then((granted) => {
             callback(granted);
           })
