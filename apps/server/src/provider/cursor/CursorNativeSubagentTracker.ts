@@ -50,10 +50,20 @@ export class CursorNativeSubagentTracker {
   fromToolCall(toolCall: AcpToolCallState): CursorNativeSubagentRecord | undefined {
     if (!isCursorTaskToolCall(toolCall)) return undefined;
     const current = this.#runs.get(toolCall.toolCallId);
+    const rawInput =
+      toolCall.data.rawInput && typeof toolCall.data.rawInput === "object"
+        ? (toolCall.data.rawInput as Record<string, unknown>)
+        : undefined;
     const rawOutput =
       toolCall.data.rawOutput && typeof toolCall.data.rawOutput === "object"
         ? (toolCall.data.rawOutput as Record<string, unknown>)
         : undefined;
+    const prompt = text(rawInput?.prompt) ?? text(rawInput?.task);
+    const description = text(rawInput?.description);
+    const agentType = text(rawInput?.subagent_type) ?? text(rawInput?.subagentType);
+    const requestedModel = text(rawInput?.model);
+    const resolvedAgentType = current?.agentType ?? agentType;
+    const resolvedRequestedModel = current?.requestedModel ?? requestedModel;
     const background = rawOutput?.isBackground === true;
     const error = text(rawOutput?.error);
     const result = text(rawOutput?.result) ?? text(rawOutput?.output);
@@ -73,12 +83,20 @@ export class CursorNativeSubagentTracker {
       runId: SubagentRunId.make(toolCall.toolCallId),
       toolCallId: toolCall.toolCallId,
       depth: 0,
-      title: current?.title ?? toolCall.title ?? "Cursor subagent",
-      taskPreview: current?.taskPreview ?? toolCall.detail ?? toolCall.title ?? "Cursor task",
+      title: current?.title ?? description ?? toolCall.title ?? "Cursor subagent",
+      taskPreview:
+        current?.taskPreview ??
+        prompt ??
+        toolCall.detail ??
+        description ??
+        toolCall.title ??
+        "Cursor task",
+      ...(resolvedAgentType ? { agentType: resolvedAgentType } : {}),
+      ...(resolvedRequestedModel ? { requestedModel: resolvedRequestedModel } : {}),
       status,
       ...(result ? { finalMessage: result, lastSummary: result } : {}),
       ...(error ? { error } : {}),
-      transcriptQuality: result ? "summary" : (current?.transcriptQuality ?? "none"),
+      transcriptQuality: prompt || result ? "summary" : (current?.transcriptQuality ?? "none"),
     };
     this.#runs.set(toolCall.toolCallId, run);
     return run;

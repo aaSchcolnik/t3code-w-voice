@@ -16,7 +16,11 @@ import { subagentsCancelRun, subagentTranscriptAtomFamily } from "../../state/su
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SubagentHeader } from "./SubagentHeader";
 import { SubagentTimeline } from "./SubagentTimeline";
-import { isActiveSubagentStatus, subagentStatusLabel } from "./subagentRunPresentation";
+import {
+  hasDetailedSubagentTranscript,
+  isActiveSubagentStatus,
+  subagentStatusLabel,
+} from "./subagentRunPresentation";
 
 interface SubagentTranscriptPanelProps {
   environmentId: EnvironmentId;
@@ -35,7 +39,7 @@ function RunSummary({ run }: { run: SubagentRun }) {
   const result = run.finalMessage ?? run.lastSummary ?? run.error;
   return (
     <div className="min-h-0 flex-1 overflow-auto p-4">
-      <div className="mx-auto max-w-2xl space-y-4">
+      <div className="mx-auto flex max-w-2xl flex-col gap-4">
         <div className="flex items-center gap-2">
           <ScrollTextIcon className="size-4 text-muted-foreground" />
           <span className="text-xs font-medium text-muted-foreground">
@@ -61,7 +65,11 @@ function RunSummary({ run }: { run: SubagentRun }) {
           </section>
         ) : isActiveSubagentStatus(run.status) ? (
           <p className="text-xs text-muted-foreground">The subagent is still working.</p>
-        ) : null}
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            This provider did not report a result or detailed activity for this run.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -113,7 +121,7 @@ export function SubagentTranscriptPanel({
   const cancelRun = useAtomCommand(subagentsCancelRun, { label: "subagents cancel run" });
   const transcriptAtom = useMemo(
     () =>
-      run.capabilities.transcriptQuality !== "none"
+      hasDetailedSubagentTranscript(run.capabilities.transcriptQuality)
         ? subagentTranscriptAtomFamily({
             environmentId,
             input: { rootThreadId: threadId, runId: run.id },

@@ -1,4 +1,9 @@
-import type { ResolvedProviderOption, SubagentRun, SubagentStatus } from "@t3tools/contracts";
+import type {
+  ResolvedProviderOption,
+  SubagentRun,
+  SubagentStatus,
+  SubagentTranscriptQuality,
+} from "@t3tools/contracts";
 import { buildResolvedProviderOptionDetails } from "@t3tools/shared/model";
 
 import type { ProviderInstanceEntry } from "../../providerInstances";
@@ -86,6 +91,10 @@ const TERMINAL_STATUSES = new Set<SubagentStatus>(["completed", "failed", "cance
 
 export function isActiveSubagentStatus(status: SubagentStatus): boolean {
   return !TERMINAL_STATUSES.has(status);
+}
+
+export function hasDetailedSubagentTranscript(quality: SubagentTranscriptQuality): boolean {
+  return quality === "live" || quality === "replay";
 }
 
 export function subagentStatusLabel(status: SubagentStatus): string {

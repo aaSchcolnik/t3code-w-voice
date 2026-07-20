@@ -34,6 +34,11 @@ Instructions are generated from the actual capability set, so they never name an
 tool. Shell-launched cross-provider agent subprocesses remain blocked when the tracked capability is
 available.
 
+For provider-neutral delegation requests, generated instructions do not rank providers. The model
+chooses whichever available tracked mechanism best fits the task and current context, which may be
+the main provider's native mechanism. An explicit provider choice from the user or active skill still
+takes precedence.
+
 ## Persistence and compatibility
 
 Normalized runs are stored in `subagent-runs-v1.ndjson`. On restart, T3 Code accepts the original

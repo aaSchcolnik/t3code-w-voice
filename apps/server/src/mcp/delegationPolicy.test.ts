@@ -47,6 +47,23 @@ describe("trackedDelegationInstructions", () => {
     expect(instructions).not.toContain("cursor_start");
     expect(instructions).toContain("Cursor's native Task mechanism");
   });
+
+  it("does not rank providers for provider-neutral delegation", () => {
+    const instructions = trackedDelegationInstructions(
+      capabilities("codex-agent", "cursor-agent", "claude-agent"),
+      ProviderDriverKind.make("cursor"),
+      true,
+    );
+
+    if (instructions === undefined) throw new Error("Expected delegation instructions.");
+    expect(instructions).toContain("codex_start");
+    expect(instructions).toContain("cursor_start");
+    expect(instructions).toContain("claude_start");
+    expect(instructions).toContain("The list order is not a provider preference.");
+    expect(instructions).toContain("choose whichever available tracked mechanism best fits");
+    expect(instructions).toContain("Honor an explicit provider");
+    expect(instructions).not.toContain("1. Codex");
+  });
 });
 
 describe("detectUntrackedDelegationAttempt", () => {

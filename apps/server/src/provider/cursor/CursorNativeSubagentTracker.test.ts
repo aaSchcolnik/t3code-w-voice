@@ -42,6 +42,33 @@ describe("CursorNativeSubagentTracker", () => {
     expect(run?.status).toBe("running");
   });
 
+  it("retains generic Task input when the Cursor extension event is absent", () => {
+    const tracker = new CursorNativeSubagentTracker();
+    const run = tracker.fromToolCall({
+      toolCallId: "tool-generic",
+      title: "Task: Audit",
+      status: "inProgress",
+      data: {
+        toolCallId: "tool-generic",
+        rawInput: {
+          _toolName: "task",
+          description: "Audit the implementation",
+          prompt: "Inspect every changed file and report blockers.",
+          subagent_type: "reviewer",
+          model: "gpt-5.6-sol",
+        },
+      },
+    });
+
+    expect(run).toMatchObject({
+      title: "Audit the implementation",
+      taskPreview: "Inspect every changed file and report blockers.",
+      agentType: "reviewer",
+      requestedModel: "gpt-5.6-sol",
+      transcriptQuality: "summary",
+    });
+  });
+
   it("links repeated agent IDs as resumed invocations without inventing nesting", () => {
     const tracker = new CursorNativeSubagentTracker();
     for (const toolCallId of ["first", "second"]) {

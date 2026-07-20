@@ -13,6 +13,7 @@ import { createElement } from "react";
 import { flattenSubagentRunTree, partitionSubagentRuns, SubagentsPanel } from "./SubagentsPanel";
 import {
   findNewActiveSubagentRun,
+  hasDetailedSubagentTranscript,
   isActiveSubagentStatus,
   resolveSubagentMetadata,
   subagentStatusLabel,
@@ -147,6 +148,13 @@ describe("SubagentsPanel", () => {
 });
 
 describe("subagent status presentation", () => {
+  it("uses the summary view when a provider cannot supply detailed child events", () => {
+    expect(hasDetailedSubagentTranscript("live")).toBe(true);
+    expect(hasDetailedSubagentTranscript("replay")).toBe(true);
+    expect(hasDetailedSubagentTranscript("summary")).toBe(false);
+    expect(hasDetailedSubagentTranscript("none")).toBe(false);
+  });
+
   it("uses non-color labels for waiting, paused, unknown, and terminal states", () => {
     expect(subagentStatusLabel("waiting_for_input")).toBe("Waiting for input");
     expect(subagentStatusLabel("paused")).toBe("Paused");

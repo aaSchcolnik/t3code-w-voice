@@ -29,11 +29,11 @@ const sameProviderNativeInstruction = (
 ): string | undefined => {
   switch (providerDriver) {
     case "claudeAgent":
-      return "For same-provider Claude delegation, use Claude's native Agent/Task mechanism; native runs are tracked in the Subagents panel.";
+      return "Claude's native Agent/Task mechanism is also available; native runs are tracked in the Subagents panel.";
     case "codex":
-      return "For same-provider Codex delegation, use Codex collaboration tools; native child threads are tracked in the Subagents panel.";
+      return "Codex collaboration tools are also available; native child threads are tracked in the Subagents panel.";
     case "cursor":
-      return "For same-provider Cursor delegation, use Cursor's native Task mechanism; native task runs are tracked in the Subagents panel.";
+      return "Cursor's native Task mechanism is also available; native task runs are tracked in the Subagents panel.";
     default:
       return undefined;
   }
@@ -62,6 +62,9 @@ export function trackedDelegationInstructions(
       ? "When delegating to another provider, you MUST use only the callable T3 Code tools listed here:"
       : undefined,
     ...toolLines,
+    callable.length > 0
+      ? "The list order is not a provider preference. For a provider-neutral request, choose whichever available tracked mechanism best fits the task and current context. Honor an explicit provider requested by the user or active skill."
+      : undefined,
     callable.length > 0
       ? "Call `*_start` for each subagent you need, then end your turn. Results are delivered automatically as one new server message when all runs finish. NEVER wait, poll, sleep, or create background polling commands."
       : undefined,
