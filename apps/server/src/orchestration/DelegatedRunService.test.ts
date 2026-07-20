@@ -137,6 +137,7 @@ const makeStubbedEngine = (
   OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
     streamDomainEvents,
+    latestSequence: Effect.sync(() => commands.length),
     dispatch: (command) =>
       Effect.sync(() => {
         commands.push(command);
@@ -484,6 +485,7 @@ it.effect("starts, projects, and cancels a delegated run", () => {
   const engine = OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
     streamDomainEvents: Stream.empty,
+    latestSequence: Effect.sync(() => commands.length),
     dispatch: (command) =>
       Effect.sync(() => {
         commands.push(command);
@@ -1400,6 +1402,7 @@ it.effect("restores a wake when server turn-start dispatch is rejected", () =>
         OrchestrationEngineService.of({
           readEvents: () => Stream.empty,
           streamDomainEvents: Stream.empty,
+          latestSequence: Effect.sync(() => commands.length),
           dispatch: (command) =>
             Effect.gen(function* () {
               if (command.type === "thread.turn.start-server" && rejectNextWake) {

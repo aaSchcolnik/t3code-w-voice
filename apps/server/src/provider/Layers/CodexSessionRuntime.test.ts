@@ -320,7 +320,11 @@ describe("buildCodexDeveloperInstructions", () => {
       reasoningEffort: "high",
     });
 
-    NodeAssert.ok(instructions.startsWith(CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS));
+    NodeAssert.ok(instructions.startsWith("<collaboration_mode># Collaboration Mode: Default"));
+    NodeAssert.ok(instructions.trimEnd().endsWith("</collaboration_mode>"));
+    NodeAssert.ok(
+      instructions.indexOf("<runtime_info>") < instructions.lastIndexOf("</collaboration_mode>"),
+    );
     NodeAssert.match(instructions, /T3 Code/);
     NodeAssert.match(instructions, /Codex harness/);
     NodeAssert.match(instructions, /as gpt-5\.3-codex with high reasoning effort/);
@@ -332,7 +336,11 @@ describe("buildCodexDeveloperInstructions", () => {
       reasoningEffort: "medium",
     });
 
-    NodeAssert.ok(instructions.startsWith(CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS));
+    NodeAssert.ok(instructions.startsWith("<collaboration_mode># Plan Mode (Conversational)"));
+    NodeAssert.ok(instructions.trimEnd().endsWith("</collaboration_mode>"));
+    NodeAssert.ok(
+      instructions.indexOf("<runtime_info>") < instructions.lastIndexOf("</collaboration_mode>"),
+    );
     NodeAssert.match(instructions, /as gpt-5\.3-codex with medium reasoning effort/);
   });
 

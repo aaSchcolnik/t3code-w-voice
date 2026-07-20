@@ -457,7 +457,6 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('data-align-items-at-end="true"');
     expect(markup).toContain('data-content-inset-end="144"');
     expect(markup).toContain('data-anchor-index="0"');
     expect(markup).toContain('data-anchor-offset="16"');

@@ -1329,7 +1329,6 @@ export function makeOpenCodeAdapter(
                 }
                 const createdSession = yield* runOpenCodeSdk("session.create", () =>
                   client.session.create({
-                    title: `T3 Code ${input.threadId}`,
                     permission: buildOpenCodePermissionRules(
                       input.runtimeMode,
                       currentSkillSettings,

@@ -1911,10 +1911,7 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = [
-        ...stoppedToolActivities,
-        ...runtimeEventToActivities(event, taskTitle),
-      ];
+      const activities = [...stoppedToolActivities, ...runtimeEventToActivities(event, taskTitle)];
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>
