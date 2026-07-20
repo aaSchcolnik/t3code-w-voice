@@ -2,7 +2,8 @@ import "../../index.css";
 
 import { page } from "vite-plus/test/browser";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { render } from "vitest-browser-react";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 
 import { MicButton } from "./MicButton";
 import type { VoiceDictationState } from "./useVoiceDictationSession";
@@ -15,18 +16,20 @@ async function mountMicButton(props?: {
 }) {
   const host = document.createElement("div");
   document.body.append(host);
-  const screen = await render(
-    <MicButton
-      state={props?.state ?? "idle"}
-      voiceEnabled={props?.voiceEnabled ?? true}
-      disabled={props?.disabled ?? false}
-      onToggle={props?.onToggle ?? vi.fn()}
-    />,
-    { container: host },
-  );
+  const root = createRoot(host);
+  await act(async () => {
+    root.render(
+      <MicButton
+        state={props?.state ?? "idle"}
+        voiceEnabled={props?.voiceEnabled ?? true}
+        disabled={props?.disabled ?? false}
+        onToggle={props?.onToggle ?? vi.fn()}
+      />,
+    );
+  });
 
   const cleanup = async () => {
-    await screen.unmount();
+    await act(async () => root.unmount());
     host.remove();
   };
 
