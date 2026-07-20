@@ -551,7 +551,7 @@ const buildAppUnderTest = (options?: {
       ),
     );
 
-    const servedRoutesLayer = HttpRouter.serve(makeRoutesLayer, {
+    const servedRoutesWithCoreMocks = HttpRouter.serve(makeRoutesLayer, {
       disableListenLog: true,
       disableLogger: true,
     }).pipe(
@@ -679,6 +679,9 @@ const buildAppUnderTest = (options?: {
           ...options?.layers?.terminalManager,
         }),
       ),
+    );
+
+    const servedRoutesLayer = servedRoutesWithCoreMocks.pipe(
       Layer.provide(Layer.mock(TranscriptionServiceModule.TranscriptionService)({})),
       Layer.provide(
         Layer.mergeAll(

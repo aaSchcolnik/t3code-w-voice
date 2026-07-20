@@ -337,7 +337,7 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
-const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
+const RuntimeCoreServicesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(CheckpointingLayerLive),
@@ -367,6 +367,9 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // no longer transitively provides it. Exposing it at the runtime level
   // keeps a single Live for all opencode consumers.
   Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
+);
+
+const RuntimeCoreDependenciesLive = RuntimeCoreServicesLive.pipe(
   // ASR sidecar lifecycle is a server-wide singleton shared by connected clients.
   Layer.provideMerge(TranscriptionServiceModule.layer),
   Layer.provideMerge(WorkspaceLayerLive),

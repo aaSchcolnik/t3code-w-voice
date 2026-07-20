@@ -461,7 +461,6 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
 
   const models = providerModelsFromSettings(
     flattenOpenCodeModels(inventory),
-    PROVIDER,
     customModels,
     DEFAULT_OPENCODE_MODEL_CAPABILITIES,
   );
