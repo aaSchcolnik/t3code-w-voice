@@ -84,6 +84,8 @@ export interface GrokAdapterLiveOptions {
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
   readonly instanceId?: ProviderInstanceId;
+  /** Test synchronization hook invoked after a successful prompt result is recorded. */
+  readonly onPromptRpcSucceeded?: () => Effect.Effect<void>;
 }
 
 interface PendingApproval {
@@ -1076,10 +1078,13 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             })
             .pipe(
               Effect.tap((promptResult) =>
-                Effect.all([
-                  Ref.set(promptRpcSucceeded, true),
-                  Ref.set(promptResultRef, promptResult),
-                ]),
+                Effect.gen(function* () {
+                  yield* Ref.set(promptRpcSucceeded, true);
+                  yield* Ref.set(promptResultRef, promptResult);
+                  if (options?.onPromptRpcSucceeded) {
+                    yield* options.onPromptRpcSucceeded();
+                  }
+                }),
               ),
               Effect.tapError((error) =>
                 Ref.set(
