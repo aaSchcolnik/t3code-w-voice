@@ -742,6 +742,16 @@ it.effect("resolves named profiles live and rejects ambiguous or unsafe configur
       .pipe(Effect.flip);
     expect(fullAccess.message).toContain("fixed to the workspace-write sandbox");
 
+    const autoReview = yield* service
+      .start({
+        provider: "codex",
+        parentThreadId,
+        task: "Review",
+        runtimeMode: "auto",
+      })
+      .pipe(Effect.flip);
+    expect(autoReview.message).toContain("fixed to the workspace-write sandbox");
+
     const readOnly = yield* service
       .start({
         provider: "codex",

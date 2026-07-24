@@ -86,10 +86,9 @@ Before running a destructive filesystem command, ensure every target resolves in
 const delegatedTaskInput = (task: string) =>
   `${DELEGATED_SUBAGENT_SAFETY_INSTRUCTIONS}\n\n## Assigned task\n\n${task}`;
 
-const isDelegatedExecutionConfiguration = (input: {
-  readonly sandboxMode?: "read-only" | "workspace-write" | "danger-full-access" | undefined;
-  readonly runtimeMode?: "approval-required" | "auto-accept-edits" | "full-access" | undefined;
-}) =>
+const isDelegatedExecutionConfiguration = (
+  input: Pick<DelegatedRunStartInput, "sandboxMode" | "runtimeMode">,
+) =>
   (input.sandboxMode === undefined || input.sandboxMode === DELEGATED_SANDBOX_MODE) &&
   (input.runtimeMode === undefined || input.runtimeMode === DELEGATED_RUNTIME_MODE);
 
