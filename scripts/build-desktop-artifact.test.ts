@@ -1,11 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeFS from "node:fs";
-import * as NodePath from "node:path";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -124,14 +124,18 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
   });
 
-  it("includes every packaged desktop notification icon", () => {
-    for (const fileName of DESKTOP_NOTIFICATION_ASSET_FILES) {
-      assert.isTrue(
-        NodeFS.existsSync(NodePath.resolve("apps/desktop/resources/notifications", fileName)),
-        `missing notifications/${fileName}`,
-      );
-    }
-  });
+  it.effect("includes every packaged desktop notification icon", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      for (const fileName of DESKTOP_NOTIFICATION_ASSET_FILES) {
+        assert.isTrue(
+          yield* fs.exists(path.join("apps/desktop/resources/notifications", fileName)),
+          `missing notifications/${fileName}`,
+        );
+      }
+    }),
+  );
 
   it.effect("fails packaging smoke validation when a notification icon is missing", () =>
     Effect.gen(function* () {
