@@ -1,7 +1,13 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import Skills from "./034_Skills.ts";
 
 export default Effect.gen(function* () {
+  // Upstream and the subagents branch independently assigned migration 34.
+  // Ensure the custom Skills baseline exists when upgrading a database that
+  // recorded upstream's ProjectionThreadsSnoozed migration at that ID.
+  yield* Skills;
+
   const sql = yield* SqlClient.SqlClient;
 
   yield* sql`PRAGMA foreign_keys = OFF`;
