@@ -35,12 +35,7 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
-import {
-  ChevronRightIcon,
-  MousePointerClickIcon,
-  PaintbrushIcon,
-  Undo2Icon,
-} from "lucide-react";
+import { ChevronRightIcon, MousePointerClickIcon, PaintbrushIcon, Undo2Icon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
