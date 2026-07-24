@@ -118,16 +118,19 @@ function waitForJsonLogMatch(
   predicate: (entry: Record<string, unknown>) => boolean,
   attempts = 40,
 ) {
-  return Effect.gen(function* () {
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
+  const readAttempt = (remainingAttempts: number): Effect.Effect<Array<Record<string, unknown>>> =>
+    Effect.gen(function* () {
+      if (remainingAttempts <= 0) {
+        return yield* Effect.die(new Error(`Timed out waiting for JSON log match at ${filePath}`));
+      }
       const requests = yield* Effect.promise(() => readJsonLines(filePath));
       if (requests.some(predicate)) {
         return requests;
       }
-      yield* Effect.yieldNow;
-    }
-    return yield* Effect.promise(() => readJsonLines(filePath));
-  });
+      yield* Effect.sleep("25 millis");
+      return yield* readAttempt(remainingAttempts - 1);
+    });
+  return readAttempt(attempts).pipe(TestClock.withLive);
 }
 
 // Tests mutate `ServerSettingsService` mid-flight (e.g. setting

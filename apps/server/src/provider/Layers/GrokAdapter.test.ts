@@ -760,29 +760,30 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
           T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
         }),
       );
-      const adapter = yield* makeTestAdapter(wrapperPath);
+      const promptRpcSucceeded = yield* Deferred.make<void>();
+      const allowPromptSettlement = yield* Deferred.make<void>();
+      const adapter = yield* makeTestAdapter(wrapperPath, {
+        onPromptRpcSucceeded: () =>
+          Deferred.succeed(promptRpcSucceeded, undefined).pipe(
+            Effect.asVoid,
+            Effect.andThen(Deferred.await(allowPromptSettlement)),
+          ),
+      });
 
       const runtimeEvents: ProviderRuntimeEvent[] = [];
-      const activeTurnIdRef = yield* Ref.make<TurnId | undefined>(undefined);
-      const trailingChunkTurnId = yield* Deferred.make<TurnId>();
+      const turnStarted = yield* Deferred.make<TurnId>();
       const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
-        Effect.gen(function* () {
+        Effect.sync(() => {
           runtimeEvents.push(event);
-          if (String(event.threadId) !== String(threadId)) {
-            return;
-          }
-          if (event.type === "turn.started") {
-            yield* Ref.set(activeTurnIdRef, event.turnId);
-          }
-          if (event.type !== "content.delta" || event.payload.delta !== "mock") {
-            return;
-          }
-          const turnId = event.turnId ?? (yield* Ref.get(activeTurnIdRef));
-          if (turnId === undefined) {
-            return;
-          }
-          yield* Deferred.succeed(trailingChunkTurnId, turnId).pipe(Effect.ignore);
-        }),
+        }).pipe(
+          Effect.andThen(
+            event.type === "turn.started" &&
+              event.turnId !== undefined &&
+              String(event.threadId) === String(threadId)
+              ? Deferred.succeed(turnStarted, event.turnId).pipe(Effect.asVoid)
+              : Effect.void,
+          ),
+        ),
       ).pipe(Effect.forkChild);
 
       yield* adapter.startSession({
@@ -801,8 +802,10 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         })
         .pipe(Effect.forkChild);
 
-      const turnId = yield* Deferred.await(trailingChunkTurnId).pipe(Effect.timeout("2 seconds"));
+      const turnId = yield* Deferred.await(turnStarted).pipe(Effect.timeout("2 seconds"));
+      yield* Deferred.await(promptRpcSucceeded).pipe(Effect.timeout("2 seconds"));
       yield* adapter.interruptTurn(threadId, turnId).pipe(Effect.timeout("2 seconds"));
+      yield* Deferred.succeed(allowPromptSettlement, undefined);
       yield* Fiber.join(sendTurnFiber).pipe(Effect.timeout("2 seconds"));
 
       const turnCompletedEvents = runtimeEvents.filter(
