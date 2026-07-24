@@ -10,7 +10,12 @@ import { describe, expect, it } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
-import { flattenSubagentRunTree, partitionSubagentRuns, SubagentsPanel } from "./SubagentsPanel";
+import {
+  flattenSubagentRunTree,
+  partitionSubagentRuns,
+  subagentRunIdForActivation,
+  SubagentsPanel,
+} from "./SubagentsPanel";
 import {
   findNewActiveSubagentRun,
   hasDetailedSubagentTranscript,
@@ -95,6 +100,18 @@ describe("flattenSubagentRunTree", () => {
 });
 
 describe("SubagentsPanel", () => {
+  it("selects a notified run when present and safely falls back when it is gone", () => {
+    const notification = {
+      environmentId: EnvironmentId.make("environment-1"),
+      threadId: ThreadId.make("thread-1"),
+      runId: SubagentRunId.make("notified"),
+      nonce: 1,
+    };
+
+    expect(subagentRunIdForActivation([run("notified")], notification)).toBe("notified");
+    expect(subagentRunIdForActivation([], notification)).toBeNull();
+  });
+
   it("renders active and terminal runs in separate sections", () => {
     const html = renderToStaticMarkup(
       createElement(SubagentsPanel, {

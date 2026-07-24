@@ -7,6 +7,7 @@ import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   CONSENSUS_DEFAULTS,
+  DEFAULT_CLIENT_SETTINGS,
   DEFAULT_SERVER_SETTINGS,
   DEFAULT_KNOWLEDGE_SCAN_MAIN_THREAD_MODEL_PREFERENCE,
   EngineDelegationSettings,
@@ -190,6 +191,52 @@ describe("ClientSettings environment identification", () => {
   it("rejects unsupported presentation modes", () => {
     expect(() => decodeClientSettings({ environmentIdentificationMode: "badge" })).toThrow();
     expect(() => decodeClientSettingsPatch({ environmentIdentificationMode: "badge" })).toThrow();
+  });
+});
+
+describe("ClientSettings desktop notifications", () => {
+  const primaryDefaults = {
+    enabled: true,
+    attention: true,
+    agentCompletion: true,
+    subagentCompletion: true,
+    failures: true,
+    stopped: false,
+    sound: true,
+    notifyWhileViewingThread: false,
+  };
+
+  it("hydrates backward-compatible defaults for legacy settings", () => {
+    expect(decodeClientSettings({}).desktopNotifications).toEqual(primaryDefaults);
+    expect(DEFAULT_CLIENT_SETTINGS.desktopNotifications).toEqual(primaryDefaults);
+  });
+
+  it("hydrates omitted nested preferences while preserving explicit choices", () => {
+    expect(
+      decodeClientSettings({
+        desktopNotifications: {
+          sound: false,
+          stopped: true,
+        },
+      }).desktopNotifications,
+    ).toEqual({
+      ...primaryDefaults,
+      sound: false,
+      stopped: true,
+    });
+  });
+
+  it("accepts a partial nested notification settings patch with defaults", () => {
+    expect(
+      decodeClientSettingsPatch({
+        desktopNotifications: {
+          notifyWhileViewingThread: true,
+        },
+      }).desktopNotifications,
+    ).toEqual({
+      ...primaryDefaults,
+      notifyWhileViewingThread: true,
+    });
   });
 });
 

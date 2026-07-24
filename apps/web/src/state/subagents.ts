@@ -149,6 +149,25 @@ export function useSubagentRunList(
   };
 }
 
+export function useEnvironmentSubagentRunList(environmentId: EnvironmentId): {
+  readonly authoritative: boolean;
+  readonly state: SubagentRunListState;
+} {
+  const runsAtom = useMemo(
+    () =>
+      subagentRunsAtomFamily({
+        environmentId,
+        input: ENVIRONMENT_WIDE_SUBSCRIBE_INPUT,
+      }),
+    [environmentId],
+  );
+  const result = useAtomValue(runsAtom);
+  return {
+    authoritative: AsyncResult.isSuccess(result),
+    state: Option.getOrElse(AsyncResult.value(result), () => EMPTY_RUN_LIST_STATE),
+  };
+}
+
 /**
  * One environment-wide subscription shared by all sidebar rows. Counts active
  * runs by root thread id so each row avoids its own WS subscription.

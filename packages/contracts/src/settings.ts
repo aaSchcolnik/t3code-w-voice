@@ -68,6 +68,18 @@ export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationM
 export const VoiceInferenceMode = Schema.Literals(["auto", "local", "server"]);
 export type VoiceInferenceMode = typeof VoiceInferenceMode.Type;
 
+export const DesktopNotificationPreferences = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  attention: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  agentCompletion: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  subagentCompletion: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  failures: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  stopped: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  sound: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  notifyWhileViewingThread: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+});
+export type DesktopNotificationPreferences = typeof DesktopNotificationPreferences.Type;
+
 export const ENGINE_WORKFLOW_NAMES = [
   "plan-brief",
   "plan",
@@ -379,6 +391,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
+  ),
+  desktopNotifications: DesktopNotificationPreferences.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
   ),
   // Model favorites. Historically keyed by provider kind, now
   // widened to `ProviderInstanceId` so users can favorite a specific model
@@ -1155,6 +1170,7 @@ export const ClientSettingsPatch = Schema.Struct({
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
+  desktopNotifications: Schema.optionalKey(DesktopNotificationPreferences),
   favorites: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({

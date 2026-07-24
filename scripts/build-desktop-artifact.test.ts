@@ -1,4 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
@@ -13,10 +15,12 @@ import {
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
   createBuildConfig,
+  DESKTOP_NOTIFICATION_ASSET_FILES,
   DESKTOP_ASAR_UNPACK,
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
   DESKTOP_EXTRA_RESOURCES,
+  encodeIcnsPngChunks,
   InvalidMacPasskeyRpDomainError,
   InvalidMacPasskeyPublishableKeyError,
   InvalidMockUpdateServerPortError,
@@ -24,6 +28,7 @@ import {
   isMacPasskeySigningConfigurationError,
   LinuxIconResizeError,
   MacPasskeySigningConfigurationResolutionError,
+  MissingDesktopNotificationAssetError,
   MissingMacPasskeyProvisioningProfileError,
   renderMacInheritedEntitlements,
   renderMacPasskeyEntitlements,
@@ -44,6 +49,7 @@ import {
   resolveMockUpdateServerPort,
   resolveMockUpdateServerUrl,
   resolvePackageManagerUserAgent,
+  assertDesktopNotificationAssets,
   stageLinuxIconSize,
   STAGE_INSTALL_ARGS,
   WINDOWS_ASAR_UNPACK,
@@ -116,6 +122,44 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("switches the bundled splash and favicon branding for nightly versions", () => {
     assert.equal(resolveDesktopWebAssetBrand("0.0.17"), "production");
     assert.equal(resolveDesktopWebAssetBrand("0.0.17-nightly.20260413.42"), "nightly");
+  });
+
+  it("includes every packaged desktop notification icon", () => {
+    for (const fileName of DESKTOP_NOTIFICATION_ASSET_FILES) {
+      assert.isTrue(
+        NodeFS.existsSync(NodePath.resolve("apps/desktop/resources/notifications", fileName)),
+        `missing notifications/${fileName}`,
+      );
+    }
+  });
+
+  it.effect("fails packaging smoke validation when a notification icon is missing", () =>
+    Effect.gen(function* () {
+      const error = yield* assertDesktopNotificationAssets(
+        "apps/desktop/resources/nonexistent-notification-assets",
+      ).pipe(Effect.flip);
+
+      assert.instanceOf(error, MissingDesktopNotificationAssetError);
+      assert.match(error.assetPath, /notifications\/agent\.png$/u);
+    }),
+  );
+
+  it("encodes PNG-backed ICNS chunks with valid container and chunk lengths", () => {
+    const encoded = Buffer.from(
+      encodeIcnsPngChunks([
+        { type: "icp4", png: Uint8Array.from([1, 2, 3]) },
+        { type: "ic10", png: Uint8Array.from([4, 5]) },
+      ]),
+    );
+
+    assert.equal(encoded.toString("ascii", 0, 4), "icns");
+    assert.equal(encoded.readUInt32BE(4), encoded.byteLength);
+    assert.equal(encoded.toString("ascii", 8, 12), "icp4");
+    assert.equal(encoded.readUInt32BE(12), 11);
+    assert.deepStrictEqual([...encoded.subarray(16, 19)], [1, 2, 3]);
+    assert.equal(encoded.toString("ascii", 19, 23), "ic10");
+    assert.equal(encoded.readUInt32BE(23), 10);
+    assert.deepStrictEqual([...encoded.subarray(27)], [4, 5]);
   });
 
   it.effect("resolves GitHub desktop publish config from Effect config", () =>

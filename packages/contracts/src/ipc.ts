@@ -31,6 +31,7 @@ import type {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
+import { SubagentRunId } from "./subagent.ts";
 import type {
   TerminalAttachInput,
   TerminalAttachStreamEvent,
@@ -82,7 +83,7 @@ import type {
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
 } from "./orchestration.ts";
-import { EnvironmentId } from "./baseSchemas.ts";
+import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
@@ -959,6 +960,79 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
   input: PreviewAutomationWaitForInput,
 });
 
+export const DesktopNotificationProvider = Schema.Literals([
+  "codex",
+  "claudeAgent",
+  "cursor",
+  "grok",
+  "opencode",
+  "unknown",
+]);
+export type DesktopNotificationProvider = typeof DesktopNotificationProvider.Type;
+
+const DesktopNotificationProjectName = TrimmedNonEmptyString.check(Schema.isMaxLength(160));
+const DesktopNotificationDetail = TrimmedNonEmptyString.check(Schema.isMaxLength(1_000));
+
+export const DesktopRootNotificationEvent = Schema.Literals([
+  "approval",
+  "input",
+  "plan-completed",
+  "completed",
+  "failed",
+  "stopped",
+]);
+export type DesktopRootNotificationEvent = typeof DesktopRootNotificationEvent.Type;
+
+export const DesktopSubagentNotificationEvent = Schema.Literals([
+  "input",
+  "completed",
+  "failed",
+  "cancelled",
+  "paused",
+]);
+export type DesktopSubagentNotificationEvent = typeof DesktopSubagentNotificationEvent.Type;
+
+export const DesktopNotificationIntent = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("root"),
+    event: DesktopRootNotificationEvent,
+    provider: DesktopNotificationProvider,
+    projectName: DesktopNotificationProjectName,
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+    detail: Schema.optionalKey(DesktopNotificationDetail),
+    sound: Schema.Boolean,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("subagent"),
+    event: DesktopSubagentNotificationEvent,
+    provider: DesktopNotificationProvider,
+    projectName: DesktopNotificationProjectName,
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+    runId: SubagentRunId,
+    count: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 99 })),
+    detail: Schema.optionalKey(DesktopNotificationDetail),
+    sound: Schema.Boolean,
+  }),
+]);
+export type DesktopNotificationIntent = typeof DesktopNotificationIntent.Type;
+
+export const DesktopNotificationActivation = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("root"),
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("subagent"),
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+    runId: SubagentRunId,
+  }),
+]);
+export type DesktopNotificationActivation = typeof DesktopNotificationActivation.Type;
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   // One bootstrap per pool instance currently registered with bootstrap
@@ -1017,6 +1091,10 @@ export interface DesktopBridge {
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
+  showNotification: (intent: DesktopNotificationIntent) => Promise<boolean>;
+  onNotificationActivation: (
+    listener: (activation: DesktopNotificationActivation) => void,
+  ) => () => void;
   /**
    * Desktop-only preview surface. Present iff the renderer is hosted by the
    * Electron desktop build; web builds have `preview === undefined`.

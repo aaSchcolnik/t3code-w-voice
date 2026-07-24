@@ -64,6 +64,7 @@ import * as PreviewManager from "./preview/Manager.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
 import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
+import * as DesktopNotifications from "./notifications/DesktopNotifications.ts";
 
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
@@ -158,6 +159,10 @@ const desktopWindowLayer = DesktopWindow.layer.pipe(
   Layer.provideMerge(desktopPreviewLayer),
 );
 
+const desktopNotificationsLayer = DesktopNotifications.layer.pipe(
+  Layer.provideMerge(desktopWindowLayer),
+);
+
 const desktopModelManagerLayer = DesktopModelManager.layer(() =>
   NodePath.join(Electron.app.getPath("userData"), "voice-models"),
 );
@@ -204,6 +209,7 @@ const desktopApplicationLayer = Layer.mergeAll(
   desktopTranscriptionLayer,
   desktopSshLayer,
 ).pipe(
+  Layer.provideMerge(desktopNotificationsLayer),
   Layer.provideMerge(DesktopUpdates.layer),
   Layer.provideMerge(desktopWslBackendLayer),
   Layer.provideMerge(desktopLocalEnvironmentAuthLayer),

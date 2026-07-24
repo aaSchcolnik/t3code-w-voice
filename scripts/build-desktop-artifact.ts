@@ -389,6 +389,39 @@ export class MissingDesktopBuildInputError extends Schema.TaggedErrorClass<Missi
   }
 }
 
+export const DESKTOP_NOTIFICATION_ASSET_FILES = [
+  "agent.png",
+  "claude.png",
+  "cursor.png",
+  "grok.png",
+  "openai.png",
+  "opencode.png",
+] as const;
+
+export class MissingDesktopNotificationAssetError extends Schema.TaggedErrorClass<MissingDesktopNotificationAssetError>()(
+  "MissingDesktopNotificationAssetError",
+  {
+    assetPath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Missing desktop notification asset at ${this.assetPath}.`;
+  }
+}
+
+export const assertDesktopNotificationAssets = Effect.fn("assertDesktopNotificationAssets")(
+  function* (resourcesDir: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    for (const fileName of DESKTOP_NOTIFICATION_ASSET_FILES) {
+      const assetPath = path.join(resourcesDir, "notifications", fileName);
+      if (!(yield* fs.exists(assetPath))) {
+        return yield* new MissingDesktopNotificationAssetError({ assetPath });
+      }
+    }
+  },
+);
+
 export class MacProvisioningProfileNotFoundError extends Schema.TaggedErrorClass<MacProvisioningProfileNotFoundError>()(
   "MacProvisioningProfileNotFoundError",
   {
@@ -1539,6 +1572,41 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
   }
 });
 
+const MAC_ICNS_PNG_CHUNKS = [
+  { type: "icp4", fileName: "icon_16x16.png" },
+  { type: "ic11", fileName: "icon_16x16@2x.png" },
+  { type: "icp5", fileName: "icon_32x32.png" },
+  { type: "ic12", fileName: "icon_32x32@2x.png" },
+  { type: "ic07", fileName: "icon_128x128.png" },
+  { type: "ic13", fileName: "icon_128x128@2x.png" },
+  { type: "ic08", fileName: "icon_256x256.png" },
+  { type: "ic14", fileName: "icon_256x256@2x.png" },
+  { type: "ic09", fileName: "icon_512x512.png" },
+  { type: "ic10", fileName: "icon_512x512@2x.png" },
+] as const;
+
+export function encodeIcnsPngChunks(
+  chunks: ReadonlyArray<{ readonly type: string; readonly png: Uint8Array }>,
+): Uint8Array {
+  const totalLength = chunks.reduce((total, chunk) => total + 8 + chunk.png.byteLength, 8);
+  const output = Buffer.allocUnsafe(totalLength);
+  output.write("icns", 0, 4, "ascii");
+  output.writeUInt32BE(totalLength, 4);
+
+  let offset = 8;
+  for (const chunk of chunks) {
+    if (Buffer.byteLength(chunk.type, "ascii") !== 4) {
+      throw new Error(`Invalid ICNS chunk type: ${chunk.type}`);
+    }
+    output.write(chunk.type, offset, 4, "ascii");
+    output.writeUInt32BE(8 + chunk.png.byteLength, offset + 4);
+    output.set(chunk.png, offset + 8);
+    offset += 8 + chunk.png.byteLength;
+  }
+
+  return output;
+}
+
 function generateMacIconSet(
   sourcePng: string,
   targetIcns: string,
@@ -1572,7 +1640,21 @@ function generateMacIconSet(
     yield* runCommand(ChildProcess.make({})`iconutil -c icns ${iconsetDir} -o ${targetIcns}`, {
       label: "iconutil icns",
       verbose,
-    });
+    }).pipe(
+      Effect.catchTag("BuildCommandFailedError", (cause) =>
+        Effect.gen(function* () {
+          yield* Effect.logWarning(
+            `[desktop-artifact] iconutil rejected the generated iconset; using the PNG-backed ICNS fallback. ${cause.message}`,
+          );
+          const chunks = yield* Effect.forEach(MAC_ICNS_PNG_CHUNKS, (chunk) =>
+            fs
+              .readFile(path.join(iconsetDir, chunk.fileName))
+              .pipe(Effect.map((png) => ({ type: chunk.type, png }))),
+          );
+          yield* fs.writeFile(targetIcns, encodeIcnsPngChunks(chunks));
+        }),
+      ),
+    );
   });
 }
 
@@ -2107,6 +2189,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       });
     }
   }
+  yield* assertDesktopNotificationAssets(distDirs.desktopResources);
 
   if (!(yield* fs.exists(bundledClientEntry))) {
     return yield* new MissingDesktopBuildInputError({

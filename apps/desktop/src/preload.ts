@@ -1,5 +1,6 @@
 import type {
   DesktopBridge,
+  DesktopNotificationActivation,
   DesktopTranscriptionErrorEvent,
   ModelDownloadProgressEvent,
   DesktopPreviewPointerEvent,
@@ -13,6 +14,39 @@ import { contextBridge, ipcRenderer } from "electron";
 import * as IpcChannels from "./ipc/channels.ts";
 
 exposeClerkBridge({ passkeys: true });
+
+const notificationActivationListeners = new Set<
+  (activation: DesktopNotificationActivation) => void
+>();
+const pendingNotificationActivations: DesktopNotificationActivation[] = [];
+const MAX_PENDING_NOTIFICATION_ACTIVATIONS = 64;
+
+function isNotificationActivation(value: unknown): value is DesktopNotificationActivation {
+  if (typeof value !== "object" || value === null) return false;
+  if (
+    !("type" in value) ||
+    (value.type !== "root" && value.type !== "subagent") ||
+    !("environmentId" in value) ||
+    typeof value.environmentId !== "string" ||
+    !("threadId" in value) ||
+    typeof value.threadId !== "string"
+  ) {
+    return false;
+  }
+  return value.type === "root" || ("runId" in value && typeof value.runId === "string");
+}
+
+ipcRenderer.on(IpcChannels.NOTIFICATION_ACTIVATION_CHANNEL, (_event, activation: unknown) => {
+  if (!isNotificationActivation(activation)) return;
+  if (notificationActivationListeners.size === 0) {
+    pendingNotificationActivations.push(activation);
+    if (pendingNotificationActivations.length > MAX_PENDING_NOTIFICATION_ACTIVATIONS) {
+      pendingNotificationActivations.shift();
+    }
+    return;
+  }
+  for (const listener of notificationActivationListeners) listener(activation);
+});
 
 function unwrapEnsureSshEnvironmentResult(result: unknown) {
   if (
@@ -147,6 +181,16 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.on(IpcChannels.UPDATE_STATE_CHANNEL, wrappedListener);
     return () => {
       ipcRenderer.removeListener(IpcChannels.UPDATE_STATE_CHANNEL, wrappedListener);
+    };
+  },
+  showNotification: (intent) => ipcRenderer.invoke(IpcChannels.SHOW_NOTIFICATION_CHANNEL, intent),
+  onNotificationActivation: (listener) => {
+    notificationActivationListeners.add(listener);
+    for (const activation of pendingNotificationActivations.splice(0)) {
+      listener(activation);
+    }
+    return () => {
+      notificationActivationListeners.delete(listener);
     };
   },
   transcription: {

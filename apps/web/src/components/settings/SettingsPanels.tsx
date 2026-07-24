@@ -138,6 +138,7 @@ import {
 } from "./settingsLayout";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { DesktopNotificationTestControls } from "./DesktopNotificationTestControls";
 
 const THEME_OPTIONS = [
   {
@@ -559,12 +560,17 @@ export function useSettingsRestore(onRestored?: () => void) {
   const { theme, setTheme } = useTheme();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const desktopNotificationsAvailable = window.desktopBridge !== undefined;
 
   const isTextGenerationModelDirty = !Equal.equals(
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
   const isBackgroundActivityDirty = hasChangedBackgroundActivitySettings(settings);
+  const desktopNotificationsDirty = !Equal.equals(
+    settings.desktopNotifications,
+    DEFAULT_UNIFIED_SETTINGS.desktopNotifications,
+  );
 
   const changedSettingLabels = useMemo(
     () => [
@@ -619,10 +625,16 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Delete confirmation"]
         : []),
       ...(isTextGenerationModelDirty ? ["Text generation model"] : []),
+      ...(desktopNotificationsAvailable && desktopNotificationsDirty
+        ? ["Desktop notifications"]
+        : []),
     ],
     [
+      desktopNotificationsAvailable,
+      desktopNotificationsDirty,
       isTextGenerationModelDirty,
       isBackgroundActivityDirty,
+      settings.desktopNotifications,
       settings.autoOpenPlanSidebar,
       settings.autoOpenSubagentsPanel,
       settings.confirmThreadArchive,
@@ -676,9 +688,12 @@ export function useSettingsRestore(onRestored?: () => void) {
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
       textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+      ...(desktopNotificationsAvailable
+        ? { desktopNotifications: DEFAULT_UNIFIED_SETTINGS.desktopNotifications }
+        : {}),
     });
     onRestored?.();
-  }, [changedSettingLabels, onRestored, setTheme, updateSettings]);
+  }, [changedSettingLabels, desktopNotificationsAvailable, onRestored, setTheme, updateSettings]);
 
   return {
     changedSettingLabels,
@@ -965,7 +980,6 @@ export function AppearanceSettingsPanel() {
     "--glass-slider-progress": `${glassOpacityRatio * 100}%`,
     "--glass-slider-fill-offset": `${0.5 - glassOpacityRatio}rem`,
   } as CSSProperties;
-
   return (
     <SettingsPageContainer>
       <SettingsSection title="Appearance">
@@ -1134,6 +1148,7 @@ export function GeneralSettingsPanel() {
     otlpMetricsEnabled: observability?.otlpMetricsEnabled ?? false,
     otlpMetricsUrl: observability?.otlpMetricsUrl,
   });
+  const desktopNotificationsAvailable = window.desktopBridge !== undefined;
 
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenInstanceId = textGenerationModelSelection.instanceId;
@@ -1696,6 +1711,84 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
+
+      {desktopNotificationsAvailable ? (
+        <SettingsSection title="Notifications">
+          <SettingsRow
+            title="Desktop notifications"
+            description="Allow the desktop app to notify you about agent and subagent activity."
+            control={
+              <Switch
+                checked={settings.desktopNotifications.enabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({
+                    desktopNotifications: {
+                      ...settings.desktopNotifications,
+                      enabled: Boolean(checked),
+                    },
+                  })
+                }
+                aria-label="Enable desktop notifications"
+              />
+            }
+          />
+          {(
+            [
+              [
+                "attention",
+                "Attention required",
+                "Notify when an agent or subagent needs approval or input.",
+              ],
+              [
+                "agentCompletion",
+                "Agent completion",
+                "Notify when a root agent finishes planning or implementation.",
+              ],
+              [
+                "subagentCompletion",
+                "Subagent completion",
+                "Notify when native or delegated subagents finish.",
+              ],
+              ["failures", "Failures", "Notify when an agent or subagent fails."],
+              [
+                "stopped",
+                "Stopped, cancelled, or paused",
+                "Notify about explicit interruption and suspended subagent work.",
+              ],
+              ["sound", "Sound", "Play the operating system notification sound."],
+              [
+                "notifyWhileViewingThread",
+                "Notify while viewing thread",
+                "Show notifications even when this exact thread is focused.",
+              ],
+            ] as const
+          ).map(([key, title, description]) => (
+            <SettingsRow
+              key={key}
+              title={title}
+              description={description}
+              control={
+                <Switch
+                  checked={settings.desktopNotifications[key]}
+                  disabled={!settings.desktopNotifications.enabled}
+                  onCheckedChange={(checked) =>
+                    updateSettings({
+                      desktopNotifications: {
+                        ...settings.desktopNotifications,
+                        [key]: Boolean(checked),
+                      },
+                    })
+                  }
+                  aria-label={title}
+                />
+              }
+            />
+          ))}
+          {import.meta.env.DEV ? (
+            <DesktopNotificationTestControls sound={settings.desktopNotifications.sound} />
+          ) : null}
+        </SettingsSection>
+      ) : null}
 
       <SettingsSection title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (

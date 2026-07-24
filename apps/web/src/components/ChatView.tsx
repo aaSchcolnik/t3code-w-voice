@@ -5754,6 +5754,7 @@ function ChatViewContent(props: ChatViewProps) {
     ) : activeRightPanelSurface?.kind === "subagents" ? (
       <SubagentsPanel
         runs={subagentRuns}
+        runsAuthoritative={normalizedSubagentRunList.authoritative}
         provider={parentProviderInstance}
         providers={subagentProviderInstances}
         fallbackDriverKind={

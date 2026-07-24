@@ -11,9 +11,15 @@ import { ScrollArea } from "./ui/scroll-area";
 import { SubagentTranscriptPanel } from "./subagents/SubagentTranscriptPanel";
 import { isActiveSubagentStatus, subagentStatusLabel } from "./subagents/subagentRunPresentation";
 import { SubagentMetadataLine } from "./subagents/SubagentMetadataLine";
+import {
+  consumePendingSubagentNotificationActivation,
+  type PendingSubagentNotificationActivation,
+  usePendingSubagentNotificationActivation,
+} from "../desktopNotificationActivation";
 
 interface SubagentsPanelProps {
   runs: ReadonlyArray<SubagentRun>;
+  runsAuthoritative?: boolean;
   provider: ProviderInstanceEntry | undefined;
   providers: ReadonlyArray<ProviderInstanceEntry>;
   fallbackDriverKind: ProviderDriverKind;
@@ -73,6 +79,13 @@ export function partitionSubagentRuns(runs: ReadonlyArray<SubagentRun>): Partiti
     (isActiveSubagentStatus(run.status) ? active : done).push(run);
   }
   return { active, done };
+}
+
+export function subagentRunIdForActivation(
+  runs: ReadonlyArray<SubagentRun>,
+  activation: PendingSubagentNotificationActivation,
+): string | null {
+  return runs.some((run) => run.id === activation.runId) ? String(activation.runId) : null;
 }
 
 export function flattenSubagentRunTree(
@@ -265,6 +278,7 @@ function SubagentSection({
 export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanelProps) {
   const {
     runs,
+    runsAuthoritative = true,
     provider,
     providers,
     fallbackDriverKind,
@@ -275,11 +289,26 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
   } = props;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const pendingActivation = usePendingSubagentNotificationActivation();
 
   useEffect(() => {
     setSelectedId(null);
     setCollapsedIds(new Set());
   }, [threadId]);
+
+  useEffect(() => {
+    if (
+      !runsAuthoritative ||
+      !pendingActivation ||
+      pendingActivation.environmentId !== environmentId ||
+      pendingActivation.threadId !== threadId
+    ) {
+      return;
+    }
+    const activation = consumePendingSubagentNotificationActivation(pendingActivation.nonce);
+    if (!activation) return;
+    setSelectedId(subagentRunIdForActivation(runs, activation));
+  }, [environmentId, pendingActivation, runs, runsAuthoritative, threadId]);
 
   const selectedRun = selectedId ? (runs.find((run) => run.id === selectedId) ?? null) : null;
   if (selectedRun && threadId) {
