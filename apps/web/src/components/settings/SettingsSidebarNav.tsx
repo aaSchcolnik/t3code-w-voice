@@ -1,6 +1,7 @@
 import { useCallback, type ComponentType } from "react";
 import {
   ArchiveIcon,
+  ChartNoAxesColumnIncreasingIcon,
   ArrowLeftIcon,
   BotIcon,
   FlaskConicalIcon,
@@ -36,6 +37,7 @@ export type SettingsSectionPath =
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/providers"
+  | "/settings/usage"
   | "/settings/source-control"
   | "/settings/connections"
   | "/settings/voice"
@@ -54,6 +56,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   { label: "Appearance", to: "/settings/appearance", icon: PaletteIcon },
   { label: "Keybindings", to: "/settings/keybindings", icon: KeyboardIcon },
   { label: "Providers", to: "/settings/providers", icon: BotIcon },
+  { label: "Usage", to: "/settings/usage", icon: ChartNoAxesColumnIncreasingIcon },
   { label: "MCP", to: "/settings/mcp", icon: PlugZapIcon },
   { label: "Skills", to: "/settings/skills", icon: SparklesIcon },
   { label: "Knowledge", to: "/settings/knowledge", icon: LibraryBigIcon },

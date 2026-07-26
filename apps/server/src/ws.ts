@@ -116,6 +116,7 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
+import * as UsageService from "./usage/UsageService.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
@@ -446,6 +447,10 @@ const makeWsRpcLayer = (
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
+      const usageService = Option.getOrElse(
+        yield* Effect.serviceOption(UsageService.UsageService),
+        () => UsageService.unavailableService,
+      );
       const relayClient = yield* RelayClient.RelayClient;
       const projectionProjects = yield* ProjectionProjectRepository;
       const projectSkillScanner = yield* ProjectSkillScanner.ProjectSkillScanner;
@@ -1717,6 +1722,10 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverGetProcessDiagnostics]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetProcessDiagnostics, processDiagnostics.read, {
             "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.usageRead]: (input) =>
+          observeRpcEffect(WS_METHODS.usageRead, usageService.read(input), {
+            "rpc.aggregate": "usage",
           }),
         [WS_METHODS.serverGetProcessResourceHistory]: (input) =>
           observeRpcEffect(

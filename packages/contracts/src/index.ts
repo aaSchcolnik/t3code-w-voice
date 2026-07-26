@@ -37,4 +37,5 @@ export * from "./subagent.ts";
 export * from "./knowledge.ts";
 export * from "./skills.ts";
 export * from "./computerUse.ts";
+export * from "./usage.ts";
 export * from "./rpc.ts";
