@@ -141,6 +141,45 @@ describe("environment RPC", () => {
     }),
   );
 
+  it.effect("does not restart a session-scoped transcription stream after transport failure", () =>
+    Effect.gen(function* () {
+      const subscriptions: string[] = [];
+      const transportError = new RpcClientError.RpcClientError({
+        reason: new RpcClientError.RpcClientDefect({
+          message: "socket closed",
+          cause: new Error("socket closed"),
+        }),
+      });
+      const firstClient = {
+        [WS_METHODS.transcriptionStart]: () => {
+          subscriptions.push("first");
+          return Stream.fail(transportError);
+        },
+      } as unknown as WsRpcProtocolClient;
+      const secondClient = {
+        [WS_METHODS.transcriptionStart]: () => {
+          subscriptions.push("second");
+          return Stream.never;
+        },
+      } as unknown as WsRpcProtocolClient;
+      const { activeSession, supervisor } = yield* makeHarness();
+      yield* SubscriptionRef.set(activeSession, Option.some(session(firstClient)));
+
+      const error = yield* runStream(WS_METHODS.transcriptionStart, {
+        sessionId: "session-scoped",
+      }).pipe(
+        Stream.runDrain,
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.flip,
+      );
+      yield* SubscriptionRef.set(activeSession, Option.some(session(secondClient)));
+      yield* Effect.yieldNow;
+
+      expect(error).toBe(transportError);
+      expect(subscriptions).toEqual(["first"]);
+    }),
+  );
+
   it.effect("switches durable subscriptions when the supervisor replaces the session", () =>
     Effect.gen(function* () {
       const subscriptions: string[] = [];

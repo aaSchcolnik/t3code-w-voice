@@ -39,6 +39,7 @@ import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as TranscriptionServiceModule from "./transcription/TranscriptionService.ts";
+import * as ServerVoiceModelManager from "./transcription/ServerVoiceModelManager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -372,6 +373,7 @@ const RuntimeCoreServicesLive = ReactorLayerLive.pipe(
 const RuntimeCoreDependenciesLive = RuntimeCoreServicesLive.pipe(
   // ASR sidecar lifecycle is a server-wide singleton shared by connected clients.
   Layer.provideMerge(TranscriptionServiceModule.layer),
+  Layer.provideMerge(ServerVoiceModelManager.layer),
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLayerLive),
   Layer.provideMerge(RepositoryIdentityResolver.layer),

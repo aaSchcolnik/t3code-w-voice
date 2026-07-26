@@ -29,6 +29,8 @@ dist-electron/
 .electron-runtime/
 .showcase/
 apps/mobile/.showcase/
+apps/mobile/.derived-data/
+apps/mobile/modules/t3-transcribe/.build/
 artifacts/app-store/screenshots/
 native/**/target/
 node_modules/

@@ -1,0 +1,11 @@
+[
+  {
+    "name": "speech followed by hangover silence finalizes",
+    "sampleRate": 8000,
+    "frames": [
+      { "sample": 0.02, "sampleCount": 800 },
+      { "sample": 0, "sampleCount": 7200 }
+    ],
+    "expected": ["ready", "final", "ended"]
+  }
+]

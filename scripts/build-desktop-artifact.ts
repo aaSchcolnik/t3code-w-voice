@@ -128,7 +128,8 @@ const PLATFORM_CONFIG: Record<typeof BuildPlatform.Type, PlatformConfig> = {
   win: {
     cliFlag: "--win",
     defaultTarget: "nsis",
-    archChoices: ["x64", "arm64"],
+    // transcribe.cpp does not publish a Windows ARM64 runtime package.
+    archChoices: ["x64"],
   },
 };
 
@@ -448,6 +449,32 @@ export class WslNodePtyManifestReadError extends Schema.TaggedErrorClass<WslNode
   }
 }
 
+export class DesktopVoiceNativeArtifactMissingError extends Schema.TaggedErrorClass<DesktopVoiceNativeArtifactMissingError>()(
+  "DesktopVoiceNativeArtifactMissingError",
+  {
+    packageName: Schema.String,
+    expectedPath: Schema.String,
+    platform: BuildPlatform,
+    arch: BuildArch,
+    cause: Schema.optionalKey(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Desktop voice native artifact is missing for ${this.platform}/${this.arch}: ${this.packageName}`;
+  }
+}
+
+export class SignedMacBundleNotFoundError extends Schema.TaggedErrorClass<SignedMacBundleNotFoundError>()(
+  "SignedMacBundleNotFoundError",
+  {
+    distPath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Signed macOS app bundle was not found below ${this.distPath}.`;
+  }
+}
+
 export class LinuxIconResizeError extends Schema.TaggedErrorClass<LinuxIconResizeError>()(
   "LinuxIconResizeError",
   {
@@ -645,6 +672,12 @@ export const DESKTOP_EXTRA_RESOURCES = [
     from: "apps/desktop/prod-resources/resource-monitor",
     to: "resource-monitor",
   },
+] as const;
+export const DESKTOP_ASAR_UNPACK = [
+  "node_modules/@ff-labs/fff-bin-*/**/*",
+  "node_modules/transcribe-cpp/**/*",
+  "node_modules/@transcribe-cpp/**/*",
+  "node_modules/koffi/**/*",
 ] as const;
 
 export interface MacPasskeySigningConfiguration {
@@ -859,6 +892,26 @@ ${associatedDomains}
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+  </dict>
+</plist>
+`;
+}
+
+export function renderMacInheritedEntitlements(): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
   </dict>
 </plist>
 `;
@@ -888,6 +941,48 @@ export function resolveFffNativeDependencies(
       ["gnu", "musl"].map((libc) => [`@ff-labs/fff-bin-linux-${architecture}-${libc}`, version]),
     ),
   );
+}
+
+export interface DesktopVoiceNativeArtifact {
+  readonly packageName: string;
+  readonly libraryFileName: string;
+}
+
+export function resolveTranscribeCppNativeArtifacts(
+  platform: typeof BuildPlatform.Type,
+  arch: typeof BuildArch.Type,
+): readonly DesktopVoiceNativeArtifact[] {
+  const architectures = arch === "universal" ? (["arm64", "x64"] as const) : [arch];
+  if (platform === "win" && architectures.includes("arm64")) {
+    throw new Error(
+      "Windows ARM64 desktop voice packaging is unavailable because transcribe.cpp does not publish a win32-arm64 runtime.",
+    );
+  }
+  if (platform === "mac") {
+    return architectures.map((architecture) => ({
+      packageName: `@transcribe-cpp/darwin-${architecture}-${architecture === "arm64" ? "metal" : "cpu"}`,
+      libraryFileName: "libtranscribe.dylib",
+    }));
+  }
+  if (platform === "linux") {
+    return architectures.map((architecture) => ({
+      packageName: `@transcribe-cpp/linux-${architecture}-cpu-vulkan`,
+      libraryFileName: "libtranscribe.so",
+    }));
+  }
+  return architectures.map((architecture) => ({
+    packageName: `@transcribe-cpp/win32-${architecture}-cpu-vulkan`,
+    libraryFileName: "transcribe.dll",
+  }));
+}
+
+export function resolveKoffiNativePackages(
+  platform: typeof BuildPlatform.Type,
+  arch: typeof BuildArch.Type,
+): readonly string[] {
+  const architectures = arch === "universal" ? (["arm64", "x64"] as const) : [arch];
+  const os = platform === "mac" ? "darwin" : platform === "win" ? "win32" : "linux";
+  return architectures.map((architecture) => `@koromix/koffi-${os}-${architecture}`);
 }
 
 export interface ClerkPasskeyNativeArtifact {
@@ -949,6 +1044,197 @@ const stageClerkPasskeyNativeBinaries = Effect.fn("stageClerkPasskeyNativeBinari
     });
     yield* fs.copyFile(sourcePath, path.join(packageDir, artifact.binaryFileName));
   }
+});
+
+const findFirstFileWithExtension = Effect.fn("findFirstFileWithExtension")(function* (
+  root: string,
+  extension: string,
+): Effect.fn.Return<string | undefined, never, FileSystem.FileSystem | Path.Path> {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const entries = yield* fs.readDirectory(root).pipe(Effect.orElseSucceed(() => []));
+  for (const entry of entries) {
+    const candidate = path.join(root, entry);
+    const stat = yield* fs.stat(candidate).pipe(Effect.orElseSucceed(() => undefined));
+    if (stat?.type === "File" && entry.endsWith(extension)) return candidate;
+    if (stat?.type === "Directory") {
+      const nested = yield* findFirstFileWithExtension(candidate, extension);
+      if (nested !== undefined) return nested;
+    }
+  }
+  return undefined;
+});
+
+/**
+ * Materialize pnpm-linked native packages into the staging tree. The source
+ * paths are resolved before links are removed, so the content-addressable store
+ * remains untouched and electron-builder receives real per-arch directories.
+ */
+export const stageDesktopVoiceNativeArtifacts = Effect.fn("stageDesktopVoiceNativeArtifacts")(
+  function* (input: {
+    readonly stageAppDir: string;
+    readonly platform: typeof BuildPlatform.Type;
+    readonly arch: typeof BuildArch.Type;
+  }) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const transcribeLink = path.join(input.stageAppDir, "node_modules", "transcribe-cpp");
+    const transcribeDir = yield* fs.realPath(transcribeLink).pipe(
+      Effect.mapError(
+        (cause) =>
+          new DesktopVoiceNativeArtifactMissingError({
+            packageName: "transcribe-cpp",
+            expectedPath: transcribeLink,
+            platform: input.platform,
+            arch: input.arch,
+            cause,
+          }),
+      ),
+    );
+    const transcribeEntry = path.join(transcribeDir, "dist", "index.js");
+    const packageRequire = NodeModule.createRequire(transcribeEntry);
+    const nativeArtifacts = resolveTranscribeCppNativeArtifacts(input.platform, input.arch);
+    const nativeSources: Array<{
+      readonly artifact: DesktopVoiceNativeArtifact;
+      readonly directory: string;
+    }> = [];
+    for (const artifact of nativeArtifacts) {
+      const manifestPath = yield* Effect.try({
+        try: () => packageRequire.resolve(`${artifact.packageName}/package.json`),
+        catch: (cause) =>
+          new DesktopVoiceNativeArtifactMissingError({
+            packageName: artifact.packageName,
+            expectedPath: path.join(
+              input.stageAppDir,
+              "node_modules",
+              ...artifact.packageName.split("/"),
+              artifact.libraryFileName,
+            ),
+            platform: input.platform,
+            arch: input.arch,
+            cause,
+          }),
+      });
+      const directory = path.dirname(manifestPath);
+      const libraryPath = path.join(directory, artifact.libraryFileName);
+      if (!(yield* fs.exists(libraryPath))) {
+        return yield* new DesktopVoiceNativeArtifactMissingError({
+          packageName: artifact.packageName,
+          expectedPath: libraryPath,
+          platform: input.platform,
+          arch: input.arch,
+        });
+      }
+      nativeSources.push({ artifact, directory });
+    }
+
+    const koffiEntry = yield* Effect.try({
+      try: () => packageRequire.resolve("koffi"),
+      catch: (cause) =>
+        new DesktopVoiceNativeArtifactMissingError({
+          packageName: "koffi",
+          expectedPath: path.join(input.stageAppDir, "node_modules", "koffi"),
+          platform: input.platform,
+          arch: input.arch,
+          cause,
+        }),
+    });
+    const koffiDir = path.dirname(koffiEntry);
+    const koffiRequire = NodeModule.createRequire(koffiEntry);
+    const koffiSources: Array<{
+      readonly packageName: string;
+      readonly directory: string;
+      readonly addon: string;
+    }> = [];
+    for (const packageName of resolveKoffiNativePackages(input.platform, input.arch)) {
+      const manifestPath = yield* Effect.try({
+        try: () => koffiRequire.resolve(`${packageName}/package.json`),
+        catch: (cause) =>
+          new DesktopVoiceNativeArtifactMissingError({
+            packageName,
+            expectedPath: path.join(input.stageAppDir, "node_modules", ...packageName.split("/")),
+            platform: input.platform,
+            arch: input.arch,
+            cause,
+          }),
+      });
+      const directory = path.dirname(manifestPath);
+      const addon = yield* findFirstFileWithExtension(directory, ".node");
+      if (addon === undefined) {
+        return yield* new DesktopVoiceNativeArtifactMissingError({
+          packageName,
+          expectedPath: path.join(directory, "<platform>", "koffi.node"),
+          platform: input.platform,
+          arch: input.arch,
+        });
+      }
+      koffiSources.push({ packageName, directory, addon });
+    }
+
+    const materialize = Effect.fn("materializeDesktopNativePackage")(function* (
+      source: string,
+      destination: string,
+    ) {
+      if (source === destination) return;
+      yield* fs.remove(destination, { recursive: true, force: true });
+      yield* fs.makeDirectory(path.dirname(destination), { recursive: true });
+      yield* fs.copy(source, destination, { overwrite: true, preserveTimestamps: true });
+    });
+    yield* materialize(transcribeDir, transcribeLink);
+    yield* materialize(koffiDir, path.join(input.stageAppDir, "node_modules", "koffi"));
+    for (const { artifact, directory } of nativeSources) {
+      yield* materialize(
+        directory,
+        path.join(input.stageAppDir, "node_modules", ...artifact.packageName.split("/")),
+      );
+    }
+    for (const { packageName, directory } of koffiSources) {
+      yield* materialize(
+        directory,
+        path.join(input.stageAppDir, "node_modules", ...packageName.split("/")),
+      );
+    }
+
+    return {
+      transcribePackages: nativeArtifacts.map((artifact) => artifact.packageName),
+      koffiPackages: koffiSources.map(({ packageName }) => packageName),
+      koffiAddons: koffiSources.map(({ addon }) => addon),
+    };
+  },
+);
+
+const findMacAppBundle = Effect.fn("findMacAppBundle")(function* (
+  root: string,
+): Effect.fn.Return<string | undefined, never, FileSystem.FileSystem | Path.Path> {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  for (const entry of yield* fs.readDirectory(root).pipe(Effect.orElseSucceed(() => []))) {
+    const candidate = path.join(root, entry);
+    const stat = yield* fs.stat(candidate).pipe(Effect.orElseSucceed(() => undefined));
+    if (stat?.type !== "Directory") continue;
+    if (entry.endsWith(".app")) return candidate;
+    const nested = yield* findMacAppBundle(candidate);
+    if (nested !== undefined) return nested;
+  }
+  return undefined;
+});
+
+const verifySignedMacBundle = Effect.fn("verifySignedMacBundle")(function* (
+  stageDistDir: string,
+  verbose: boolean,
+) {
+  const appBundle = yield* findMacAppBundle(stageDistDir);
+  if (appBundle === undefined) {
+    return yield* new SignedMacBundleNotFoundError({ distPath: stageDistDir });
+  }
+  yield* runCommand(
+    ChildProcess.make("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appBundle]),
+    { label: "codesign verify signed desktop bundle", verbose },
+  );
+  yield* runCommand(
+    ChildProcess.make("spctl", ["--assess", "--type", "execute", "--verbose=2", appBundle]),
+    { label: "spctl assess signed desktop bundle", verbose },
+  );
 });
 
 export function createStageWorkspaceConfig(input: {
@@ -1531,6 +1817,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   macPasskeySigning:
     | {
         readonly entitlementsPath: string;
+        readonly entitlementsInheritPath: string;
         readonly provisioningProfilePath: string;
       }
     | undefined,
@@ -1544,10 +1831,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     directories: {
       buildResources: "apps/desktop/resources",
     },
-    // Only the Windows WSL backend needs files outside the asar (see
-    // WINDOWS_ASAR_UNPACK); macOS and Linux stay packed — smart unpack
-    // extracts native libraries, which fff-node finds in app.asar.unpacked.
-    ...(platform === "win" ? { asarUnpack: [...WINDOWS_ASAR_UNPACK] } : {}),
+    // Voice transcription loads native shared libraries through FFI, so those
+    // packages must be real files on macOS and Linux. Windows already unpacks
+    // the complete dependency tree for its WSL backend.
+    asarUnpack:
+      platform === "win" ? [...WINDOWS_ASAR_UNPACK] : [...DESKTOP_ASAR_UNPACK],
     extraResources: DESKTOP_EXTRA_RESOURCES,
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
@@ -1568,12 +1856,19 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      extendInfo: {
+        NSMicrophoneUsageDescription:
+          "T3 Code uses the microphone only while you are actively dictating a message.",
+      },
       // The hardened runtime denies microphone access (voice dictation) unless
       // the audio-input entitlement is embedded. electron-builder's default
       // entitlements omit it, so we supply our own `entitlements.mac.plist` in
       // buildResources (apps/desktop/resources), which electron-builder
       // auto-detects and resolves to an absolute path for codesign.
       hardenedRuntime: true,
+      entitlements: macPasskeySigning?.entitlementsPath ?? "entitlements.mac.plist",
+      entitlementsInherit:
+        macPasskeySigning?.entitlementsInheritPath ?? "entitlements.mac.inherit.plist",
       protocols: [
         {
           name: "T3 Code",
@@ -1582,7 +1877,6 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ],
       ...(macPasskeySigning
         ? {
-            entitlements: macPasskeySigning.entitlementsPath,
             provisioningProfile: macPasskeySigning.provisioningProfilePath,
           }
         : {}),
@@ -1875,13 +2169,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const macEntitlementsPath = macPasskeySigning
     ? path.join(stageAppDir, "entitlements.mac.plist")
     : undefined;
-  if (macPasskeySigning && macEntitlementsPath) {
+  const macInheritedEntitlementsPath = macPasskeySigning
+    ? path.join(stageAppDir, "entitlements.mac.inherit.plist")
+    : undefined;
+  if (macPasskeySigning && macEntitlementsPath && macInheritedEntitlementsPath) {
     if (!(yield* fs.exists(macPasskeySigning.provisioningProfilePath))) {
       return yield* new MacProvisioningProfileNotFoundError({
         provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
       });
     }
     yield* fs.writeFileString(macEntitlementsPath, renderMacPasskeyEntitlements(macPasskeySigning));
+    yield* fs.writeFileString(macInheritedEntitlementsPath, renderMacInheritedEntitlements());
   }
 
   const stageDependencies = {
@@ -1925,9 +2223,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       options.signed,
       options.mockUpdates,
       options.mockUpdateServerPort,
-      macPasskeySigning && macEntitlementsPath
+      macPasskeySigning && macEntitlementsPath && macInheritedEntitlementsPath
         ? {
             entitlementsPath: macEntitlementsPath,
+            entitlementsInheritPath: macInheritedEntitlementsPath,
             provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
           }
         : undefined,
@@ -1943,7 +2242,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stageWorkspaceConfig = createStageWorkspaceConfig({
     platform: options.platform,
     arch: options.arch,
-    allowBuilds: workspaceAllowBuilds,
+    allowBuilds: {
+      ...workspaceAllowBuilds,
+      // transcribe-cpp loads through Koffi, whose install script selects and
+      // stages the target architecture's N-API addon.
+      koffi: true,
+    },
     patchedDependencies: stagePatchedDependencies,
     overrides: resolvedOverrides,
   });
@@ -1966,6 +2270,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     }),
     { label: "vp install --prod", verbose: options.verbose },
   );
+  yield* stageDesktopVoiceNativeArtifacts({
+    stageAppDir,
+    platform: options.platform,
+    arch: options.arch,
+  });
   yield* stageClerkPasskeyNativeBinaries(stageAppDir, options.platform, options.arch);
 
   // WSL is Windows-only, so only the Windows artifact carries the Linux backend
@@ -2051,6 +2360,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       platform: options.platform,
       arch: options.arch,
     });
+  }
+  if (options.platform === "mac" && options.signed) {
+    yield* verifySignedMacBundle(stageDistDir, options.verbose);
   }
 
   const stageEntries = yield* fs.readDirectory(stageDistDir);

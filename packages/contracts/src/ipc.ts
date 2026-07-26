@@ -87,6 +87,7 @@ import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } fr
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type { ClientSettings } from "./settings.ts";
+import type { DesktopTranscriptionBridge, DesktopVoiceModelsBridge } from "./voice-local.ts";
 import type {
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
@@ -1021,6 +1022,10 @@ export interface DesktopBridge {
    * Electron desktop build; web builds have `preview === undefined`.
    */
   preview?: DesktopPreviewBridge;
+  /** Desktop-only local inference surface. */
+  transcription?: DesktopTranscriptionBridge;
+  /** Desktop-only local voice-model manager surface. */
+  voiceModels?: DesktopVoiceModelsBridge;
 }
 
 export interface DesktopPreviewBridge {

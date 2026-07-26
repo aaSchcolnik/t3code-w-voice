@@ -1,0 +1,4848 @@
+[
+  {
+    "id": "nemotron-3.5-asr-streaming-0.6b",
+    "displayName": "nemotron-3.5-asr-streaming-0.6b",
+    "description": "GGUF conversions of [nvidia/nemotron-3.5-asr-streaming-0.6b](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "en",
+        "es",
+        "fr",
+        "it",
+        "pt",
+        "nl",
+        "de",
+        "tr",
+        "ru",
+        "ar",
+        "hi",
+        "ja",
+        "ko",
+        "vi",
+        "uk",
+        "pl",
+        "sv",
+        "cs",
+        "nb",
+        "da",
+        "bg",
+        "fi",
+        "hr",
+        "sk",
+        "zh",
+        "hu",
+        "ro",
+        "et"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": true
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q4_K_M.gguf",
+        "sha256": "41c99fa5fb6f3d35f68e79adc3e755eca2232a8d921178bd647b71194792b8fd",
+        "sizeBytes": 495831520,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q5_K_M.gguf",
+        "sha256": "86429e8c4f7fdcf9b3312269ad1ca6669478ba7805331c4aea7a2e33e9910d65",
+        "sizeBytes": 559647200,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q6_K.gguf",
+        "sha256": "4ff802c6207c4a7df23242003fd2aa849a1ab02bba6bc80c3db02e7e82606c28",
+        "sizeBytes": 621356512,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf",
+        "sha256": "b94545b313b3223fda7b2857a52681da813935c2127643d1e9ff0c23d988089c",
+        "sizeBytes": 751094240,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-F16.gguf",
+        "sha256": "f21a0cea64d232981def7f8f2b7ab322459703a2e89359962c042c57159755b1",
+        "sizeBytes": 1277750240,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-F32.gguf",
+        "sha256": "fbbc82e8e1084301a670fbc4d79c69c0c8980da506352fd83e74a182f38f5b78",
+        "sizeBytes": 2552277984,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": true
+  },
+  {
+    "id": "parakeet-tdt_ctc-110m",
+    "displayName": "parakeet-tdt_ctc-110m",
+    "description": "GGUF conversions of [nvidia/parakeet-tdt_ctc-110m](https://huggingface.co/nvidia/parakeet-tdt_ctc-110m) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-110m-gguf/resolve/main/parakeet-tdt_ctc-110m-Q4_K_M.gguf",
+        "sha256": "486414fd90185a8c8a4ced7c123cfb133ff4f7958426c6b8bd9049946b56b448",
+        "sizeBytes": 89989600,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-110m-gguf/resolve/main/parakeet-tdt_ctc-110m-Q5_K_M.gguf",
+        "sha256": "1552e707fddb59e3741b66ea917fc91a9381e336a4730739b1d2d448cb013a2e",
+        "sizeBytes": 101335520,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-110m-gguf/resolve/main/parakeet-tdt_ctc-110m-Q6_K.gguf",
+        "sha256": "c20520c245adf82e5166005f599cb3b95e7cf5192117e845be4bbcd39226d483",
+        "sizeBytes": 112311264,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-110m-gguf/resolve/main/parakeet-tdt_ctc-110m-Q8_0.gguf",
+        "sha256": "7dd44c74a331d788a4e5f8b16913b3feb29ced22cf5613aad0e0f6cd30516296",
+        "sizeBytes": 135373280,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-110m-gguf/resolve/main/parakeet-tdt_ctc-110m-F16.gguf",
+        "sha256": "965cc3f8e171286ecb4d4e6646b407a1782a97da9aed22f88d1e0ec6c96b2358",
+        "sizeBytes": 229334560,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-110m-gguf/resolve/main/parakeet-tdt_ctc-110m-F32.gguf",
+        "sha256": "99701a7de4b2435e63efdf43db060f3dce723294fe028afc6f0852f406060d93",
+        "sizeBytes": 456524064,
+        "minRamMb": 3072
+      }
+    ],
+    "featured": true
+  },
+  {
+    "id": "parakeet-tdt-0.6b-v3",
+    "displayName": "parakeet-tdt-0.6b-v3",
+    "description": "GGUF conversions of [nvidia/parakeet-tdt-0.6b-v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "bg",
+        "hr",
+        "cs",
+        "da",
+        "nl",
+        "en",
+        "et",
+        "fi",
+        "fr",
+        "de",
+        "el",
+        "hu",
+        "it",
+        "lv",
+        "lt",
+        "mt",
+        "pl",
+        "pt",
+        "ro",
+        "ru",
+        "sk",
+        "sl",
+        "es",
+        "sv",
+        "uk"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-Q4_K_M.gguf",
+        "sha256": "b68557be1e3c40207fd7c4bd9d63f1d3316b963f15325bfb0cc16a8bb0ffd181",
+        "sizeBytes": 485425504,
+        "minRamMb": 3072,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-Q5_K_M.gguf",
+        "sha256": "cc722e76adc1a629fc0b2535de879d99b8160d07ad4c0215e2ca7d7ea0ae4b8f",
+        "sizeBytes": 548946272,
+        "minRamMb": 3072,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-Q6_K.gguf",
+        "sha256": "ab1bbcbe3e1c4c2ec12ca1df1aeafd22e9043ce7262e4b5f5c5d7d76418a9ae8",
+        "sizeBytes": 610342240,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-Q8_0.gguf",
+        "sha256": "5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7",
+        "sizeBytes": 739508576,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-F16.gguf",
+        "sha256": "d9ec7e2c39da7b4fec3e01e71e82c7f7bbe97741e08c0c054091bf3d520a41d3",
+        "sizeBytes": 1255869856,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-F32.gguf",
+        "sha256": "bbd36acd8c6fbb817e658e3acc9f75002cb6a74932c687e74fefccfcc7b9f47e",
+        "sizeBytes": 2508435616,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": true
+  },
+  {
+    "id": "parakeet-unified-en-0.6b",
+    "displayName": "parakeet-unified-en-0.6b",
+    "description": "GGUF conversions of [nvidia/parakeet-unified-en-0.6b](https://huggingface.co/nvidia/parakeet-unified-en-0.6b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": true
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-Q4_K_M.gguf",
+        "sha256": "a8bf3de2b393bd14ead5a858c3748d5e3b07a20fdeabdd3b498fba4f463fa929",
+        "sizeBytes": 477274496,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-Q5_K_M.gguf",
+        "sha256": "f9def6f9b4e83ab7d006df3e1b676dfa1f973a3b6da232a9c99fcaa66bcd2836",
+        "sizeBytes": 540795264,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-Q6_K.gguf",
+        "sha256": "912c42ec3fd1afa31b7eda45684577feadf413249ca767fa912a89c4810e38d0",
+        "sizeBytes": 602191232,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-Q8_0.gguf",
+        "sha256": "4b50b6dd862bf6e346929aaf4f5eaacec003bfa3f56462d6c874b41ef2f38795",
+        "sizeBytes": 731357568,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-F16.gguf",
+        "sha256": "4a284b229bff9dc66aa00666fdcc2419c0f82a5adb5a36f7a48a4e0713c35492",
+        "sizeBytes": 1239114240,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-F32.gguf",
+        "sha256": "81d3a8c7676324a4dae977dac0f5900dc1468755fdf3b5369261bb759f17fdf3",
+        "sizeBytes": 2473323520,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": true
+  },
+  {
+    "id": "whisper-base",
+    "displayName": "whisper-base",
+    "description": "GGUF conversions of [openai/whisper-base](https://huggingface.co/openai/whisper-base) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "en",
+        "zh",
+        "de",
+        "es",
+        "ru",
+        "ko",
+        "fr",
+        "ja",
+        "pt",
+        "tr",
+        "pl",
+        "ca",
+        "nl",
+        "ar",
+        "sv",
+        "it",
+        "id",
+        "hi",
+        "fi",
+        "vi",
+        "he",
+        "uk",
+        "el",
+        "ms",
+        "cs",
+        "ro",
+        "da",
+        "hu",
+        "ta",
+        "no",
+        "th",
+        "ur",
+        "hr",
+        "bg",
+        "lt",
+        "la",
+        "mi",
+        "ml",
+        "cy",
+        "sk",
+        "te",
+        "fa",
+        "lv",
+        "bn",
+        "sr",
+        "az",
+        "sl",
+        "kn",
+        "et",
+        "mk",
+        "br",
+        "eu",
+        "is",
+        "hy",
+        "ne",
+        "mn",
+        "bs",
+        "kk",
+        "sq",
+        "sw",
+        "gl",
+        "mr",
+        "pa",
+        "si",
+        "km",
+        "sn",
+        "yo",
+        "so",
+        "af",
+        "oc",
+        "ka",
+        "be",
+        "tg",
+        "sd",
+        "gu",
+        "am",
+        "yi",
+        "lo",
+        "uz",
+        "fo",
+        "ht",
+        "ps",
+        "tk",
+        "nn",
+        "mt",
+        "sa",
+        "lb",
+        "my",
+        "bo",
+        "tl",
+        "mg",
+        "as",
+        "tt",
+        "haw",
+        "ln",
+        "ha",
+        "ba",
+        "jw",
+        "su"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base-gguf/resolve/main/whisper-base-Q4_K_M.gguf",
+        "sha256": "78bc9a8cb7e16a3354b262a4c71c0ed4892f6a66b681068f474dfada0729c0ae",
+        "sizeBytes": 58870848,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base-gguf/resolve/main/whisper-base-Q5_K_M.gguf",
+        "sha256": "8e0feb7bc35780353cf31821018e601bb7b7cff6c9a0e17ada5a5db23f4db867",
+        "sizeBytes": 63786048,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base-gguf/resolve/main/whisper-base-Q6_K.gguf",
+        "sha256": "6e4ac95aef48f28b5dd11b0be26a65e785ffbf3682cb076560a27e72206ea740",
+        "sizeBytes": 67865664,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base-gguf/resolve/main/whisper-base-Q8_0.gguf",
+        "sha256": "81c069428bc8a24551a8169cf31cf09bcfd9d4cf50389ae281323c9aa9648c81",
+        "sizeBytes": 84962880,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base-gguf/resolve/main/whisper-base-F16.gguf",
+        "sha256": "38ab6b0ed742e9eded4d5a2ba7fc34d44fc28cdb71d6360f6321d4b306ef8039",
+        "sizeBytes": 151145760,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base-gguf/resolve/main/whisper-base-F32.gguf",
+        "sha256": "ab30724d251b16383fdbcf88698bcca6649eb98c4e102d6a7271a44d608bb4c6",
+        "sizeBytes": 292335904,
+        "minRamMb": 3072
+      }
+    ],
+    "featured": true
+  },
+  {
+    "id": "whisper-large-v3-turbo",
+    "displayName": "whisper-large-v3-turbo",
+    "description": "GGUF conversions of [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "en",
+        "zh",
+        "de",
+        "es",
+        "ru",
+        "ko",
+        "fr",
+        "ja",
+        "pt",
+        "tr",
+        "pl",
+        "ca",
+        "nl",
+        "ar",
+        "sv",
+        "it",
+        "id",
+        "hi",
+        "fi",
+        "vi",
+        "he",
+        "uk",
+        "el",
+        "ms",
+        "cs",
+        "ro",
+        "da",
+        "hu",
+        "ta",
+        "no",
+        "th",
+        "ur",
+        "hr",
+        "bg",
+        "lt",
+        "la",
+        "mi",
+        "ml",
+        "cy",
+        "sk",
+        "te",
+        "fa",
+        "lv",
+        "bn",
+        "sr",
+        "az",
+        "sl",
+        "kn",
+        "et",
+        "mk",
+        "br",
+        "eu",
+        "is",
+        "hy",
+        "ne",
+        "mn",
+        "bs",
+        "kk",
+        "sq",
+        "sw",
+        "gl",
+        "mr",
+        "pa",
+        "si",
+        "km",
+        "sn",
+        "yo",
+        "so",
+        "af",
+        "oc",
+        "ka",
+        "be",
+        "tg",
+        "sd",
+        "gu",
+        "am",
+        "yi",
+        "lo",
+        "uz",
+        "fo",
+        "ht",
+        "ps",
+        "tk",
+        "nn",
+        "mt",
+        "sa",
+        "lb",
+        "my",
+        "bo",
+        "tl",
+        "mg",
+        "as",
+        "tt",
+        "haw",
+        "ln",
+        "ha",
+        "ba",
+        "jw",
+        "su",
+        "yue"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v3-turbo-gguf/resolve/main/whisper-large-v3-turbo-Q4_K_M.gguf",
+        "sha256": "ecfe9b6beb4ab18fef49187cc968cc74b5168b94629c8830e2ca6b794c6e25ed",
+        "sizeBytes": 536069728,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v3-turbo-gguf/resolve/main/whisper-large-v3-turbo-Q5_K_M.gguf",
+        "sha256": "977b5db4e004349dffd1ab9caa10ba5aaba3fc3edd3ba72cadb84328a3203e36",
+        "sizeBytes": 619628128,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v3-turbo-gguf/resolve/main/whisper-large-v3-turbo-Q6_K.gguf",
+        "sha256": "3881dc17bf345f7ce4a3c48327074951e1550c8a1e89fa58d554d9f26a1b6274",
+        "sizeBytes": 692536928,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v3-turbo-gguf/resolve/main/whisper-large-v3-turbo-Q8_0.gguf",
+        "sha256": "b2e30cc286bc9f3aba4db9099fc7403543497c05ce7100d0d83091ddfd25a183",
+        "sizeBytes": 886381760,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v3-turbo-gguf/resolve/main/whisper-large-v3-turbo-F16.gguf",
+        "sha256": "e1d0144e9afc9f479d9e51fc92c7dea9dc36059655eeb3819f16ad2de779046a",
+        "sizeBytes": 1625935520,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": true
+  },
+  {
+    "id": "whisper-small",
+    "displayName": "whisper-small",
+    "description": "GGUF conversions of [openai/whisper-small](https://huggingface.co/openai/whisper-small) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "en",
+        "zh",
+        "de",
+        "es",
+        "ru",
+        "ko",
+        "fr",
+        "ja",
+        "pt",
+        "tr",
+        "pl",
+        "ca",
+        "nl",
+        "ar",
+        "sv",
+        "it",
+        "id",
+        "hi",
+        "fi",
+        "vi",
+        "he",
+        "uk",
+        "el",
+        "ms",
+        "cs",
+        "ro",
+        "da",
+        "hu",
+        "ta",
+        "no",
+        "th",
+        "ur",
+        "hr",
+        "bg",
+        "lt",
+        "la",
+        "mi",
+        "ml",
+        "cy",
+        "sk",
+        "te",
+        "fa",
+        "lv",
+        "bn",
+        "sr",
+        "az",
+        "sl",
+        "kn",
+        "et",
+        "mk",
+        "br",
+        "eu",
+        "is",
+        "hy",
+        "ne",
+        "mn",
+        "bs",
+        "kk",
+        "sq",
+        "sw",
+        "gl",
+        "mr",
+        "pa",
+        "si",
+        "km",
+        "sn",
+        "yo",
+        "so",
+        "af",
+        "oc",
+        "ka",
+        "be",
+        "tg",
+        "sd",
+        "gu",
+        "am",
+        "yi",
+        "lo",
+        "uz",
+        "fo",
+        "ht",
+        "ps",
+        "tk",
+        "nn",
+        "mt",
+        "sa",
+        "lb",
+        "my",
+        "bo",
+        "tl",
+        "mg",
+        "as",
+        "tt",
+        "haw",
+        "ln",
+        "ha",
+        "ba",
+        "jw",
+        "su"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small-gguf/resolve/main/whisper-small-Q4_K_M.gguf",
+        "sha256": "b204d2005a3e5d4fe6153bd61e5e8b32e757ff7b017ac8f61c6f051c2f80e939",
+        "sizeBytes": 171630656,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small-gguf/resolve/main/whisper-small-Q5_K_M.gguf",
+        "sha256": "326cd00c3e7217c751667c7c1600eaf7e0de174e186ca2c16b4bf590251c3c3b",
+        "sizeBytes": 193749056,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small-gguf/resolve/main/whisper-small-Q6_K.gguf",
+        "sha256": "4d14215a972101fff787fc59e30b908ee511c725600317e02c9032cb8799f32d",
+        "sizeBytes": 212107328,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small-gguf/resolve/main/whisper-small-Q8_0.gguf",
+        "sha256": "9b9c8811bbcc82a7766f0fb0925614bdacb0923b2cc630daeac17108b655b860",
+        "sizeBytes": 269751136,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small-gguf/resolve/main/whisper-small-F16.gguf",
+        "sha256": "bef65e1ac9d012269453243243aac0d0f67792693ba6c99b584a124e0ee326fc",
+        "sizeBytes": 492888480,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small-gguf/resolve/main/whisper-small-F32.gguf",
+        "sha256": "6bc797078fdddcc890999130dfc33dfc30d82de5a9115a840ec73853262a9d21",
+        "sizeBytes": 968914848,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": true
+  },
+  {
+    "id": "whisper-tiny",
+    "displayName": "whisper-tiny",
+    "description": "GGUF conversions of [openai/whisper-tiny](https://huggingface.co/openai/whisper-tiny) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "en",
+        "zh",
+        "de",
+        "es",
+        "ru",
+        "ko",
+        "fr",
+        "ja",
+        "pt",
+        "tr",
+        "pl",
+        "ca",
+        "nl",
+        "ar",
+        "sv",
+        "it",
+        "id",
+        "hi",
+        "fi",
+        "vi",
+        "he",
+        "uk",
+        "el",
+        "ms",
+        "cs",
+        "ro",
+        "da",
+        "hu",
+        "ta",
+        "no",
+        "th",
+        "ur",
+        "hr",
+        "bg",
+        "lt",
+        "la",
+        "mi",
+        "ml",
+        "cy",
+        "sk",
+        "te",
+        "fa",
+        "lv",
+        "bn",
+        "sr",
+        "az",
+        "sl",
+        "kn",
+        "et",
+        "mk",
+        "br",
+        "eu",
+        "is",
+        "hy",
+        "ne",
+        "mn",
+        "bs",
+        "kk",
+        "sq",
+        "sw",
+        "gl",
+        "mr",
+        "pa",
+        "si",
+        "km",
+        "sn",
+        "yo",
+        "so",
+        "af",
+        "oc",
+        "ka",
+        "be",
+        "tg",
+        "sd",
+        "gu",
+        "am",
+        "yi",
+        "lo",
+        "uz",
+        "fo",
+        "ht",
+        "ps",
+        "tk",
+        "nn",
+        "mt",
+        "sa",
+        "lb",
+        "my",
+        "bo",
+        "tl",
+        "mg",
+        "as",
+        "tt",
+        "haw",
+        "ln",
+        "ha",
+        "ba",
+        "jw",
+        "su"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny-gguf/resolve/main/whisper-tiny-Q4_K_M.gguf",
+        "sha256": "86e1100470df173fa9079f941e33e4d52d11c03923407dd1ec51fd1937d8e609",
+        "sizeBytes": 43621792,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny-gguf/resolve/main/whisper-tiny-Q5_K_M.gguf",
+        "sha256": "72cfa8ee436a635a5b6fb373cc056a828b9efe96d32d6eb8769ed3cc5b429719",
+        "sizeBytes": 44211616,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny-gguf/resolve/main/whisper-tiny-Q6_K.gguf",
+        "sha256": "e23e79dbc42e90171e050b0e7da00f07e41343547ef09d86588324b3c5672413",
+        "sizeBytes": 44838304,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny-gguf/resolve/main/whisper-tiny-Q8_0.gguf",
+        "sha256": "325b9c7997cd1eff81ef709d55766565e71be696130cc3a3d444713798706834",
+        "sizeBytes": 45981088,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny-gguf/resolve/main/whisper-tiny-F16.gguf",
+        "sha256": "5b44043278b47d3b6e56fb16c6bc5bb0aa16f2e69086f4d67175ed0a30d6a987",
+        "sizeBytes": 80135360,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny-gguf/resolve/main/whisper-tiny-F32.gguf",
+        "sha256": "f5e0ecdd9967173fdede25ceb7e5159b3294f05b8dc0c87b0876fccd36f18982",
+        "sizeBytes": 152997824,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": true
+  },
+  {
+    "id": "Breeze-ASR-25",
+    "displayName": "Breeze-ASR-25",
+    "description": "GGUF conversions of [MediaTek-Research/Breeze-ASR-25](https://huggingface.co/MediaTek-Research/Breeze-ASR-25) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["zh", "en"],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Breeze-ASR-25-gguf/resolve/main/Breeze-ASR-25-Q4_K_M.gguf",
+        "sha256": "cb056e63e5606284637c8a9c6d35e3c544f190dd5d26335466c7e584e61815c4",
+        "sizeBytes": 996526080,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Breeze-ASR-25-gguf/resolve/main/Breeze-ASR-25-Q5_K_M.gguf",
+        "sha256": "c871fc811b33a16a5607c4d4166cfa2c0a1d359f7796e3da255e3e922f59139b",
+        "sizeBytes": 1160366080,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/Breeze-ASR-25-gguf/resolve/main/Breeze-ASR-25-Q6_K.gguf",
+        "sha256": "4c7fe8eed7b36a00dc345e9825fb0f4ac717c38cc5a9292cd552c2f141e3b258",
+        "sizeBytes": 1296353280,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/Breeze-ASR-25-gguf/resolve/main/Breeze-ASR-25-Q8_0.gguf",
+        "sha256": "1650c163cd1623d13b585368ffd87d7e669c5ff23014511e0fa91bb4ce994756",
+        "sizeBytes": 1667964224,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/Breeze-ASR-25-gguf/resolve/main/Breeze-ASR-25-F16.gguf",
+        "sha256": "1ed33e23e1dd7183c7d60e8713d159a61bfa1852019e7a65fd04ec6042a44f98",
+        "sizeBytes": 3106458208,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "canary-180m-flash",
+    "displayName": "canary-180m-flash",
+    "description": "GGUF conversions of [nvidia/canary-180m-flash](https://huggingface.co/nvidia/canary-180m-flash) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "de", "es", "fr"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-180m-flash-gguf/resolve/main/canary-180m-flash-Q4_K_M.gguf",
+        "sha256": "c8ae5758d7d4dc59c48d816474a33544e362ca52c635f96ee0b4b95e1b48f90c",
+        "sizeBytes": 139223744,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-180m-flash-gguf/resolve/main/canary-180m-flash-Q5_K_M.gguf",
+        "sha256": "a87992d84aea5329fa5d70f2eb440d3ae4fe47bd774875374ec381472d348299",
+        "sizeBytes": 158704320,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-180m-flash-gguf/resolve/main/canary-180m-flash-Q6_K.gguf",
+        "sha256": "be28948a5f6d93d59d0edc1f9580936ea30b23296130da02b719aee9f3a59e96",
+        "sizeBytes": 176291520,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-180m-flash-gguf/resolve/main/canary-180m-flash-Q8_0.gguf",
+        "sha256": "e13c7f5d0952b056a027cfffec13e3a3a134d1608babed24f983568f141e297c",
+        "sizeBytes": 218447552,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-180m-flash-gguf/resolve/main/canary-180m-flash-F16.gguf",
+        "sha256": "8042593b341836ac711a617cd483bb2ab7fe05eae14ace27b2488d8ce90ab017",
+        "sizeBytes": 381632192,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-180m-flash-gguf/resolve/main/canary-180m-flash-F32.gguf",
+        "sha256": "f42fce02dc5279545cd540f0e5d51e36b9335b69e11fd98de6e08cc1250fd7ad",
+        "sizeBytes": 756498112,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "canary-1b",
+    "displayName": "canary-1b",
+    "description": "GGUF conversions of [nvidia/canary-1b](https://huggingface.co/nvidia/canary-1b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "de", "es", "fr"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-gguf/resolve/main/canary-1b-Q4_K_M.gguf",
+        "sha256": "ded40db7f9d25e992bf35a0c3c3743e1a7c85d0c30bdbbabd46bca932a47353d",
+        "sizeBytes": 729686848,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-gguf/resolve/main/canary-1b-Q5_K_M.gguf",
+        "sha256": "1139f01aad4ed4208d2c0532cfc25939cbc26cea1e160084c83f40d5b6eaed35",
+        "sizeBytes": 837694272,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-gguf/resolve/main/canary-1b-Q6_K.gguf",
+        "sha256": "ac3a38b09f78e7cfc5ecfcf75b6dd5ca7c77c17669c9c5d6a5f1fb3917b75c73",
+        "sizeBytes": 934167616,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-gguf/resolve/main/canary-1b-Q8_0.gguf",
+        "sha256": "0b5d28516bcde9402d5eba34fc4a79c95b84b27954f05e5f8993d67df2857b62",
+        "sizeBytes": 1162740288,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-gguf/resolve/main/canary-1b-F16.gguf",
+        "sha256": "f40216c503fe14d98b384c31ab18e705fb9c004cb8e6c9976962aae2a369e5ea",
+        "sizeBytes": 2047537728,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-gguf/resolve/main/canary-1b-F32.gguf",
+        "sha256": "b3ec64ca239c1266f83dc8d15ebf6d4b09b2b5aa72a972d3dea1a4c2f3e1fa37",
+        "sizeBytes": 4086100544,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "canary-1b-flash",
+    "displayName": "canary-1b-flash",
+    "description": "GGUF conversions of [nvidia/canary-1b-flash](https://huggingface.co/nvidia/canary-1b-flash) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "de", "es", "fr"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-flash-gguf/resolve/main/canary-1b-flash-Q4_K_M.gguf",
+        "sha256": "2521a615a2b04ab11900d894e1f5c5a70405d85aa74be0806b569b9cc311a707",
+        "sizeBytes": 677141280,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-flash-gguf/resolve/main/canary-1b-flash-Q5_K_M.gguf",
+        "sha256": "7eed3cac92f255a4adbd518c58663d3fbf65984d2619189e593f2d374b05c601",
+        "sizeBytes": 769563424,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-flash-gguf/resolve/main/canary-1b-flash-Q6_K.gguf",
+        "sha256": "3faeb99e16c719047df92fbdcc501ab5cd00edfac83a5e6e7cd69b470d650730",
+        "sizeBytes": 857603872,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-flash-gguf/resolve/main/canary-1b-flash-Q8_0.gguf",
+        "sha256": "9b99e0881d883467e0a03ceb0968dba888c9f8921b73355143ad8b67931e08ce",
+        "sizeBytes": 1048131360,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-flash-gguf/resolve/main/canary-1b-flash-F16.gguf",
+        "sha256": "e87e172694fe6d808fa8844961fb7bc77a4a22063936227c62ac76b6fdbf3dcd",
+        "sizeBytes": 1785657120,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-flash-gguf/resolve/main/canary-1b-flash-F32.gguf",
+        "sha256": "888c24f7d67c3c60d00003bf6a1e3123822afbc47927b7ca931d0b4aaf45305b",
+        "sizeBytes": 3560372000,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "canary-1b-v2",
+    "displayName": "canary-1b-v2",
+    "description": "GGUF conversions of [nvidia/canary-1b-v2](https://huggingface.co/nvidia/canary-1b-v2) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "bg",
+        "hr",
+        "cs",
+        "da",
+        "nl",
+        "en",
+        "et",
+        "fi",
+        "fr",
+        "de",
+        "el",
+        "hu",
+        "it",
+        "lv",
+        "lt",
+        "mt",
+        "pl",
+        "pt",
+        "ro",
+        "sk",
+        "sl",
+        "es",
+        "sv",
+        "ru",
+        "uk"
+      ],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-v2-gguf/resolve/main/canary-1b-v2-Q4_K_M.gguf",
+        "sha256": "49e0a67e219bec95a254c2348460b6350e75a7ac6f93a131e48244b4c7cb53b9",
+        "sizeBytes": 735476448,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-v2-gguf/resolve/main/canary-1b-v2-Q5_K_M.gguf",
+        "sha256": "9c3a893c93795438baf9b4b1c853c39b60316c3a0d259a3ba6e284712f5ddb71",
+        "sizeBytes": 836664032,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-v2-gguf/resolve/main/canary-1b-v2-Q6_K.gguf",
+        "sha256": "6567c2d601fccacf9809fc230edefde05728340f65860bbe91cfd72d0a5eea9d",
+        "sizeBytes": 931986144,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-v2-gguf/resolve/main/canary-1b-v2-Q8_0.gguf",
+        "sha256": "224f83d1bc487b3303b495a7d6874912fdece93de19d1a04b550829c30a5d289",
+        "sizeBytes": 1144290016,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-v2-gguf/resolve/main/canary-1b-v2-F16.gguf",
+        "sha256": "eadda53cd1652d65cd12ff7ac4b7dc64cba1ce9837aae0c86e4222e8db89e320",
+        "sizeBytes": 1966111456,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-1b-v2-gguf/resolve/main/canary-1b-v2-F32.gguf",
+        "sha256": "b0b48b62b2c68f2779c49481de102715c5eaadbe084bca7fdddc7912f9c20e8b",
+        "sizeBytes": 3920657120,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "canary-qwen-2.5b",
+    "displayName": "canary-qwen-2.5b",
+    "description": "GGUF conversions of [nvidia/canary-qwen-2.5b](https://huggingface.co/nvidia/canary-qwen-2.5b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-qwen-2.5b-gguf/resolve/main/canary-qwen-2.5b-Q4_K_M.gguf",
+        "sha256": "db5162229d6fa22597d06a613bd9b543eddb3ee02e6afc5e759120fde02bebf7",
+        "sizeBytes": 1737575808,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-qwen-2.5b-gguf/resolve/main/canary-qwen-2.5b-Q5_K_M.gguf",
+        "sha256": "d71b1d9ae442dc538665ed4df63a69520eb9be769ec0bc78c7d2f40040928306",
+        "sizeBytes": 1983729024,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-qwen-2.5b-gguf/resolve/main/canary-qwen-2.5b-Q6_K.gguf",
+        "sha256": "25dba2a425113e73d626cc3db6148d925cbd7ead6872b631b7ef4d927788be31",
+        "sizeBytes": 2208697728,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-qwen-2.5b-gguf/resolve/main/canary-qwen-2.5b-Q8_0.gguf",
+        "sha256": "d89aad1285d5bd5aa441c464d3a4cf37bd5474f70705408e71558d8627415b34",
+        "sizeBytes": 2797548928,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/canary-qwen-2.5b-gguf/resolve/main/canary-qwen-2.5b-F16.gguf",
+        "sha256": "ae310ac25c1f190b8df4b29a301e936440e1d5306c23d6e5352e29400338ad87",
+        "sizeBytes": 5076972928,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "cohere-transcribe-03-2026",
+    "displayName": "cohere-transcribe-03-2026",
+    "description": "GGUF conversions of [CohereLabs/cohere-transcribe-03-2026](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "en",
+        "fr",
+        "de",
+        "es",
+        "it",
+        "pt",
+        "nl",
+        "pl",
+        "el",
+        "ar",
+        "ja",
+        "zh",
+        "vi",
+        "ko"
+      ],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/cohere-transcribe-03-2026-gguf/resolve/main/cohere-transcribe-03-2026-Q4_K_M.gguf",
+        "sha256": "0ea56826d8bd5d74b7143a4a04e022dc1bb75452cfae49d98b6acb0c1d16a1fb",
+        "sizeBytes": 1558162944,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/cohere-transcribe-03-2026-gguf/resolve/main/cohere-transcribe-03-2026-Q5_K_M.gguf",
+        "sha256": "14d02f1ad6dd77b3a60f82639879012c3adb4fe25c50a5a47a2c4c661daf1558",
+        "sizeBytes": 1770270208,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/cohere-transcribe-03-2026-gguf/resolve/main/cohere-transcribe-03-2026-Q6_K.gguf",
+        "sha256": "094fb65b9d82d4a52db1d944152e4d7b6629f356bb3beaffdd0891eb527f24f3",
+        "sizeBytes": 1972524544,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/cohere-transcribe-03-2026-gguf/resolve/main/cohere-transcribe-03-2026-Q8_0.gguf",
+        "sha256": "931916663432fd895423a4291a8400221802b288967ca2d435fc5e3141c9e71e",
+        "sizeBytes": 2410655232,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/cohere-transcribe-03-2026-gguf/resolve/main/cohere-transcribe-03-2026-F16.gguf",
+        "sha256": "65ea095ba78ed938a613cc950da0599b29e16bb5a22a968d7b1fd99d71f13784",
+        "sizeBytes": 4106644992,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "cohere-transcribe-arabic-07-2026",
+    "displayName": "cohere-transcribe-arabic-07-2026",
+    "description": "GGUF conversions of [CohereLabs/cohere-transcribe-arabic-07-2026](https://huggingface.co/CohereLabs/cohere-transcribe-arabic-07-2026) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ar", "en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/cohere-transcribe-arabic-07-2026-gguf/resolve/main/cohere-transcribe-arabic-07-2026-Q4_K_M.gguf",
+        "sha256": "4671080cd10ffc6166e1e1b36216f9b51e1455f170d55c59cff7b81332ad4621",
+        "sizeBytes": 1558162848,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/cohere-transcribe-arabic-07-2026-gguf/resolve/main/cohere-transcribe-arabic-07-2026-Q5_K_M.gguf",
+        "sha256": "55e61c9b047e36f0e084d367f6b0bfecc71a6a0527da6eea4f0c687f3584775f",
+        "sizeBytes": 1770270112,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/cohere-transcribe-arabic-07-2026-gguf/resolve/main/cohere-transcribe-arabic-07-2026-Q6_K.gguf",
+        "sha256": "f0fc615d27da3236166cd68cf9968c3be7d257b953bbba3b2e10e5d9f3fd1ff4",
+        "sizeBytes": 1972524448,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/cohere-transcribe-arabic-07-2026-gguf/resolve/main/cohere-transcribe-arabic-07-2026-Q8_0.gguf",
+        "sha256": "910de5c9c57f9fd8a280e1701f9cd96f63768878c1ca9e4ecf23638a5e0fef16",
+        "sizeBytes": 2410655136,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/cohere-transcribe-arabic-07-2026-gguf/resolve/main/cohere-transcribe-arabic-07-2026-F16.gguf",
+        "sha256": "c8a37345c10d1cb3b85d7d1779905e63051f39694bd6fdd5002d9434c09226fc",
+        "sizeBytes": 4106644896,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "Fun-ASR-MLT-Nano-2512",
+    "displayName": "Fun-ASR-MLT-Nano-2512",
+    "description": "GGUF conversions of [FunAudioLLM/Fun-ASR-MLT-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-MLT-Nano-2512) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "zh",
+        "en",
+        "yue",
+        "ja",
+        "ko",
+        "vi",
+        "id",
+        "th",
+        "ms",
+        "tl",
+        "ar",
+        "hi",
+        "bg",
+        "hr",
+        "cs",
+        "da",
+        "nl",
+        "et",
+        "fi",
+        "el",
+        "hu",
+        "ga",
+        "lv",
+        "lt",
+        "mt",
+        "pl",
+        "pt",
+        "ro",
+        "sk",
+        "sl",
+        "sv"
+      ],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Fun-ASR-MLT-Nano-2512-gguf/resolve/main/Fun-ASR-MLT-Nano-2512-Q4_K_M.gguf",
+        "sha256": "9232584a27a7dcbcaf13640de8f9c2e7375178ea11e587f90a5328ecf06d58a1",
+        "sizeBytes": 556975168,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Fun-ASR-MLT-Nano-2512-gguf/resolve/main/Fun-ASR-MLT-Nano-2512-Q5_K_M.gguf",
+        "sha256": "5906267c6067d254a2681f40d9eac70c4291ae14fb58ffea4c4cd22a307517ec",
+        "sizeBytes": 631129152,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/Fun-ASR-MLT-Nano-2512-gguf/resolve/main/Fun-ASR-MLT-Nano-2512-Q6_K.gguf",
+        "sha256": "e4ca67cbcb9b12c828b2afbadc871a8128ea3e73890d2747c687b1fac0ac6934",
+        "sizeBytes": 690744384,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/Fun-ASR-MLT-Nano-2512-gguf/resolve/main/Fun-ASR-MLT-Nano-2512-Q8_0.gguf",
+        "sha256": "d12476d8d9f2baa0ebf738fa955fa05ed33a654f1567289033a810c45d9d9002",
+        "sizeBytes": 891271232,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/Fun-ASR-MLT-Nano-2512-gguf/resolve/main/Fun-ASR-MLT-Nano-2512-F16.gguf",
+        "sha256": "ffd1e5258f2cfbc05dc3e467b570a32d5671a6511bcd070cd72f08657108213d",
+        "sizeBytes": 1667504192,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "Fun-ASR-Nano-2512",
+    "displayName": "Fun-ASR-Nano-2512",
+    "description": "GGUF conversions of [FunAudioLLM/Fun-ASR-Nano-2512](https://huggingface.co/FunAudioLLM/Fun-ASR-Nano-2512) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["zh", "en", "ja"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Fun-ASR-Nano-2512-gguf/resolve/main/Fun-ASR-Nano-2512-Q4_K_M.gguf",
+        "sha256": "444885fb7a16211a721e265dfe08c31b31e81fb9e2c4f21ab1079210cd038408",
+        "sizeBytes": 556974848,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Fun-ASR-Nano-2512-gguf/resolve/main/Fun-ASR-Nano-2512-Q5_K_M.gguf",
+        "sha256": "68de7b48ba46b739254fb57486edf7023943cb0af63767ab795d58d6e482096c",
+        "sizeBytes": 631128832,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/Fun-ASR-Nano-2512-gguf/resolve/main/Fun-ASR-Nano-2512-Q6_K.gguf",
+        "sha256": "894153c04fee18f982823e67b9be6ffd83a9e245f92419b3e8170e26c818273b",
+        "sizeBytes": 690744064,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/Fun-ASR-Nano-2512-gguf/resolve/main/Fun-ASR-Nano-2512-Q8_0.gguf",
+        "sha256": "681caef6df15a2c0e153b40ca7fe4087fdf65751fa5e6fe605d8a75dff969e61",
+        "sizeBytes": 891270912,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/Fun-ASR-Nano-2512-gguf/resolve/main/Fun-ASR-Nano-2512-F16.gguf",
+        "sha256": "d754b627ebe8386e565ca9aabc87906d7530d73d2981ec7106fbcc3932febc16",
+        "sizeBytes": 1667503872,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "gigaam-v3-ctc",
+    "displayName": "GigaAM-v3",
+    "description": "GGUF conversions of [ai-sage/GigaAM-v3](https://huggingface.co/ai-sage/GigaAM-v3) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ru"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-ctc-gguf/resolve/main/gigaam-v3-ctc-Q4_K_M.gguf",
+        "sha256": "16b329fed3eaa197f2191506ac3cad72f46502297ed6a0f915c79d2ac08c404e",
+        "sizeBytes": 182150080,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-ctc-gguf/resolve/main/gigaam-v3-ctc-Q5_K_M.gguf",
+        "sha256": "2002cd7603b99c318b52a88047d6676e69218083014f19b11c84da0223fb2023",
+        "sizeBytes": 204563392,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-ctc-gguf/resolve/main/gigaam-v3-ctc-Q6_K.gguf",
+        "sha256": "7556f1c8b9ed0f93b3e224d14a954b51cc331c5a3d2be0f5988bd0523b962c7f",
+        "sizeBytes": 226091968,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-ctc-gguf/resolve/main/gigaam-v3-ctc-Q8_0.gguf",
+        "sha256": "71e5c82890e9e243a6bd7575f129f5d1bd2c3ca3ae79aab75cfb1a6934c6a62b",
+        "sizeBytes": 271803328,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-ctc-gguf/resolve/main/gigaam-v3-ctc-F16.gguf",
+        "sha256": "1d958ddf73abf722e320ee36212190e9bdfc6bfdc89778d2e4deeaaeb5bce443",
+        "sizeBytes": 448750528,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-ctc-gguf/resolve/main/gigaam-v3-ctc-F32.gguf",
+        "sha256": "0feb1fdebf57d6b16769391e23d87e8bdba69549b6cf8864cbcbaa3b0f9caab6",
+        "sizeBytes": 882913216,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "gigaam-v3-e2e-ctc",
+    "displayName": "GigaAM-v3",
+    "description": "GGUF conversions of [ai-sage/GigaAM-v3](https://huggingface.co/ai-sage/GigaAM-v3) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ru"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-ctc-gguf/resolve/main/gigaam-v3-e2e-ctc-Q4_K_M.gguf",
+        "sha256": "35581e11e048eef785657cff07e5fced794bba6d9c75143257f6452c8aeea655",
+        "sizeBytes": 182497888,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-ctc-gguf/resolve/main/gigaam-v3-e2e-ctc-Q5_K_M.gguf",
+        "sha256": "d7c6a729f9bae8714d05cb7e66149e662c5098fe10b66206b70f4917f4f84004",
+        "sizeBytes": 204911200,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-ctc-gguf/resolve/main/gigaam-v3-e2e-ctc-Q6_K.gguf",
+        "sha256": "cb517247ae37589c5b281d6d9331ffb32124c77b789affe46a272be1428a5260",
+        "sizeBytes": 226439776,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-ctc-gguf/resolve/main/gigaam-v3-e2e-ctc-Q8_0.gguf",
+        "sha256": "9ccce4750dc813a493d96ca15ee251712bedec15ac9a02fa3d2bd732f08ae5eb",
+        "sizeBytes": 272151136,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-ctc-gguf/resolve/main/gigaam-v3-e2e-ctc-F16.gguf",
+        "sha256": "25a2fd66a50912645307bca1489b8c07e9060ef079b61a7cce0041248cc89b4a",
+        "sizeBytes": 449098336,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-ctc-gguf/resolve/main/gigaam-v3-e2e-ctc-F32.gguf",
+        "sha256": "bf300323d1bc67bee5e9f177a5fae748d78077528c27de73ecc6d7a113e09ec5",
+        "sizeBytes": 883603552,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "gigaam-v3-e2e-rnnt",
+    "displayName": "GigaAM-v3",
+    "description": "GGUF conversions of [ai-sage/GigaAM-v3](https://huggingface.co/ai-sage/GigaAM-v3) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ru"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf/resolve/main/gigaam-v3-e2e-rnnt-Q4_K_M.gguf",
+        "sha256": "7d69952fb431a8d7800ed9910dc61fea37d8406bfe96d10bf24c8bd4b7c68623",
+        "sizeBytes": 183948704,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf/resolve/main/gigaam-v3-e2e-rnnt-Q5_K_M.gguf",
+        "sha256": "0f5969b05f7e196e8922e243c64963132025a5ae7ec2f83d028ae120d201594f",
+        "sizeBytes": 206392736,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf/resolve/main/gigaam-v3-e2e-rnnt-Q6_K.gguf",
+        "sha256": "1ef0f771d9ab0b0675c45ce67a3e5b79ac7497fe35ebb08a51704c4ee423edce",
+        "sizeBytes": 227953952,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf/resolve/main/gigaam-v3-e2e-rnnt-Q8_0.gguf",
+        "sha256": "78d63b47723b7f8d78c6113a6ef983b5a86e2a86f6c273e1f5cb6967b1c4467a",
+        "sizeBytes": 273724832,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf/resolve/main/gigaam-v3-e2e-rnnt-F16.gguf",
+        "sha256": "87b12fa3523939d3c47c4b427f587e415dda41dcafa9e4ba17f2a1cab2f0d5ad",
+        "sizeBytes": 452381408,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-e2e-rnnt-gguf/resolve/main/gigaam-v3-e2e-rnnt-F32.gguf",
+        "sha256": "0de6fa626b8a3429dc80e4b34c4b03c0e85b02e2eca4c654efbeb27a8a0a4c5b",
+        "sizeBytes": 890138592,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "gigaam-v3-rnnt",
+    "displayName": "GigaAM-v3",
+    "description": "GGUF conversions of [ai-sage/GigaAM-v3](https://huggingface.co/ai-sage/GigaAM-v3) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ru"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-rnnt-gguf/resolve/main/gigaam-v3-rnnt-Q4_K_M.gguf",
+        "sha256": "33b09558330ccfdc5c156e6d6b57c89759a0ac3b653bcdfcd5f1e13f20fc1e76",
+        "sizeBytes": 183246752,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-rnnt-gguf/resolve/main/gigaam-v3-rnnt-Q5_K_M.gguf",
+        "sha256": "3541b4e6b2c3909e99254bcb7c61565137038f24db5651a779885d0c08257348",
+        "sizeBytes": 205690784,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-rnnt-gguf/resolve/main/gigaam-v3-rnnt-Q6_K.gguf",
+        "sha256": "ee329ee6ef93b5da62e1915927278a9930b04ac95b2735e7c80e64b725f3f82d",
+        "sizeBytes": 227252000,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-rnnt-gguf/resolve/main/gigaam-v3-rnnt-Q8_0.gguf",
+        "sha256": "130d54450be2922144b265d90d453b781fc2b5adaee52a16954b00f3686201f7",
+        "sizeBytes": 273022880,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-rnnt-gguf/resolve/main/gigaam-v3-rnnt-F16.gguf",
+        "sha256": "b1fe43be121c64934e464c2320c576d74de1466cb7e91f2d8c2aa1149ebe8572",
+        "sizeBytes": 451084832,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/gigaam-v3-rnnt-gguf/resolve/main/gigaam-v3-rnnt-F32.gguf",
+        "sha256": "6e02744a354fd44e50af9a3cb555de417d7be7163ab79561ad7ff42796990df9",
+        "sizeBytes": 887573536,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "granite-4.0-1b-speech",
+    "displayName": "granite-4.0-1b-speech",
+    "description": "GGUF conversions of [ibm-granite/granite-4.0-1b-speech](https://huggingface.co/ibm-granite/granite-4.0-1b-speech) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "fr", "de", "es", "pt", "ja"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-4.0-1b-speech-gguf/resolve/main/granite-4.0-1b-speech-Q4_K_M.gguf",
+        "sha256": "eacd9bc06063a3fdb6bf904a2a82c2646d504922c6e4e5eb1988d61e780884d1",
+        "sizeBytes": 1602904800,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-4.0-1b-speech-gguf/resolve/main/granite-4.0-1b-speech-Q5_K_M.gguf",
+        "sha256": "f5e371d2a894e5b30dce793d573df2a965d7705488750b4ef5a6cad1069e2572",
+        "sizeBytes": 1829704544,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-4.0-1b-speech-gguf/resolve/main/granite-4.0-1b-speech-Q6_K.gguf",
+        "sha256": "b50af8f3c99767f87ccae800589688096678d086daba5e482f6da14e59e2f99c",
+        "sizeBytes": 2024967936,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-4.0-1b-speech-gguf/resolve/main/granite-4.0-1b-speech-Q8_0.gguf",
+        "sha256": "1a48716efce9468bc99f33619e15942ae6a262f7ef51883c3c39b519302a533f",
+        "sizeBytes": 2559878848,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-4.0-1b-speech-gguf/resolve/main/granite-4.0-1b-speech-F16.gguf",
+        "sha256": "443e5f2cb8ab47dbef8ddaba20823ff5d928662565eb16b2164215f281ec4053",
+        "sizeBytes": 4632623104,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "granite-speech-4.1-2b",
+    "displayName": "granite-speech-4.1-2b",
+    "description": "GGUF conversions of [ibm-granite/granite-speech-4.1-2b](https://huggingface.co/ibm-granite/granite-speech-4.1-2b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "fr", "de", "es", "pt", "ja"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-gguf/resolve/main/granite-speech-4.1-2b-Q4_K_M.gguf",
+        "sha256": "3171de08a99315481f0eac1979cbc0684911631d59907b2fe1e189dbcdce135f",
+        "sizeBytes": 1602904800,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-gguf/resolve/main/granite-speech-4.1-2b-Q5_K_M.gguf",
+        "sha256": "63e0d3a82fa6f0f4688af0b7d7ee784864d271b7be820f4ea43c8298c59b0ac5",
+        "sizeBytes": 1829704544,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-gguf/resolve/main/granite-speech-4.1-2b-Q6_K.gguf",
+        "sha256": "f2de8601facb83a5be83aa61198366b2e9cae739ded451c70abcd710f43d8877",
+        "sizeBytes": 2024967936,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-gguf/resolve/main/granite-speech-4.1-2b-Q8_0.gguf",
+        "sha256": "8c0b2dce2861feb1dba91e9d59f2ab4a9c23ad808bff86465151576e096ec7a6",
+        "sizeBytes": 2559878848,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-gguf/resolve/main/granite-speech-4.1-2b-F16.gguf",
+        "sha256": "28285a4aafc3979a6587084fa0166556e97aaeea55204546036b95f6f0dbb48e",
+        "sizeBytes": 4632623104,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "granite-speech-4.1-2b-nar",
+    "displayName": "granite-speech-4.1-2b-nar",
+    "description": "GGUF conversions of [ibm-granite/granite-speech-4.1-2b-nar](https://huggingface.co/ibm-granite/granite-speech-4.1-2b-nar) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "fr", "de", "es", "pt"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-nar-gguf/resolve/main/granite-speech-4.1-2b-nar-Q4_K_M.gguf",
+        "sha256": "68537a51d4d6d5a6be6e50f735a08af16646afba70fe8ab80dfe60ba7623325f",
+        "sizeBytes": 1560008832,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-nar-gguf/resolve/main/granite-speech-4.1-2b-nar-Q5_K_M.gguf",
+        "sha256": "88d7c7b5b8b59c95bb6580a1e7d5d81cae63943cef71405ff477527b0bb69fca",
+        "sizeBytes": 1782089344,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-nar-gguf/resolve/main/granite-speech-4.1-2b-nar-Q6_K.gguf",
+        "sha256": "cfdcdf223a8132ab58bd983df43e277d84056f2a4bf2115fdbc1d40d387f42e1",
+        "sizeBytes": 1977417568,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-nar-gguf/resolve/main/granite-speech-4.1-2b-nar-Q8_0.gguf",
+        "sha256": "4762df797b9efa1ce0d73d2f5128517c86fdfdba2e9d00cd5cca97e624760b21",
+        "sizeBytes": 2498105472,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-nar-gguf/resolve/main/granite-speech-4.1-2b-nar-F16.gguf",
+        "sha256": "433c4925b3c7fdfea037a343eed60e4c9655acc25d293131ec6f71fd42dfe93f",
+        "sizeBytes": 4515792768,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "granite-speech-4.1-2b-plus",
+    "displayName": "granite-speech-4.1-2b-plus",
+    "description": "GGUF conversions of [ibm-granite/granite-speech-4.1-2b-plus](https://huggingface.co/ibm-granite/granite-speech-4.1-2b-plus) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "fr", "de", "es", "pt"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-plus-gguf/resolve/main/granite-speech-4.1-2b-plus-Q4_K_M.gguf",
+        "sha256": "5d52b6bb9bc2b504120448b4da61aeb383da3c1bcfe88b22c6ed667f2520206f",
+        "sizeBytes": 1489663424,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-plus-gguf/resolve/main/granite-speech-4.1-2b-plus-Q5_K_M.gguf",
+        "sha256": "3415f2c2d5979ded038dc012e5a875d77602fa5a0699cc75ee7fa47991f42530",
+        "sizeBytes": 1691297088,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-plus-gguf/resolve/main/granite-speech-4.1-2b-plus-Q6_K.gguf",
+        "sha256": "fe281f479ea53ad41d5d1e4d29f1c7174177803717c9b63771416312a3838817",
+        "sizeBytes": 1859821504,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-plus-gguf/resolve/main/granite-speech-4.1-2b-plus-Q8_0.gguf",
+        "sha256": "a2ffe6c8db730f3eb3719ad0ac27016cad30c87b18cd33e214c7b2083e38ce10",
+        "sizeBytes": 2345973152,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/granite-speech-4.1-2b-plus-gguf/resolve/main/granite-speech-4.1-2b-plus-F16.gguf",
+        "sha256": "a9eba6a2df0d446c8c5020404abe6c9e3da0d077f010f772481ef1f221957c02",
+        "sizeBytes": 4229971808,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "medasr",
+    "displayName": "medasr",
+    "description": "GGUF conversions of [google/medasr](https://huggingface.co/google/medasr) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/medasr-gguf/resolve/main/medasr-Q4_K_M.gguf",
+        "sha256": "b23b52db7e1e17a5a21c24f3b78add04e1055bbe026b7c7196324c34ab6f3e2f",
+        "sizeBytes": 83082432,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/medasr-gguf/resolve/main/medasr-Q5_K_M.gguf",
+        "sha256": "873c90a9a78d98446b5e02506073108496df6ff2d062d26f5f7b90f6f1368f1f",
+        "sizeBytes": 94239936,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/medasr-gguf/resolve/main/medasr-Q6_K.gguf",
+        "sha256": "59be9d324cde3a64c813383e7090b3009713e261bf7fdce90b48e2f7bcbc28fa",
+        "sizeBytes": 106094784,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/medasr-gguf/resolve/main/medasr-Q8_0.gguf",
+        "sha256": "5a391a2154416b96241b829ac2c7eed8b64d197f00372512c9bbf63f4849c978",
+        "sizeBytes": 127712448,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/medasr-gguf/resolve/main/medasr-F16.gguf",
+        "sha256": "70e51cf5da1d3ea0838cf6d94a19f3dc1fdf28b24d8665589f43c50eaf429580",
+        "sizeBytes": 211455168,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/medasr-gguf/resolve/main/medasr-F32.gguf",
+        "sha256": "4b1b5b3a3092b96299624788b4eb28d04f7c66c447f0953c0216285c518f2ed5",
+        "sizeBytes": 421301440,
+        "minRamMb": 3072
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-base",
+    "displayName": "moonshine-base",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-base](https://huggingface.co/UsefulSensors/moonshine-base) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-gguf/resolve/main/moonshine-base-Q8_0.gguf",
+        "sha256": "7f0027dfd857d310b63a85ef57cadf183da712cc374f85a648f8bc18aaa2efc8",
+        "sizeBytes": 77476480,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-gguf/resolve/main/moonshine-base-F16.gguf",
+        "sha256": "c7a158ae0ad47c887041372e97c874e98c11eb0d8eff01279723dde65b358702",
+        "sizeBytes": 131789440,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-gguf/resolve/main/moonshine-base-F32.gguf",
+        "sha256": "b19a36db5a91e4f25cc527c5ed87f774fd037aee8ceec774397c19b7198199fb",
+        "sizeBytes": 247657088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-base-ar",
+    "displayName": "moonshine-base-ar",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-base-ar](https://huggingface.co/UsefulSensors/moonshine-base-ar) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ar"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-ar-gguf/resolve/main/moonshine-base-ar-Q8_0.gguf",
+        "sha256": "1a5b34653dfff0917d5bc7de1aeafca674162a5efa674472358d1b7f1644cf73",
+        "sizeBytes": 77476480,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-ar-gguf/resolve/main/moonshine-base-ar-F16.gguf",
+        "sha256": "9a70242ad42fb130a417c11127f5e7ad227c03b0c4a287fa60757efa3cccd714",
+        "sizeBytes": 131789440,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-ar-gguf/resolve/main/moonshine-base-ar-F32.gguf",
+        "sha256": "5c0f54279e41c195c5b5c288cdee94b0960bdc8be518dfd22aac11850254fb2b",
+        "sizeBytes": 247657088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-base-ja",
+    "displayName": "moonshine-base-ja",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-base-ja](https://huggingface.co/UsefulSensors/moonshine-base-ja) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ja"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-ja-gguf/resolve/main/moonshine-base-ja-Q8_0.gguf",
+        "sha256": "8ee6e9d7c9df69a3ea654af77659f1c0c08bf90998c2e2a269826096ffafc4f0",
+        "sizeBytes": 77476480,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-ja-gguf/resolve/main/moonshine-base-ja-F16.gguf",
+        "sha256": "a3fb02bb2f6d6b5082818fb60cbc816a20e3865502adca2e1fd94068b29e5d2b",
+        "sizeBytes": 131789440,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-ja-gguf/resolve/main/moonshine-base-ja-F32.gguf",
+        "sha256": "649f65dbc795d9fd4cf23f2123a09cdcdffba7e071891caa39e60d6a84c19082",
+        "sizeBytes": 247657088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-base-ko",
+    "displayName": "moonshine-base-ko",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-base-ko](https://huggingface.co/UsefulSensors/moonshine-base-ko) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ko"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-ko-gguf/resolve/main/moonshine-base-ko-Q8_0.gguf",
+        "sha256": "b430672cfdde98b894bd98adf1a8b3470308fea39ad1e6bb0f54d8fc9e114471",
+        "sizeBytes": 77476480,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-ko-gguf/resolve/main/moonshine-base-ko-F16.gguf",
+        "sha256": "79b29fd6803723b7884824710aebef743f068e2db0fc3ad0488bc16b05b69c2c",
+        "sizeBytes": 131789440,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-ko-gguf/resolve/main/moonshine-base-ko-F32.gguf",
+        "sha256": "7b4a358a883537ce5584f867c683f1850027ddb842c7cdb526b6b4704402eeb1",
+        "sizeBytes": 247657088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-base-uk",
+    "displayName": "moonshine-base-uk",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-base-uk](https://huggingface.co/UsefulSensors/moonshine-base-uk) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["uk"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-uk-gguf/resolve/main/moonshine-base-uk-Q8_0.gguf",
+        "sha256": "6dcac8c3905706e8c8416f531a479eccaa38cdaf1eae439f776fda4d4faa88d3",
+        "sizeBytes": 77476512,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-uk-gguf/resolve/main/moonshine-base-uk-F16.gguf",
+        "sha256": "e603b1e70da31060b0094f34732996156ec8e89cb1068e2f2cf64a91c3ea6cff",
+        "sizeBytes": 131789472,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-uk-gguf/resolve/main/moonshine-base-uk-F32.gguf",
+        "sha256": "2d230e76f32e4e9e818b53c0abe70cfb65c15e1ee28170bcc324bce0470e7c4b",
+        "sizeBytes": 247657120,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-base-vi",
+    "displayName": "moonshine-base-vi",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-base-vi](https://huggingface.co/UsefulSensors/moonshine-base-vi) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["vi"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-vi-gguf/resolve/main/moonshine-base-vi-Q8_0.gguf",
+        "sha256": "d382ec7ac6aa821d25b921ab982bf1bf29da591cad73372b65209c6a74decb36",
+        "sizeBytes": 77476512,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-vi-gguf/resolve/main/moonshine-base-vi-F16.gguf",
+        "sha256": "1406f7c80cad755f93d4915d21fbcf5e65f19d4c93e8a3966f970a6a4d6f7068",
+        "sizeBytes": 131789472,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-vi-gguf/resolve/main/moonshine-base-vi-F32.gguf",
+        "sha256": "b04a66041ac50f0274668e17ec62a9ec93bdae23af39b98cc0923fbca2ff2c72",
+        "sizeBytes": 247657120,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-base-zh",
+    "displayName": "moonshine-base-zh",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-base-zh](https://huggingface.co/UsefulSensors/moonshine-base-zh) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["zh"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-zh-gguf/resolve/main/moonshine-base-zh-Q8_0.gguf",
+        "sha256": "1bae1d753b29b0c34038585b576d28e4f262ed10c6c7217e023fa5d624dc15ad",
+        "sizeBytes": 77476480,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-zh-gguf/resolve/main/moonshine-base-zh-F16.gguf",
+        "sha256": "bead0492ab45cee75411d5e59e95a5e796b86ab6cde3bfee4613c02cba9f2e35",
+        "sizeBytes": 131789440,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-base-zh-gguf/resolve/main/moonshine-base-zh-F32.gguf",
+        "sha256": "1a54db0bec02f81730e6378b185f807cdf9065a477c7171f01914ca917408673",
+        "sizeBytes": 247657088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-streaming-medium",
+    "displayName": "moonshine-streaming-medium",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-streaming-medium](https://huggingface.co/UsefulSensors/moonshine-streaming-medium) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": true
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-streaming-medium-gguf/resolve/main/moonshine-streaming-medium-Q8_0.gguf",
+        "sha256": "f7c9564249b508f6012927ec4f9e536087da53a7047f858ca9975bea5f75299e",
+        "sizeBytes": 295793568,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-streaming-medium-gguf/resolve/main/moonshine-streaming-medium-F16.gguf",
+        "sha256": "cf2ab2c366df44e8885e1c127c23275dc9a0aa0d10557c2fec325506058b9de8",
+        "sizeBytes": 533781408,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-streaming-medium-gguf/resolve/main/moonshine-streaming-medium-F32.gguf",
+        "sha256": "70b4fad683358feba54631e440b4ee9d813a416e239c4cf163f422189dfef03f",
+        "sizeBytes": 1065204640,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-streaming-small",
+    "displayName": "moonshine-streaming-small",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-streaming-small](https://huggingface.co/UsefulSensors/moonshine-streaming-small) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": true
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-streaming-small-gguf/resolve/main/moonshine-streaming-small-Q8_0.gguf",
+        "sha256": "d03670f69629b649085d0f44a63d97668b4119117cc9611a4e4ad94341713dfc",
+        "sizeBytes": 198506848,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-streaming-small-gguf/resolve/main/moonshine-streaming-small-F16.gguf",
+        "sha256": "4e0b872dd11072c3b6ae06a25e832d4eb29281ae0d6931992d1c58889c65eb2f",
+        "sizeBytes": 282092128,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-streaming-small-gguf/resolve/main/moonshine-streaming-small-F32.gguf",
+        "sha256": "cb231274a2c402d42376e5f25378d17f8b229f530cb06cef6e6cf812d39a5dc3",
+        "sizeBytes": 562146912,
+        "minRamMb": 3072
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-streaming-tiny",
+    "displayName": "moonshine-streaming-tiny",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-streaming-tiny](https://huggingface.co/UsefulSensors/moonshine-streaming-tiny) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": true
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-streaming-tiny-gguf/resolve/main/moonshine-streaming-tiny-Q8_0.gguf",
+        "sha256": "930e4622ad3a24158b91406c30c977fa6a26b34cb32d6ac3e57cfb23383a869e",
+        "sizeBytes": 50462816,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-streaming-tiny-gguf/resolve/main/moonshine-streaming-tiny-F16.gguf",
+        "sha256": "cfe64aacd68b0c4244369c04dab9828e324f005e4799af5ec33bbc1d37ebd681",
+        "sizeBytes": 89784416,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-streaming-tiny-gguf/resolve/main/moonshine-streaming-tiny-F32.gguf",
+        "sha256": "38ad83ec7a9db0b23be02f71fea1615ef8403eb28e79a915668d26026415d5f6",
+        "sizeBytes": 177817696,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-tiny",
+    "displayName": "moonshine-tiny",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-tiny](https://huggingface.co/UsefulSensors/moonshine-tiny) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-gguf/resolve/main/moonshine-tiny-Q8_0.gguf",
+        "sha256": "2fd348d7b38f97d309cc3ec6848f3f57f537b80244950f07d2637e463f95a3a1",
+        "sizeBytes": 35466912,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-gguf/resolve/main/moonshine-tiny-F16.gguf",
+        "sha256": "d115694627d146c347ac5209db69db48b3125b07971026a6119b1888db7563d3",
+        "sizeBytes": 59244192,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-gguf/resolve/main/moonshine-tiny-F32.gguf",
+        "sha256": "67e50023e13f295d6efb8500b69a538019ff7c2dd4b577e425260048e8035418",
+        "sizeBytes": 109969056,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-tiny-ar",
+    "displayName": "moonshine-tiny-ar",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-tiny-ar](https://huggingface.co/UsefulSensors/moonshine-tiny-ar) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ar"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-ar-gguf/resolve/main/moonshine-tiny-ar-Q8_0.gguf",
+        "sha256": "e0bfa7c3aad2fe7acce022566daa1bb6140b6b263ba79655241acec7f7e0000b",
+        "sizeBytes": 35466944,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-ar-gguf/resolve/main/moonshine-tiny-ar-F16.gguf",
+        "sha256": "209dd912f51f04a67977d0d93ea7363b0190786c3d7e1a2fbbbd0e94c4001aad",
+        "sizeBytes": 59244224,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-ar-gguf/resolve/main/moonshine-tiny-ar-F32.gguf",
+        "sha256": "39cacdf5c240930cca65c06eb176eb49c25aa59dd2a425cc8c04a0a14bc9cc64",
+        "sizeBytes": 109969088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-tiny-ja",
+    "displayName": "moonshine-tiny-ja",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-tiny-ja](https://huggingface.co/UsefulSensors/moonshine-tiny-ja) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ja"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-ja-gguf/resolve/main/moonshine-tiny-ja-Q8_0.gguf",
+        "sha256": "b47da12b2238cd176d9deebf31d49803c9eb4e99de5fd3abf672b4c0e2773c26",
+        "sizeBytes": 35466944,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-ja-gguf/resolve/main/moonshine-tiny-ja-F16.gguf",
+        "sha256": "5a8b7960b119d1d2a947509ca9b4be6e71f6759973d5c200283335bfddd8cb43",
+        "sizeBytes": 59244224,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-ja-gguf/resolve/main/moonshine-tiny-ja-F32.gguf",
+        "sha256": "4c87575b72de88ba148ffd0fa87c8cde20e0761974a6fed458822131a71e239b",
+        "sizeBytes": 109969088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-tiny-ko",
+    "displayName": "moonshine-tiny-ko",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-tiny-ko](https://huggingface.co/UsefulSensors/moonshine-tiny-ko) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["ko"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-ko-gguf/resolve/main/moonshine-tiny-ko-Q8_0.gguf",
+        "sha256": "3ffe3340ceed10843789e2f7bf580097213c97a3537cae7031dbfe2a409b36b7",
+        "sizeBytes": 35466944,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-ko-gguf/resolve/main/moonshine-tiny-ko-F16.gguf",
+        "sha256": "4228c8e92d6308166f96708de35af09318d624c3c1495e80eb8f6180790edd5d",
+        "sizeBytes": 59244224,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-ko-gguf/resolve/main/moonshine-tiny-ko-F32.gguf",
+        "sha256": "1a13e4a0b7a97c9974ca1f88b275f8e43bf6453225cf549712efe4ec7aa1ad40",
+        "sizeBytes": 109969088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-tiny-uk",
+    "displayName": "moonshine-tiny-uk",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-tiny-uk](https://huggingface.co/UsefulSensors/moonshine-tiny-uk) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["uk"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-uk-gguf/resolve/main/moonshine-tiny-uk-Q8_0.gguf",
+        "sha256": "61c372f6d99cce6c7b7c45626a51a6c935217368e715d9c4e036ce85f4496338",
+        "sizeBytes": 35466944,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-uk-gguf/resolve/main/moonshine-tiny-uk-F16.gguf",
+        "sha256": "08521642651a398a6c7afac28395ce5cc6938d30f9563bde4c13fe898438ff69",
+        "sizeBytes": 59244224,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-uk-gguf/resolve/main/moonshine-tiny-uk-F32.gguf",
+        "sha256": "7c2bf9f4562f9c094f12fe73d490d03dc2971bc7f31bf0b2e5b3b10b92330610",
+        "sizeBytes": 109969088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-tiny-vi",
+    "displayName": "moonshine-tiny-vi",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-tiny-vi](https://huggingface.co/UsefulSensors/moonshine-tiny-vi) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["vi"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-vi-gguf/resolve/main/moonshine-tiny-vi-Q8_0.gguf",
+        "sha256": "a42a80ef2e3636104aa2aff87cdde3e251e319e7d0d1acb3fb594cc601d8b95f",
+        "sizeBytes": 35466944,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-vi-gguf/resolve/main/moonshine-tiny-vi-F16.gguf",
+        "sha256": "94464f474fc4a574951e335a731fabaf97a2e517a96bf4fcfd82791a67fa40ce",
+        "sizeBytes": 59244224,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-vi-gguf/resolve/main/moonshine-tiny-vi-F32.gguf",
+        "sha256": "7423501769416a83eb4763ea85be58e4c20ca629d9181f522a2a2da398b9c194",
+        "sizeBytes": 109969088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moonshine-tiny-zh",
+    "displayName": "moonshine-tiny-zh",
+    "description": "GGUF conversions of [UsefulSensors/moonshine-tiny-zh](https://huggingface.co/UsefulSensors/moonshine-tiny-zh) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["zh"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-zh-gguf/resolve/main/moonshine-tiny-zh-Q8_0.gguf",
+        "sha256": "95387abe90625410f8e2bcec43faaaadc0d92ef1e721117eb8a69cd31a7ef692",
+        "sizeBytes": 35466944,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-zh-gguf/resolve/main/moonshine-tiny-zh-F16.gguf",
+        "sha256": "33c59e565336f1b8d6da86cb6d6321e8797bb65e9bf11947258e7340d3dcd968",
+        "sizeBytes": 59244224,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/moonshine-tiny-zh-gguf/resolve/main/moonshine-tiny-zh-F32.gguf",
+        "sha256": "43cb182cedd45d7117846bb540bb2b33ee200ec35095b9f7a697ea3ad3c9602f",
+        "sizeBytes": 109969088,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "moss-transcribe-diarize",
+    "displayName": "MOSS-Transcribe-Diarize",
+    "description": "GGUF conversions of [OpenMOSS-Team/MOSS-Transcribe-Diarize](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "zh"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/moss-transcribe-diarize-gguf/resolve/main/MOSS-Transcribe-Diarize-Q4_K_M.gguf",
+        "sha256": "e371990f2c8f21ded18e18cfac8906b059b5ee7cbce154ed4d3c582c05100b8b",
+        "sizeBytes": 617345184,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/moss-transcribe-diarize-gguf/resolve/main/MOSS-Transcribe-Diarize-Q5_K_M.gguf",
+        "sha256": "52deaeff931272f3d49eb437f0f4916e42fce9f42e68db250047408241cf473c",
+        "sizeBytes": 700313760,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/moss-transcribe-diarize-gguf/resolve/main/MOSS-Transcribe-Diarize-Q6_K.gguf",
+        "sha256": "f36e6edd7cae9d9c280b8bc48b4bfd10d9ccfe17995cf8daa9517a94329e2bbd",
+        "sizeBytes": 768151712,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/moss-transcribe-diarize-gguf/resolve/main/MOSS-Transcribe-Diarize-Q8_0.gguf",
+        "sha256": "64ec654dc6ffcfdfe180422dffce1d33422b0c30959b7edfd131bad77ee35039",
+        "sizeBytes": 986899616,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/moss-transcribe-diarize-gguf/resolve/main/MOSS-Transcribe-Diarize-F16.gguf",
+        "sha256": "fee2e436f7a6e768756446cf31e34bbf4223c4448fa2073d2f424d46f83d7f4b",
+        "sizeBytes": 1833665696,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "multitalker-parakeet-streaming-0.6b-v1",
+    "displayName": "multitalker-parakeet-streaming-0.6b-v1",
+    "description": "GGUF conversions of [nvidia/multitalker-parakeet-streaming-0.6b-v1](https://huggingface.co/nvidia/multitalker-parakeet-streaming-0.6b-v1) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": true
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/multitalker-parakeet-streaming-0.6b-v1-gguf/resolve/main/multitalker-parakeet-streaming-0.6b-v1-Q4_K_M.gguf",
+        "sha256": "d9f05f95ab70054f37af71aae7bc64d37eabfc2d266935224a827cb0d838bb4f",
+        "sizeBytes": 477812416,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/multitalker-parakeet-streaming-0.6b-v1-gguf/resolve/main/multitalker-parakeet-streaming-0.6b-v1-Q5_K_M.gguf",
+        "sha256": "247a14c84dc6d0e7d4f5604b6f2b89b927af2e49eb0ed9fe350b447e849acf01",
+        "sizeBytes": 541890240,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/multitalker-parakeet-streaming-0.6b-v1-gguf/resolve/main/multitalker-parakeet-streaming-0.6b-v1-Q6_K.gguf",
+        "sha256": "c5ad23c5e59e3f73d5adebc963992818109d1ecb272f5c862b2355bc41950dac",
+        "sizeBytes": 603878080,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/multitalker-parakeet-streaming-0.6b-v1-gguf/resolve/main/multitalker-parakeet-streaming-0.6b-v1-Q8_0.gguf",
+        "sha256": "4748deea0222eb9057ebdac1679eebb970bbe882ee10a96ae34596ffe83615c7",
+        "sizeBytes": 734123712,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/multitalker-parakeet-streaming-0.6b-v1-gguf/resolve/main/multitalker-parakeet-streaming-0.6b-v1-F16.gguf",
+        "sha256": "d2b3cbd7d202f97dd7d91da228a70cc47d5f60ba57c8431a37462b2c2d035ba7",
+        "sizeBytes": 1246058304,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/multitalker-parakeet-streaming-0.6b-v1-gguf/resolve/main/multitalker-parakeet-streaming-0.6b-v1-F32.gguf",
+        "sha256": "a73ea5c34cffd714e97ef6de22db8e9437b6c0265f86f8bd31825fd2b0f49e6c",
+        "sizeBytes": 2489180480,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "nemotron-speech-streaming-en-0.6b",
+    "displayName": "nemotron-speech-streaming-en-0.6b",
+    "description": "GGUF conversions of [nvidia/nemotron-speech-streaming-en-0.6b](https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": true
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-speech-streaming-en-0.6b-gguf/resolve/main/nemotron-speech-streaming-en-0.6b-Q4_K_M.gguf",
+        "sha256": "dc959ca31499b114e395c44eb4f0778968f20e5cfb03305a08a39925b2da8e1e",
+        "sizeBytes": 475436032,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-speech-streaming-en-0.6b-gguf/resolve/main/nemotron-speech-streaming-en-0.6b-Q5_K_M.gguf",
+        "sha256": "d6b8b36f9aca6a751779d064a29f6583f3e82c0c15646904383c8436a25c1489",
+        "sizeBytes": 538989568,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-speech-streaming-en-0.6b-gguf/resolve/main/nemotron-speech-streaming-en-0.6b-Q6_K.gguf",
+        "sha256": "b31fcc5e9f3b00cb33c10ff0f05d7e71265f160eeed6b497a65cd296dddd21f3",
+        "sizeBytes": 600420352,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-speech-streaming-en-0.6b-gguf/resolve/main/nemotron-speech-streaming-en-0.6b-Q8_0.gguf",
+        "sha256": "90d8c89714cd31efc88be62a40c6b2bea57e0cc2063af1ffe2c28f1a228ca110",
+        "sizeBytes": 729650176,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-speech-streaming-en-0.6b-gguf/resolve/main/nemotron-speech-streaming-en-0.6b-F16.gguf",
+        "sha256": "dc8c4bd7dce6e1805b4e00bef391c3870aca4fa99a563ec02a6f5e0f15d2f489",
+        "sizeBytes": 1237652608,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/nemotron-speech-streaming-en-0.6b-gguf/resolve/main/nemotron-speech-streaming-en-0.6b-F32.gguf",
+        "sha256": "53bdc1d4d21e419d4da513d2df31ce88784e25cc908841386490658854b13b41",
+        "sizeBytes": 2472386176,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "parakeet-ctc-0.6b",
+    "displayName": "parakeet-ctc-0.6b",
+    "description": "GGUF conversions of [nvidia/parakeet-ctc-0.6b](https://huggingface.co/nvidia/parakeet-ctc-0.6b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-0.6b-gguf/resolve/main/parakeet-ctc-0.6b-Q4_K_M.gguf",
+        "sha256": "2a0dc545d06184b30cd3441a38811f09867a1d6b7b89f008f16bd75c1030ccdb",
+        "sizeBytes": 469302464,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-0.6b-gguf/resolve/main/parakeet-ctc-0.6b-Q5_K_M.gguf",
+        "sha256": "8837b9489682f870dae15e126940956d4c0a03fbe884d82edcd8b8c8b1dc0f22",
+        "sizeBytes": 532544704,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-0.6b-gguf/resolve/main/parakeet-ctc-0.6b-Q6_K.gguf",
+        "sha256": "3ecb616005ea4bffa67fb5e94a02f155a48b52cb40a466af7982a4a4173692f6",
+        "sizeBytes": 593644736,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-0.6b-gguf/resolve/main/parakeet-ctc-0.6b-Q8_0.gguf",
+        "sha256": "e47ae86c1b34dbaf054334592575c29aee7de3546e75d1f0ccee05904c5c49ae",
+        "sizeBytes": 722271424,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-0.6b-gguf/resolve/main/parakeet-ctc-0.6b-F16.gguf",
+        "sha256": "9529e692dce3cd2c84dd63c576095d02cbed245fb4ccbe264783fdf59677f1b5",
+        "sizeBytes": 1220181184,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-0.6b-gguf/resolve/main/parakeet-ctc-0.6b-F32.gguf",
+        "sha256": "2956c41281192c0657da23ab24ab20a961278e3a4e8e038eab2cdb33145acd75",
+        "sizeBytes": 2435482816,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "parakeet-ctc-1.1b",
+    "displayName": "parakeet-ctc-1.1b",
+    "description": "GGUF conversions of [nvidia/parakeet-ctc-1.1b](https://huggingface.co/nvidia/parakeet-ctc-1.1b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-1.1b-gguf/resolve/main/parakeet-ctc-1.1b-Q4_K_M.gguf",
+        "sha256": "9e4c104086067ee3afefbf7d41929024261682926cf0a57cc5a1f557fc5b69e5",
+        "sizeBytes": 818156576,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-1.1b-gguf/resolve/main/parakeet-ctc-1.1b-Q5_K_M.gguf",
+        "sha256": "8b38f60bb1c56b518953a39703068adc09991993b5aab52782e038a86a6c04cc",
+        "sizeBytes": 928584736,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-1.1b-gguf/resolve/main/parakeet-ctc-1.1b-Q6_K.gguf",
+        "sha256": "23a6fd82f39cba5ef97873cb1228dbe7acc2ffd6425276ad668c2d48b020b6eb",
+        "sizeBytes": 1035248672,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-1.1b-gguf/resolve/main/parakeet-ctc-1.1b-Q8_0.gguf",
+        "sha256": "4f66c66bdef2c6901384a218a01d8a614698010e880bbdfe44f3bcf0b11ae0f2",
+        "sizeBytes": 1259869216,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-1.1b-gguf/resolve/main/parakeet-ctc-1.1b-F16.gguf",
+        "sha256": "1f4e4e6301d341655cf35f329852c7211a3fbcfa7564afd1dc9384b5142d3e32",
+        "sizeBytes": 2129368096,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-ctc-1.1b-gguf/resolve/main/parakeet-ctc-1.1b-F32.gguf",
+        "sha256": "dbbc3ed2ccf7a0633b4aaa18e930113973f79dd98a2f2f79b5d4f1ef0db4ff05",
+        "sizeBytes": 4250639392,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "parakeet-rnnt-0.6b",
+    "displayName": "parakeet-rnnt-0.6b",
+    "description": "GGUF conversions of [nvidia/parakeet-rnnt-0.6b](https://huggingface.co/nvidia/parakeet-rnnt-0.6b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-0.6b-gguf/resolve/main/parakeet-rnnt-0.6b-Q4_K_M.gguf",
+        "sha256": "70b32229e2b576a3be66176ebc484476f3d715d911c11a4e17167790ce378cf7",
+        "sizeBytes": 476390816,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-0.6b-gguf/resolve/main/parakeet-rnnt-0.6b-Q5_K_M.gguf",
+        "sha256": "b2910e4f81f35cc99ce830847040ac469c07aa27d289e9e517d6b73b47a4d7d5",
+        "sizeBytes": 539714976,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-0.6b-gguf/resolve/main/parakeet-rnnt-0.6b-Q6_K.gguf",
+        "sha256": "fcc8fd8e1b21311eefcc6ebabc2cc059df30cbbd296dc3013aa7727f070a3530",
+        "sizeBytes": 600902048,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-0.6b-gguf/resolve/main/parakeet-rnnt-0.6b-Q8_0.gguf",
+        "sha256": "06da5ba773736984e0513037b27ff9300e95c55eaa2b79dbc688efc34b25df51",
+        "sizeBytes": 729687456,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-0.6b-gguf/resolve/main/parakeet-rnnt-0.6b-F16.gguf",
+        "sha256": "5adef2718a57b02745db5717c245b90aae8b450139ccbfb2cf5ed2fb955192c0",
+        "sizeBytes": 1235969568,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-0.6b-gguf/resolve/main/parakeet-rnnt-0.6b-F32.gguf",
+        "sha256": "9312f95f6a2271eae0f04d4e499647bfb8dcf1447e41d77709435f8d4df61f52",
+        "sizeBytes": 2467033120,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "parakeet-rnnt-1.1b",
+    "displayName": "parakeet-rnnt-1.1b",
+    "description": "GGUF conversions of [nvidia/parakeet-rnnt-1.1b](https://huggingface.co/nvidia/parakeet-rnnt-1.1b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-1.1b-gguf/resolve/main/parakeet-rnnt-1.1b-Q4_K_M.gguf",
+        "sha256": "9e8636f491867751ca5b5c18ca91adf52014b1ae406b46516a9a8680ba1049a1",
+        "sizeBytes": 825244928,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-1.1b-gguf/resolve/main/parakeet-rnnt-1.1b-Q5_K_M.gguf",
+        "sha256": "8ee2ead0c30773440743591cd8a9f8ac180c27f450c9b053805b2bab6bf352cb",
+        "sizeBytes": 935755008,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-1.1b-gguf/resolve/main/parakeet-rnnt-1.1b-Q6_K.gguf",
+        "sha256": "14378bc2ccd71be446d7c869fb369ec856dcd02ca5a895194da6855b1d529665",
+        "sizeBytes": 1042505984,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-1.1b-gguf/resolve/main/parakeet-rnnt-1.1b-Q8_0.gguf",
+        "sha256": "e1918556aa0e2b857c12cb365cff4f33b0f1cbcc0e0769499ec38948c8363775",
+        "sizeBytes": 1267285248,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-1.1b-gguf/resolve/main/parakeet-rnnt-1.1b-F16.gguf",
+        "sha256": "d4608d90b26a3ff3f741b091d74ee0d0d9f9d30a7888914f251cb8821c2e1358",
+        "sizeBytes": 2145156480,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-rnnt-1.1b-gguf/resolve/main/parakeet-rnnt-1.1b-F32.gguf",
+        "sha256": "875406c56378dcc355c7fb3ac1d9ba2e7a0ab76432b7840839f02cdf2ef60901",
+        "sizeBytes": 4282189696,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "parakeet-tdt_ctc-1.1b",
+    "displayName": "parakeet-tdt_ctc-1.1b",
+    "description": "GGUF conversions of [nvidia/parakeet-tdt_ctc-1.1b](https://huggingface.co/nvidia/parakeet-tdt_ctc-1.1b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-1.1b-gguf/resolve/main/parakeet-tdt_ctc-1.1b-Q4_K_M.gguf",
+        "sha256": "5c27d9289e23019c459b1cef87baa5b672343733ccd3762796e68aec447169cd",
+        "sizeBytes": 825248000,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-1.1b-gguf/resolve/main/parakeet-tdt_ctc-1.1b-Q5_K_M.gguf",
+        "sha256": "da23eb8c78fe3813b88f616db85e8191cfbfffdbc2b8bb8bd74a94eb8987caee",
+        "sizeBytes": 935758080,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-1.1b-gguf/resolve/main/parakeet-tdt_ctc-1.1b-Q6_K.gguf",
+        "sha256": "961ac90755f0d0bff3515a1b09eaf1fee6049af46c03b733f94ffff6b857b917",
+        "sizeBytes": 1042509056,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-1.1b-gguf/resolve/main/parakeet-tdt_ctc-1.1b-Q8_0.gguf",
+        "sha256": "56e826b96d0a625eb41f18d8f51d8600e8ec5959bf5278fe3929e5efefe787d6",
+        "sizeBytes": 1267288320,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-1.1b-gguf/resolve/main/parakeet-tdt_ctc-1.1b-F16.gguf",
+        "sha256": "185565daaf0352c33464d421ae3cab8e6057890f7d6ead9d5e2b8333cc7ecff7",
+        "sizeBytes": 2145162560,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt_ctc-1.1b-gguf/resolve/main/parakeet-tdt_ctc-1.1b-F32.gguf",
+        "sha256": "16bdd9ecd6ae993e2b89edfa103ddc7ffc6e63a63d07e4f858038b8190a5972c",
+        "sizeBytes": 4282202176,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "parakeet-tdt-0.6b-v2",
+    "displayName": "parakeet-tdt-0.6b-v2",
+    "description": "GGUF conversions of [nvidia/parakeet-tdt-0.6b-v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf/resolve/main/parakeet-tdt-0.6b-v2-Q4_K_M.gguf",
+        "sha256": "4853f9653f641d376e6f7de65d73c7a34a73677704a606727bf51acc83f999f3",
+        "sizeBytes": 475491840,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf/resolve/main/parakeet-tdt-0.6b-v2-Q5_K_M.gguf",
+        "sha256": "dfa904520b95451599683613fea47766c378c5fdf5d8cddf48151226b6eaec85",
+        "sizeBytes": 539012608,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf/resolve/main/parakeet-tdt-0.6b-v2-Q6_K.gguf",
+        "sha256": "44c7c363438e03b613cf8ced8b7e6fd1beb2b3805008136fe5e922ab3c79eea9",
+        "sizeBytes": 600408576,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf/resolve/main/parakeet-tdt-0.6b-v2-Q8_0.gguf",
+        "sha256": "f0d0e99cebb6d3b83f1f7069b82b5d3c2e39a54545b0da039cb4bafd9c4e5caa",
+        "sizeBytes": 729574912,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf/resolve/main/parakeet-tdt-0.6b-v2-F16.gguf",
+        "sha256": "8440125213cb92625e3993ec751c3919dd329da9ae9149951cd6f95dd8bafe81",
+        "sizeBytes": 1237334592,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf/resolve/main/parakeet-tdt-0.6b-v2-F32.gguf",
+        "sha256": "501ba1e61965cdb28689614c648d2c560d75895b47a2948b9010b4e8c9cf1325",
+        "sizeBytes": 2471550272,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "parakeet-tdt-1.1b",
+    "displayName": "parakeet-tdt-1.1b",
+    "description": "GGUF conversions of [nvidia/parakeet-tdt-1.1b](https://huggingface.co/nvidia/parakeet-tdt-1.1b) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-1.1b-gguf/resolve/main/parakeet-tdt-1.1b-Q4_K_M.gguf",
+        "sha256": "38e85773763afe7b79c8538fbd091367b4644123358ea209eeb665879e3fcb13",
+        "sizeBytes": 825248416,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-1.1b-gguf/resolve/main/parakeet-tdt-1.1b-Q5_K_M.gguf",
+        "sha256": "18c22888fed10676fde72fdd5b833fab9175a6abf4e0cb390eb0a59b0b107cd3",
+        "sizeBytes": 935758496,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-1.1b-gguf/resolve/main/parakeet-tdt-1.1b-Q6_K.gguf",
+        "sha256": "7481b215629957031205893c99e9b6472278bc713354f723c682562c39ef52f4",
+        "sizeBytes": 1042509472,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-1.1b-gguf/resolve/main/parakeet-tdt-1.1b-Q8_0.gguf",
+        "sha256": "8479e1ed0b7244e293ed81f547c69074a38c00e17511d8ecae2d273bc7b2ceda",
+        "sizeBytes": 1267288736,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-1.1b-gguf/resolve/main/parakeet-tdt-1.1b-F16.gguf",
+        "sha256": "5d5e36992fa5102a1eac29c4356b51e6de8577c5d8e55e250cfd792a018dc8f2",
+        "sizeBytes": 2145162976,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/parakeet-tdt-1.1b-gguf/resolve/main/parakeet-tdt-1.1b-F32.gguf",
+        "sha256": "627ba3def22f056fa48d62bcdb70455b75c81d5fb7f30028f63682fb9ffe1684",
+        "sizeBytes": 4282202592,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "Qwen3-ASR-0.6B",
+    "displayName": "Qwen3-ASR-0.6B",
+    "description": "GGUF conversions of [Qwen/Qwen3-ASR-0.6B](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "zh",
+        "en",
+        "yue",
+        "ar",
+        "de",
+        "fr",
+        "es",
+        "pt",
+        "id",
+        "it",
+        "ko",
+        "ru",
+        "th",
+        "vi",
+        "ja",
+        "tr",
+        "hi",
+        "ms",
+        "nl",
+        "sv",
+        "da",
+        "fi",
+        "pl",
+        "cs",
+        "fil",
+        "fa",
+        "el",
+        "ro",
+        "hu",
+        "mk"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Qwen3-ASR-0.6B-gguf/resolve/main/Qwen3-ASR-0.6B-Q4_K_M.gguf",
+        "sha256": "5b58f32a58ffa2c8783e0b0963485623e286e6272d953dfc9e28bc3447dee0c0",
+        "sizeBytes": 589560480,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Qwen3-ASR-0.6B-gguf/resolve/main/Qwen3-ASR-0.6B-Q5_K_M.gguf",
+        "sha256": "062a7bcb18675c2fe5ffd0e8b354eac6a1ceada9b2af9ef7168746ae16b54358",
+        "sizeBytes": 645356192,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/Qwen3-ASR-0.6B-gguf/resolve/main/Qwen3-ASR-0.6B-Q6_K.gguf",
+        "sha256": "3b051f108f03c0c91bbe1a3b2c1ee15e3ed51e4caec2a48751b01f2a21441cc3",
+        "sizeBytes": 690417824,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/Qwen3-ASR-0.6B-gguf/resolve/main/Qwen3-ASR-0.6B-Q8_0.gguf",
+        "sha256": "f081b2d5e23bd669d92cc331d722a8a0681943b8e6f34b48996fd5c319b5acd8",
+        "sizeBytes": 850423456,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/Qwen3-ASR-0.6B-gguf/resolve/main/Qwen3-ASR-0.6B-F16.gguf",
+        "sha256": "5c90e4b1a72a4c59cd12afa5ebb0cc8628848148f2b337d025cc5121ae4d2eea",
+        "sizeBytes": 1579793056,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "Qwen3-ASR-1.7B",
+    "displayName": "Qwen3-ASR-1.7B",
+    "description": "GGUF conversions of [Qwen/Qwen3-ASR-1.7B](https://huggingface.co/Qwen/Qwen3-ASR-1.7B) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "zh",
+        "en",
+        "yue",
+        "ar",
+        "de",
+        "fr",
+        "es",
+        "pt",
+        "id",
+        "it",
+        "ko",
+        "ru",
+        "th",
+        "vi",
+        "ja",
+        "tr",
+        "hi",
+        "ms",
+        "nl",
+        "sv",
+        "da",
+        "fi",
+        "pl",
+        "cs",
+        "fil",
+        "fa",
+        "el",
+        "ro",
+        "hu",
+        "mk"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Qwen3-ASR-1.7B-gguf/resolve/main/Qwen3-ASR-1.7B-Q4_K_M.gguf",
+        "sha256": "b7afe3674f653fa84f712ed2440353c6e7cf7f93697fef76b05a26538b24844e",
+        "sizeBytes": 1319830496,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Qwen3-ASR-1.7B-gguf/resolve/main/Qwen3-ASR-1.7B-Q5_K_M.gguf",
+        "sha256": "034c557fe92ff8fcd9a9c041cbdaad347be0a86a58d3a348f63cf3f0180879d0",
+        "sizeBytes": 1517290464,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/Qwen3-ASR-1.7B-gguf/resolve/main/Qwen3-ASR-1.7B-Q6_K.gguf",
+        "sha256": "c75a961b7134a6c952d89797865cb0d0376876185aee04ef6d12c31c2952e4e1",
+        "sizeBytes": 1692554208,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/Qwen3-ASR-1.7B-gguf/resolve/main/Qwen3-ASR-1.7B-Q8_0.gguf",
+        "sha256": "9a0d81792dfea2d5f278b8a63deb3ea6e02139ce42c2301f32ea19c4f77526b7",
+        "sizeBytes": 2185030624,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/Qwen3-ASR-1.7B-gguf/resolve/main/Qwen3-ASR-1.7B-F16.gguf",
+        "sha256": "edb09c29b8f73822c639168d5ef72aa2dccdf8b4e48fc4b8518885352ff62c71",
+        "sizeBytes": 4091390944,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "SenseVoiceSmall",
+    "displayName": "SenseVoiceSmall",
+    "description": "GGUF conversions of [FunAudioLLM/SenseVoiceSmall](https://huggingface.co/FunAudioLLM/SenseVoiceSmall) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["zh", "yue", "en", "ja", "ko"],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/SenseVoiceSmall-gguf/resolve/main/SenseVoiceSmall-Q4_K_M.gguf",
+        "sha256": "9d775303e6b4e793d049ef226214c400b2b1746c734ed017146a1a085b13d02b",
+        "sizeBytes": 145738304,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/SenseVoiceSmall-gguf/resolve/main/SenseVoiceSmall-Q5_K_M.gguf",
+        "sha256": "622a819ef9b37dc5506f0079ddedca6ec22e272bb9b4fe950d8f13422d1ccd0b",
+        "sizeBytes": 172474880,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/SenseVoiceSmall-gguf/resolve/main/SenseVoiceSmall-Q6_K.gguf",
+        "sha256": "5724d2ff6329f4355a29cee6a2432ecd1f60547a0a4ef7726cfceda7dafb394f",
+        "sizeBytes": 196438336,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/SenseVoiceSmall-gguf/resolve/main/SenseVoiceSmall-Q8_0.gguf",
+        "sha256": "6c759ee4c9748c9b3f7a5a60ca74f0f7e685fb9d45d1378fce7cfd62f59adf29",
+        "sizeBytes": 252684608,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/SenseVoiceSmall-gguf/resolve/main/SenseVoiceSmall-F16.gguf",
+        "sha256": "dc172fd5ffaff0a396393cd4edd82e18403c53f8f5873bcc544ba012b70598f6",
+        "sizeBytes": 470412128,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/SenseVoiceSmall-gguf/resolve/main/SenseVoiceSmall-F32.gguf",
+        "sha256": "dda511c3eac009568643b5c64541468d62be2e2a59700113f49c72675464d13d",
+        "sizeBytes": 936617824,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "Voxtral-Mini-3B-2507",
+    "displayName": "Voxtral-Mini-3B-2507",
+    "description": "GGUF conversions of [mistralai/Voxtral-Mini-3B-2507](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "fr", "de", "es", "it", "pt", "nl", "hi"],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Mini-3B-2507-gguf/resolve/main/Voxtral-Mini-3B-2507-Q4_K_M.gguf",
+        "sha256": "3a6717aa8f8989108d260cbd237584289eec43cc987e10133c33643515936205",
+        "sizeBytes": 2984721056,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Mini-3B-2507-gguf/resolve/main/Voxtral-Mini-3B-2507-Q5_K_M.gguf",
+        "sha256": "9ea2eb85359f7771270715849dc2b0e80381a59dab09d9c5d85352ab9c53f675",
+        "sizeBytes": 3464182432,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Mini-3B-2507-gguf/resolve/main/Voxtral-Mini-3B-2507-Q6_K.gguf",
+        "sha256": "0be733fd436c2a89483b96ed8d398abbc3ce5bcaa7aac64e886f5eb9d9066a43",
+        "sizeBytes": 3869489824,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Mini-3B-2507-gguf/resolve/main/Voxtral-Mini-3B-2507-Q8_0.gguf",
+        "sha256": "06b4dd04e32953ccab0d417125bdd728ec031431596ed5e80123c3c66f29ddc2",
+        "sizeBytes": 5000084128,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Mini-3B-2507-gguf/resolve/main/Voxtral-Mini-3B-2507-F16.gguf",
+        "sha256": "a7f0bebce988a32ce7e736acffe19a48d9bc739789dfab7d13ca6b622d23dd6e",
+        "sizeBytes": 9376578208,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "Voxtral-Mini-4B-Realtime-2602",
+    "displayName": "Voxtral-Mini-4B-Realtime-2602",
+    "description": "GGUF conversions of [mistralai/Voxtral-Mini-4B-Realtime-2602](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "fr", "es", "de", "ru", "zh", "ja", "it", "pt", "nl", "ar", "hi", "ko"],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": true
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Mini-4B-Realtime-2602-gguf/resolve/main/Voxtral-Mini-4B-Realtime-2602-Q4_K_M.gguf",
+        "sha256": "39dc1f65539373a406edea7490505822d77c12edff521744678717eef4da4723",
+        "sizeBytes": 2830493984,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Mini-4B-Realtime-2602-gguf/resolve/main/Voxtral-Mini-4B-Realtime-2602-Q5_K_M.gguf",
+        "sha256": "e20a7582c5cf8159454c909b7f57b184b287cb3d7c3ec85744727a2cec51b08f",
+        "sizeBytes": 3281439008,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Mini-4B-Realtime-2602-gguf/resolve/main/Voxtral-Mini-4B-Realtime-2602-Q6_K.gguf",
+        "sha256": "92038784cffa20ea8ee925f10fd28c110285124d94730eacce48bab6c214fa48",
+        "sizeBytes": 3661018912,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Mini-4B-Realtime-2602-gguf/resolve/main/Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf",
+        "sha256": "6fb22249463c1e7a600d920ad732e2dd0a231510e9db59fb8061d3d1d48d0c67",
+        "sizeBytes": 4731791648,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Mini-4B-Realtime-2602-gguf/resolve/main/Voxtral-Mini-4B-Realtime-2602-F16.gguf",
+        "sha256": "243258ae0ad80f748b18cfd9c8141998157d74eb32fbb131ba8f69e0c01564d7",
+        "sizeBytes": 8879114528,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "Voxtral-Small-24B-2507",
+    "displayName": "Voxtral-Small-24B-2507",
+    "description": "GGUF conversions of [mistralai/Voxtral-Small-24B-2507](https://huggingface.co/mistralai/Voxtral-Small-24B-2507) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en", "fr", "de", "es", "it", "pt", "nl", "hi"],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": false,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Small-24B-2507-gguf/resolve/main/Voxtral-Small-24B-2507-Q4_K_M.gguf",
+        "sha256": "0da1b866c0eb2ce805678c18a7fb1e413320e4ad3ccbef7160707b65bae937a3",
+        "sizeBytes": 14302261728,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Small-24B-2507-gguf/resolve/main/Voxtral-Small-24B-2507-Q5_K_M.gguf",
+        "sha256": "a53f73a5f63b7663fe155977616a636acac567dac898f6ef82ca519017e8b6e7",
+        "sizeBytes": 17138659808,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Small-24B-2507-gguf/resolve/main/Voxtral-Small-24B-2507-Q6_K.gguf",
+        "sha256": "e85950b9576d3913d2664abaac1cdcb3a967dbbc8a60febacaf137a7f4d216f0",
+        "sizeBytes": 19936473568,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Small-24B-2507-gguf/resolve/main/Voxtral-Small-24B-2507-Q8_0.gguf",
+        "sha256": "ab0964350131990a364dca53e3cac5f4d9cc176dce2f273066be3ef71e252fb2",
+        "sizeBytes": 25810383328,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/Voxtral-Small-24B-2507-gguf/resolve/main/Voxtral-Small-24B-2507-F16.gguf",
+        "sha256": "d5cc73553d9422dada176dd02c1920dc72a888a01eed34e20816b0bab8db207e",
+        "sizeBytes": 48548098528,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "whisper-base.en",
+    "displayName": "whisper-base.en",
+    "description": "GGUF conversions of [openai/whisper-base.en](https://huggingface.co/openai/whisper-base.en) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base.en-gguf/resolve/main/whisper-base.en-Q4_K_M.gguf",
+        "sha256": "fd19959ff81f96c2b66f26fad97aada090ed6b3af681cf5b569bef3d7a073da5",
+        "sizeBytes": 58794272,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base.en-gguf/resolve/main/whisper-base.en-Q5_K_M.gguf",
+        "sha256": "549e6e991588cd748dc6bf53b8fe47629dc08ed9038b8955270ee98fbc5e4c54",
+        "sizeBytes": 63709472,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base.en-gguf/resolve/main/whisper-base.en-Q6_K.gguf",
+        "sha256": "5de8fc00f70f538af2811c9992de502513d6d60336f32ed975b4b6eb91b69e73",
+        "sizeBytes": 67789088,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base.en-gguf/resolve/main/whisper-base.en-Q8_0.gguf",
+        "sha256": "3b46ca40bccbf7609c68d88a36d96077a04ca7c87f2060ede06f129fac3e7652",
+        "sizeBytes": 84886208,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base.en-gguf/resolve/main/whisper-base.en-F16.gguf",
+        "sha256": "e6c447b0cc761e8ac3fc2f5e0e6918f604e415a41cff97825f1503ccde376e1e",
+        "sizeBytes": 151068608,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-base.en-gguf/resolve/main/whisper-base.en-F32.gguf",
+        "sha256": "f694f59682d44bafe4e74b8b9cc395dfdc3737a4d5e1910e399d45683729ad2d",
+        "sizeBytes": 292257728,
+        "minRamMb": 3072
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "whisper-large",
+    "displayName": "whisper-large",
+    "description": "GGUF conversions of [openai/whisper-large](https://huggingface.co/openai/whisper-large) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "en",
+        "zh",
+        "de",
+        "es",
+        "ru",
+        "ko",
+        "fr",
+        "ja",
+        "pt",
+        "tr",
+        "pl",
+        "ca",
+        "nl",
+        "ar",
+        "sv",
+        "it",
+        "id",
+        "hi",
+        "fi",
+        "vi",
+        "he",
+        "uk",
+        "el",
+        "ms",
+        "cs",
+        "ro",
+        "da",
+        "hu",
+        "ta",
+        "no",
+        "th",
+        "ur",
+        "hr",
+        "bg",
+        "lt",
+        "la",
+        "mi",
+        "ml",
+        "cy",
+        "sk",
+        "te",
+        "fa",
+        "lv",
+        "bn",
+        "sr",
+        "az",
+        "sl",
+        "kn",
+        "et",
+        "mk",
+        "br",
+        "eu",
+        "is",
+        "hy",
+        "ne",
+        "mn",
+        "bs",
+        "kk",
+        "sq",
+        "sw",
+        "gl",
+        "mr",
+        "pa",
+        "si",
+        "km",
+        "sn",
+        "yo",
+        "so",
+        "af",
+        "oc",
+        "ka",
+        "be",
+        "tg",
+        "sd",
+        "gu",
+        "am",
+        "yi",
+        "lo",
+        "uz",
+        "fo",
+        "ht",
+        "ps",
+        "tk",
+        "nn",
+        "mt",
+        "sa",
+        "lb",
+        "my",
+        "bo",
+        "tl",
+        "mg",
+        "as",
+        "tt",
+        "haw",
+        "ln",
+        "ha",
+        "ba",
+        "jw",
+        "su"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-gguf/resolve/main/whisper-large-Q4_K_M.gguf",
+        "sha256": "7d7693afc06096de46f2a41309ac479909e131824e78dae4e205f35463aaec09",
+        "sizeBytes": 996526048,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-gguf/resolve/main/whisper-large-Q5_K_M.gguf",
+        "sha256": "b1dfb9fa0e9b0574d8c822f51662b8e59915831e1a3ca0d191f18ff8ba742639",
+        "sizeBytes": 1160366048,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-gguf/resolve/main/whisper-large-Q6_K.gguf",
+        "sha256": "04756b664385d0ec26af1ef43b94bccdaf2d6dce83b52f482d2232b67642b6bc",
+        "sizeBytes": 1296353248,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-gguf/resolve/main/whisper-large-Q8_0.gguf",
+        "sha256": "0b9c63f73c68327d6ba2386e40c4a4dc46a9e7114a78c93a464b48b72c001547",
+        "sizeBytes": 1667964192,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-gguf/resolve/main/whisper-large-F16.gguf",
+        "sha256": "2c6198aeb009e01bf03cce9a30374b86ecd3484cd53b245e4a9f5bf7a670c498",
+        "sizeBytes": 3106458176,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-gguf/resolve/main/whisper-large-F32.gguf",
+        "sha256": "fafb2d4c6f865fc6cd745be8781eaf87d8d7a289cf3556283849fb1cc6741717",
+        "sizeBytes": 6175245376,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "whisper-large-v2",
+    "displayName": "whisper-large-v2",
+    "description": "GGUF conversions of [openai/whisper-large-v2](https://huggingface.co/openai/whisper-large-v2) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "en",
+        "zh",
+        "de",
+        "es",
+        "ru",
+        "ko",
+        "fr",
+        "ja",
+        "pt",
+        "tr",
+        "pl",
+        "ca",
+        "nl",
+        "ar",
+        "sv",
+        "it",
+        "id",
+        "hi",
+        "fi",
+        "vi",
+        "he",
+        "uk",
+        "el",
+        "ms",
+        "cs",
+        "ro",
+        "da",
+        "hu",
+        "ta",
+        "no",
+        "th",
+        "ur",
+        "hr",
+        "bg",
+        "lt",
+        "la",
+        "mi",
+        "ml",
+        "cy",
+        "sk",
+        "te",
+        "fa",
+        "lv",
+        "bn",
+        "sr",
+        "az",
+        "sl",
+        "kn",
+        "et",
+        "mk",
+        "br",
+        "eu",
+        "is",
+        "hy",
+        "ne",
+        "mn",
+        "bs",
+        "kk",
+        "sq",
+        "sw",
+        "gl",
+        "mr",
+        "pa",
+        "si",
+        "km",
+        "sn",
+        "yo",
+        "so",
+        "af",
+        "oc",
+        "ka",
+        "be",
+        "tg",
+        "sd",
+        "gu",
+        "am",
+        "yi",
+        "lo",
+        "uz",
+        "fo",
+        "ht",
+        "ps",
+        "tk",
+        "nn",
+        "mt",
+        "sa",
+        "lb",
+        "my",
+        "bo",
+        "tl",
+        "mg",
+        "as",
+        "tt",
+        "haw",
+        "ln",
+        "ha",
+        "ba",
+        "jw",
+        "su"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v2-gguf/resolve/main/whisper-large-v2-Q4_K_M.gguf",
+        "sha256": "76aa37b205abc1fb7a9e7aaf0655b8747995b81e6bb72c18f4b1acf59e222f79",
+        "sizeBytes": 996526080,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v2-gguf/resolve/main/whisper-large-v2-Q5_K_M.gguf",
+        "sha256": "94fab1289a98d26bf375174a8daa00f44c7b16a9944726dde05361e5a8bd07ff",
+        "sizeBytes": 1160366080,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v2-gguf/resolve/main/whisper-large-v2-Q6_K.gguf",
+        "sha256": "d216cb645a4a0b158a465f55c18a8317872788c38b3dbc0895c00d5c3bba72c8",
+        "sizeBytes": 1296353280,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v2-gguf/resolve/main/whisper-large-v2-Q8_0.gguf",
+        "sha256": "704603cff0f82ddd7f7f51045e12e5c8f85a37a9edec72ab10fd8ede32220702",
+        "sizeBytes": 1667964224,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v2-gguf/resolve/main/whisper-large-v2-F16.gguf",
+        "sha256": "c8ffa39202367b896cdf642cd28c28fb9ac4d90f7f12795a219952c70bc63f04",
+        "sizeBytes": 3106458208,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v2-gguf/resolve/main/whisper-large-v2-F32.gguf",
+        "sha256": "eed42074ca931551b6bb9c80e658bb0d646c80da06acb03a49cb6326d2a57ced",
+        "sizeBytes": 6175245408,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "whisper-large-v3",
+    "displayName": "whisper-large-v3",
+    "description": "GGUF conversions of [openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "en",
+        "zh",
+        "de",
+        "es",
+        "ru",
+        "ko",
+        "fr",
+        "ja",
+        "pt",
+        "tr",
+        "pl",
+        "ca",
+        "nl",
+        "ar",
+        "sv",
+        "it",
+        "id",
+        "hi",
+        "fi",
+        "vi",
+        "he",
+        "uk",
+        "el",
+        "ms",
+        "cs",
+        "ro",
+        "da",
+        "hu",
+        "ta",
+        "no",
+        "th",
+        "ur",
+        "hr",
+        "bg",
+        "lt",
+        "la",
+        "mi",
+        "ml",
+        "cy",
+        "sk",
+        "te",
+        "fa",
+        "lv",
+        "bn",
+        "sr",
+        "az",
+        "sl",
+        "kn",
+        "et",
+        "mk",
+        "br",
+        "eu",
+        "is",
+        "hy",
+        "ne",
+        "mn",
+        "bs",
+        "kk",
+        "sq",
+        "sw",
+        "gl",
+        "mr",
+        "pa",
+        "si",
+        "km",
+        "sn",
+        "yo",
+        "so",
+        "af",
+        "oc",
+        "ka",
+        "be",
+        "tg",
+        "sd",
+        "gu",
+        "am",
+        "yi",
+        "lo",
+        "uz",
+        "fo",
+        "ht",
+        "ps",
+        "tk",
+        "nn",
+        "mt",
+        "sa",
+        "lb",
+        "my",
+        "bo",
+        "tl",
+        "mg",
+        "as",
+        "tt",
+        "haw",
+        "ln",
+        "ha",
+        "ba",
+        "jw",
+        "su",
+        "yue"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v3-gguf/resolve/main/whisper-large-v3-Q4_K_M.gguf",
+        "sha256": "6fe933811cec4cd3159debc46520ecd3aac6c7e322ece2ac61fcfdab184e1fe0",
+        "sizeBytes": 997303008,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v3-gguf/resolve/main/whisper-large-v3-Q5_K_M.gguf",
+        "sha256": "6053d0fd69a0fd48b8fea5ea7a52b9e0cde389343566fa30e453a1b2b258dc38",
+        "sizeBytes": 1161143008,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v3-gguf/resolve/main/whisper-large-v3-Q6_K.gguf",
+        "sha256": "88e6dc60bd0538da145a50c19f4778e4a106fe28713adeeca43163215ee02805",
+        "sizeBytes": 1297130208,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v3-gguf/resolve/main/whisper-large-v3-Q8_0.gguf",
+        "sha256": "2fa1a5f179f8a511a53e2108db270aa4af3ce08cd976af4180e2854666bb4ba3",
+        "sizeBytes": 1668741440,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-large-v3-gguf/resolve/main/whisper-large-v3-F16.gguf",
+        "sha256": "e633ab1d74b0e98f4f57daedaee34291297dbbf01389bda3d890766600c1c584",
+        "sizeBytes": 3107236640,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "whisper-medium",
+    "displayName": "whisper-medium",
+    "description": "GGUF conversions of [openai/whisper-medium](https://huggingface.co/openai/whisper-medium) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": [
+        "en",
+        "zh",
+        "de",
+        "es",
+        "ru",
+        "ko",
+        "fr",
+        "ja",
+        "pt",
+        "tr",
+        "pl",
+        "ca",
+        "nl",
+        "ar",
+        "sv",
+        "it",
+        "id",
+        "hi",
+        "fi",
+        "vi",
+        "he",
+        "uk",
+        "el",
+        "ms",
+        "cs",
+        "ro",
+        "da",
+        "hu",
+        "ta",
+        "no",
+        "th",
+        "ur",
+        "hr",
+        "bg",
+        "lt",
+        "la",
+        "mi",
+        "ml",
+        "cy",
+        "sk",
+        "te",
+        "fa",
+        "lv",
+        "bn",
+        "sr",
+        "az",
+        "sl",
+        "kn",
+        "et",
+        "mk",
+        "br",
+        "eu",
+        "is",
+        "hy",
+        "ne",
+        "mn",
+        "bs",
+        "kk",
+        "sq",
+        "sw",
+        "gl",
+        "mr",
+        "pa",
+        "si",
+        "km",
+        "sn",
+        "yo",
+        "so",
+        "af",
+        "oc",
+        "ka",
+        "be",
+        "tg",
+        "sd",
+        "gu",
+        "am",
+        "yi",
+        "lo",
+        "uz",
+        "fo",
+        "ht",
+        "ps",
+        "tk",
+        "nn",
+        "mt",
+        "sa",
+        "lb",
+        "my",
+        "bo",
+        "tl",
+        "mg",
+        "as",
+        "tt",
+        "haw",
+        "ln",
+        "ha",
+        "ba",
+        "jw",
+        "su"
+      ],
+      "supportsLanguageDetect": true,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium-gguf/resolve/main/whisper-medium-Q4_K_M.gguf",
+        "sha256": "6c9cad9c41d1fa0fcc624898f7ee3485b66127627878081a5655c6f6f3ce20ab",
+        "sizeBytes": 504102848,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium-gguf/resolve/main/whisper-medium-Q5_K_M.gguf",
+        "sha256": "4e2a8904a866b3aa7ef70d7640ec6abc5f0a05524cd950ea4b66ace12122bf53",
+        "sizeBytes": 582746048,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium-gguf/resolve/main/whisper-medium-Q6_K.gguf",
+        "sha256": "8718bafef4f595b5cacd9d9409fb7e19ce99b1afe4c6a450198d692fa58bd380",
+        "sizeBytes": 648019904,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium-gguf/resolve/main/whisper-medium-Q8_0.gguf",
+        "sha256": "09e6a65e7de377aa5b10bae24608bc6f8ca2ed04b3993ef10d4a02bcd9a82adf",
+        "sizeBytes": 831538144,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium-gguf/resolve/main/whisper-medium-F16.gguf",
+        "sha256": "62338e5194cb9ccc6734adf6f42694805a98a158028b2022e39ec060559bd517",
+        "sizeBytes": 1541931424,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium-gguf/resolve/main/whisper-medium-F32.gguf",
+        "sha256": "d716aa436e8d1d3164898d1fd6f4bde0f7cbbb7059b8c276b18f78cbca2faf6b",
+        "sizeBytes": 3057437088,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "whisper-medium.en",
+    "displayName": "whisper-medium.en",
+    "description": "GGUF conversions of [openai/whisper-medium.en](https://huggingface.co/openai/whisper-medium.en) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium.en-gguf/resolve/main/whisper-medium.en-Q4_K_M.gguf",
+        "sha256": "8a0eb0bb20019af88fc0ccda06d97dc949a6a0cdf35d3f2c316b967e76cd4077",
+        "sizeBytes": 504025856,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium.en-gguf/resolve/main/whisper-medium.en-Q5_K_M.gguf",
+        "sha256": "8c90b55725036f1362fc5a583432a4e63370304dbf0f96b6245685f8a588174f",
+        "sizeBytes": 582669056,
+        "minRamMb": 3072
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium.en-gguf/resolve/main/whisper-medium.en-Q6_K.gguf",
+        "sha256": "9abdf673a4096ccb8bd210a3c68d73665c3ac8450bdeb54fd35c255a28b63d55",
+        "sizeBytes": 647942912,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium.en-gguf/resolve/main/whisper-medium.en-Q8_0.gguf",
+        "sha256": "03d7257fef498750ce272631bc6a34de322fc2b438aab5c268ff49dfd1b64c49",
+        "sizeBytes": 831460928,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium.en-gguf/resolve/main/whisper-medium.en-F16.gguf",
+        "sha256": "c8be41b68306ad35382af749d4681b33da403b7d82eb3b6d3225a01a02dc1196",
+        "sizeBytes": 1541853248,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-medium.en-gguf/resolve/main/whisper-medium.en-F32.gguf",
+        "sha256": "6a0bcb8c3360dbc8101a1ebcf2776d1e3463538c4b9486da97b8f21e462e6039",
+        "sizeBytes": 3057356864,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "whisper-small.en",
+    "displayName": "whisper-small.en",
+    "description": "GGUF conversions of [openai/whisper-small.en](https://huggingface.co/openai/whisper-small.en) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small.en-gguf/resolve/main/whisper-small.en-Q4_K_M.gguf",
+        "sha256": "7bf9ebce1e6332b3d18d4c27032e3097148fc124befed3e70022e0d70539a365",
+        "sizeBytes": 171553856,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small.en-gguf/resolve/main/whisper-small.en-Q5_K_M.gguf",
+        "sha256": "e96a679e57d36f80bb26512f3893185d219ddd8880cdac4c433e5af13a001b47",
+        "sizeBytes": 193672256,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small.en-gguf/resolve/main/whisper-small.en-Q6_K.gguf",
+        "sha256": "3703d6f9e4d78b5b2f196f9c3cfab5c1b6b268fe42fff311cb89137506f92019",
+        "sizeBytes": 212030528,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small.en-gguf/resolve/main/whisper-small.en-Q8_0.gguf",
+        "sha256": "9614e6b7fda2d26018e4f268aece8ca25a83296ea0b534169a585b740bfd71ef",
+        "sizeBytes": 269674144,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small.en-gguf/resolve/main/whisper-small.en-F16.gguf",
+        "sha256": "59eade60e072bd289c9ff39313ef14b565691bfe373275ea904ecea497e47c8a",
+        "sizeBytes": 492810784,
+        "minRamMb": 3072
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-small.en-gguf/resolve/main/whisper-small.en-F32.gguf",
+        "sha256": "fce06c84aa930d0652d292781b4470fb4d5631527e211fd4f402703f63ee7291",
+        "sizeBytes": 968835616,
+        "minRamMb": 4096,
+        "requiresGpuFamily": "apple7"
+      }
+    ],
+    "featured": false
+  },
+  {
+    "id": "whisper-tiny.en",
+    "displayName": "whisper-tiny.en",
+    "description": "GGUF conversions of [openai/whisper-tiny.en](https://huggingface.co/openai/whisper-tiny.en) for use with [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp).",
+    "capabilities": {
+      "languages": ["en"],
+      "supportsLanguageDetect": false,
+      "supportsInitialPrompt": true,
+      "supportsStreaming": false
+    },
+    "quantizations": [
+      {
+        "id": "Q4_K_M",
+        "label": "Q4_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny.en-gguf/resolve/main/whisper-tiny.en-Q4_K_M.gguf",
+        "sha256": "3bfa6200aa12a21409445401f7871b5c733546dc45a29eb4871fcb3c7954e08b",
+        "sizeBytes": 43545248,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q5_K_M",
+        "label": "Q5_K_M",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny.en-gguf/resolve/main/whisper-tiny.en-Q5_K_M.gguf",
+        "sha256": "610a75700023ffd74df1ab538353525d0a82a3e35702b923e955e69422519740",
+        "sizeBytes": 44135072,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q6_K",
+        "label": "Q6_K",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny.en-gguf/resolve/main/whisper-tiny.en-Q6_K.gguf",
+        "sha256": "33b349eabeb0808562060b44dd539264f94365f09ed5317337207b955355abe4",
+        "sizeBytes": 44761760,
+        "minRamMb": 2048
+      },
+      {
+        "id": "Q8_0",
+        "label": "Q8_0",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny.en-gguf/resolve/main/whisper-tiny.en-Q8_0.gguf",
+        "sha256": "e8c9b73c06344307d8b346e07fbe93dd88d894627854bcff31523f1ce44394fa",
+        "sizeBytes": 45904544,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F16",
+        "label": "F16",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny.en-gguf/resolve/main/whisper-tiny.en-F16.gguf",
+        "sha256": "7ae6eae54d625472e52b6af03b09dec586f0e948ffa5872815bb1988e973ad2b",
+        "sizeBytes": 80058464,
+        "minRamMb": 2048
+      },
+      {
+        "id": "F32",
+        "label": "F32",
+        "downloadUrl": "https://huggingface.co/handy-computer/whisper-tiny.en-gguf/resolve/main/whisper-tiny.en-F32.gguf",
+        "sha256": "4aaf936f214a08f199ff7daecf421eb28be273e4e4b3bba0486b98efed140045",
+        "sizeBytes": 152920160,
+        "minRamMb": 2048
+      }
+    ],
+    "featured": false
+  }
+]

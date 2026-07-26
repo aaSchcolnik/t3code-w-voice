@@ -58,6 +58,7 @@ interface EnvironmentSubscriptionAtomOptions<Input, A, E, R> {
   readonly label: string;
   readonly subscribe: (input: Input) => Stream.Stream<A, E, R>;
   readonly idleTtlMs?: number;
+  readonly restartOnEnvironmentChange?: boolean;
 }
 
 export type SettledAsyncResult<A, E> = AsyncResult.Success<A, E> | AsyncResult.Failure<A, E>;
@@ -518,8 +519,12 @@ export function createEnvironmentSubscriptionAtomFamily<R, ER, Input, A, E>(
 ) {
   const family = Atom.family((key: string) => {
     const target = parseEnvironmentRpcKey<Input>(key);
+    const stream =
+      options.restartOnEnvironmentChange === false
+        ? runStreamInEnvironment(target.environmentId, options.subscribe(target.input))
+        : followStreamInEnvironment(target.environmentId, options.subscribe(target.input));
     return runtime
-      .atom(followStreamInEnvironment(target.environmentId, options.subscribe(target.input)))
+      .atom(stream)
       .pipe(
         Atom.setIdleTTL(options.idleTtlMs ?? 5 * 60_000),
         Atom.withLabel(`${options.label}:${key}`),

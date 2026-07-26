@@ -20,7 +20,13 @@ import {
   type VoiceSettings,
 } from "@t3tools/contracts";
 
+import { ServerConfig } from "../config.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
+import {
+  makeTranscribeCppEngine,
+  type MakeTranscribeCppEngineOptions,
+} from "./TranscribeCppEngine.ts";
+import { ServerVoiceModelManager } from "./ServerVoiceModelManager.ts";
 
 /**
  * Newline-delimited JSON protocol with the ASR sidecar (packages/asr-sidecar).
@@ -60,14 +66,21 @@ export interface TranscriptionServiceShape {
   readonly start: (
     input: TranscriptionStartInput,
     handlers: TranscriptionSessionHandlers,
+    ownerId: string,
   ) => Effect.Effect<Effect.Effect<void>, TranscriptionDisabledError | TranscriptionSidecarError>;
-  readonly sendAudio: (input: {
-    readonly sessionId: string;
-    readonly audio: string;
-  }) => Effect.Effect<void, TranscriptionSessionLookupError | TranscriptionSidecarError>;
-  readonly stop: (input: {
-    readonly sessionId: string;
-  }) => Effect.Effect<void, TranscriptionSessionLookupError | TranscriptionSidecarError>;
+  readonly sendAudio: (
+    input: {
+      readonly sessionId: string;
+      readonly audio: string;
+    },
+    ownerId: string,
+  ) => Effect.Effect<void, TranscriptionSessionLookupError | TranscriptionSidecarError>;
+  readonly stop: (
+    input: {
+      readonly sessionId: string;
+    },
+    ownerId: string,
+  ) => Effect.Effect<void, TranscriptionSessionLookupError | TranscriptionSidecarError>;
 }
 
 export class TranscriptionService extends Context.Service<
@@ -88,11 +101,44 @@ const resolveSidecarCommand = (settings: VoiceSettings): string => {
   return process.env["T3_ASR_SIDECAR"] ?? DEFAULT_SIDECAR_COMMAND;
 };
 
-export const make = Effect.fn("makeTranscriptionService")(function* () {
-  const serverSettings = yield* ServerSettingsService;
-  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+export interface MakeTranscriptionServiceOptions {
+  readonly transcribeCpp?: Omit<MakeTranscribeCppEngineOptions, "stateDir">;
+}
 
-  const sessions = new Map<string, TranscriptionSessionHandlers>();
+const makePromptHint = (settings: VoiceSettings): string | undefined => {
+  const terms = settings.dictionary.flatMap((entry) => {
+    if (!entry.enabled) return [];
+    if (entry.type === "term") return entry.originals;
+    return entry.replacement === undefined || entry.replacement.length === 0
+      ? []
+      : [entry.replacement];
+  });
+  const prompt = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 0))]
+    .join(", ")
+    .slice(0, 600);
+  return prompt.length === 0 ? undefined : prompt;
+};
+
+export const make = Effect.fn("makeTranscriptionService")(function* (
+  options: MakeTranscriptionServiceOptions = {},
+) {
+  const serverSettings = yield* ServerSettingsService;
+  const serverConfig = yield* ServerConfig;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const voiceModels = yield* ServerVoiceModelManager;
+  const transcribeCpp = yield* makeTranscribeCppEngine({
+    stateDir: serverConfig.stateDir,
+    modelUsage: voiceModels,
+    resolveModel: () => voiceModels.resolveSelectedModelPath(),
+    ...options.transcribeCpp,
+  });
+
+  interface SessionRoute {
+    readonly engine: VoiceSettings["engine"];
+    readonly ownerId: string;
+  }
+  const routes = new Map<string, SessionRoute>();
+  const sidecarSessions = new Map<string, TranscriptionSessionHandlers>();
   const sidecarRef = yield* Ref.make<SidecarHandle | null>(null);
   const idleEmptyTicks = yield* Ref.make(0);
   const spawnLock = yield* Semaphore.make(1);
@@ -104,9 +150,9 @@ export const make = Effect.fn("makeTranscriptionService")(function* () {
 
   const failAllSessions = (error: TranscriptionSidecarError) =>
     Effect.suspend(() => {
-      const handlers = [...sessions.values()];
-      sessions.clear();
-      return Effect.forEach(handlers, (handler) => handler.fail(error), { discard: true });
+      const handlers = [...sidecarSessions.entries()];
+      sidecarSessions.clear();
+      return Effect.forEach(handlers, ([, handler]) => handler.fail(error), { discard: true });
     });
 
   const shutdownSidecar = Ref.get(sidecarRef).pipe(
@@ -134,7 +180,7 @@ export const make = Effect.fn("makeTranscriptionService")(function* () {
     }
     const sessionId = message.sessionId;
     if (sessionId === undefined) return Effect.void;
-    const session = sessions.get(sessionId);
+    const session = sidecarSessions.get(sessionId);
     if (session === undefined) return Effect.void;
     switch (message.type) {
       case "partial":
@@ -146,10 +192,10 @@ export const make = Effect.fn("makeTranscriptionService")(function* () {
           text: message.text ?? "",
         });
       case "ended":
-        sessions.delete(sessionId);
+        sidecarSessions.delete(sessionId);
         return session.publish({ kind: "ended", sessionId }).pipe(Effect.andThen(session.end));
       case "error":
-        sessions.delete(sessionId);
+        sidecarSessions.delete(sessionId);
         return session.fail(
           new TranscriptionSidecarError({ reason: "protocol", detail: message.message ?? "" }),
         );
@@ -223,7 +269,7 @@ export const make = Effect.fn("makeTranscriptionService")(function* () {
     yield* Effect.gen(function* () {
       while (true) {
         yield* Effect.sleep(Duration.minutes(1));
-        if (sessions.size > 0) {
+        if (sidecarSessions.size > 0) {
           yield* Ref.set(idleEmptyTicks, 0);
           continue;
         }
@@ -257,7 +303,7 @@ export const make = Effect.fn("makeTranscriptionService")(function* () {
     sessionId: string,
   ): Effect.Effect<SidecarHandle, TranscriptionSessionLookupError | TranscriptionSidecarError> =>
     Effect.gen(function* () {
-      if (!sessions.has(sessionId)) {
+      if (!sidecarSessions.has(sessionId)) {
         return yield* new TranscriptionSessionLookupError({ sessionId });
       }
       const handle = yield* Ref.get(sidecarRef);
@@ -270,14 +316,14 @@ export const make = Effect.fn("makeTranscriptionService")(function* () {
       return handle;
     });
 
-  const start: TranscriptionServiceShape["start"] = (input, handlers) =>
+  const startSidecar = (
+    input: TranscriptionStartInput,
+    handlers: TranscriptionSessionHandlers,
+    settings: VoiceSettings,
+  ) =>
     Effect.gen(function* () {
-      const settings = yield* getVoiceSettings;
-      if (!settings.enabled) {
-        return yield* new TranscriptionDisabledError();
-      }
       const handle = yield* ensureSidecar(settings);
-      sessions.set(input.sessionId, handlers);
+      sidecarSessions.set(input.sessionId, handlers);
       yield* Ref.set(idleEmptyTicks, 0);
       yield* sendLine(handle, {
         type: "start",
@@ -287,31 +333,98 @@ export const make = Effect.fn("makeTranscriptionService")(function* () {
       });
       yield* handlers.publish({ kind: "ready", sessionId: input.sessionId });
 
-      return Effect.suspend(() => {
-        if (!sessions.delete(input.sessionId)) return Effect.void;
-        return Ref.get(sidecarRef).pipe(
-          Effect.flatMap((current) =>
-            current !== null
-              ? sendLine(current, { type: "stop", sessionId: input.sessionId })
-              : Effect.void,
-          ),
-        );
-      });
+      return yield* Effect.succeed(
+        Effect.suspend(() => {
+          if (!sidecarSessions.delete(input.sessionId)) return Effect.void;
+          return Ref.get(sidecarRef).pipe(
+            Effect.flatMap((current) =>
+              current !== null
+                ? sendLine(current, { type: "stop", sessionId: input.sessionId })
+                : Effect.void,
+            ),
+          );
+        }),
+      );
     });
+
+  const start: TranscriptionServiceShape["start"] = (input, handlers, ownerId) =>
+    Effect.gen(function* () {
+      const settings = yield* getVoiceSettings;
+      if (!settings.enabled) {
+        return yield* new TranscriptionDisabledError();
+      }
+      if (routes.has(input.sessionId)) {
+        return yield* new TranscriptionSidecarError({
+          reason: "protocol",
+          detail: `Transcription session already exists: ${input.sessionId}`,
+        });
+      }
+
+      const route: SessionRoute = { engine: settings.engine, ownerId };
+      routes.set(input.sessionId, route);
+      const deleteRoute = () => {
+        if (routes.get(input.sessionId) === route) routes.delete(input.sessionId);
+      };
+      const routedHandlers: TranscriptionSessionHandlers = {
+        publish: handlers.publish,
+        fail: (error) => Effect.sync(deleteRoute).pipe(Effect.andThen(handlers.fail(error))),
+        end: Effect.sync(deleteRoute).pipe(Effect.andThen(handlers.end)),
+      };
+      const promptHint = makePromptHint(settings);
+      const cleanup = yield* (
+        route.engine === "transcribecpp"
+          ? transcribeCpp.start(input, routedHandlers, {
+              language: settings.language,
+              ...(promptHint === undefined ? {} : { promptHint }),
+              idleTimeoutMinutes: settings.idleTimeoutMinutes,
+            })
+          : startSidecar(input, routedHandlers, settings)
+      ).pipe(Effect.onError(() => Effect.sync(deleteRoute)));
+      return yield* Effect.succeed(
+        Effect.suspend(() => {
+          deleteRoute();
+          return cleanup;
+        }),
+      );
+    });
+
+  yield* Effect.addFinalizer(() => transcribeCpp.shutdown.pipe(Effect.andThen(shutdownSidecar)));
 
   return TranscriptionService.of({
     start,
-    sendAudio: (input) =>
-      requireHandle(input.sessionId).pipe(
-        Effect.flatMap((handle) =>
-          sendLine(handle, { type: "audio", sessionId: input.sessionId, pcm: input.audio }),
-        ),
-      ),
-    stop: (input) =>
-      requireHandle(input.sessionId).pipe(
-        // The sidecar finalizes the pending segment then emits "ended".
-        Effect.flatMap((handle) => sendLine(handle, { type: "stop", sessionId: input.sessionId })),
-      ),
+    sendAudio: (input, ownerId) =>
+      Effect.suspend(() => {
+        const route = routes.get(input.sessionId);
+        if (route === undefined || route.ownerId !== ownerId) {
+          return Effect.fail(new TranscriptionSessionLookupError({ sessionId: input.sessionId }));
+        }
+        return route.engine === "transcribecpp"
+          ? transcribeCpp.sendAudio(input)
+          : requireHandle(input.sessionId).pipe(
+              Effect.flatMap((handle) =>
+                sendLine(handle, {
+                  type: "audio",
+                  sessionId: input.sessionId,
+                  pcm: input.audio,
+                }),
+              ),
+            );
+      }),
+    stop: (input, ownerId) =>
+      Effect.suspend(() => {
+        const route = routes.get(input.sessionId);
+        if (route === undefined || route.ownerId !== ownerId) {
+          return Effect.fail(new TranscriptionSessionLookupError({ sessionId: input.sessionId }));
+        }
+        return route.engine === "transcribecpp"
+          ? transcribeCpp.stop(input)
+          : requireHandle(input.sessionId).pipe(
+              // The sidecar finalizes the pending segment then emits "ended".
+              Effect.flatMap((handle) =>
+                sendLine(handle, { type: "stop", sessionId: input.sessionId }),
+              ),
+            );
+      }),
   });
 });
 

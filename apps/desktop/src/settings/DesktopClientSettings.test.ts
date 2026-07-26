@@ -33,6 +33,9 @@ const clientSettings: ClientSettings = {
   sidebarV2Enabled: false,
   sidebarV2ConfiguredByUser: false,
   timestampFormat: "24-hour",
+  voiceInferenceMode: "local",
+  voiceModelId: "whisper-tiny",
+  voiceModelQuant: "Q8_0",
   wordWrap: true,
 };
 

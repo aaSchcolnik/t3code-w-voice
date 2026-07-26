@@ -29,4 +29,6 @@ export * from "./preview.ts";
 export * from "./previewAutomation.ts";
 export * from "./resourceTelemetry.ts";
 export * from "./transcription.ts";
+export * from "./voice-local.ts";
+export * from "./voice-models.ts";
 export * from "./rpc.ts";

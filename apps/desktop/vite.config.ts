@@ -55,6 +55,18 @@ export default defineConfig({
       sourcemap: true,
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
+      entry: ["src/transcription/desktopTranscriptionHost.ts"],
+      dts: false,
+      deps: {
+        alwaysBundle: (id) => id.startsWith("@t3tools/"),
+      },
+    },
+    {
+      format: "cjs",
+      outDir: "dist-electron",
+      sourcemap: true,
+      outExtensions: () => ({ js: ".cjs" }),
+      define: publicConfigDefine,
       entry: ["src/preload.ts"],
       deps: {
         // Sandboxed Electron preloads cannot reliably resolve package imports

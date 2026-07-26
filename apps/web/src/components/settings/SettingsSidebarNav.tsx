@@ -7,6 +7,7 @@ import {
   GitBranchIcon,
   KeyboardIcon,
   Link2Icon,
+  Mic2Icon,
   PaletteIcon,
   Settings2Icon,
 } from "lucide-react";
@@ -30,6 +31,7 @@ export type SettingsSectionPath =
   | "/settings/providers"
   | "/settings/source-control"
   | "/settings/connections"
+  | "/settings/voice"
   | "/settings/beta"
   | "/settings/archived";
 
@@ -44,6 +46,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   { label: "Providers", to: "/settings/providers", icon: BotIcon },
   { label: "Source Control", to: "/settings/source-control", icon: GitBranchIcon },
   { label: "Connections", to: "/settings/connections", icon: Link2Icon },
+  { label: "Voice", to: "/settings/voice", icon: Mic2Icon },
   { label: "Beta", to: "/settings/beta", icon: FlaskConicalIcon },
   { label: "Archive", to: "/settings/archived", icon: ArchiveIcon },
 ];

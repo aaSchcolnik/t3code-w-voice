@@ -1,8 +1,11 @@
 import type {
   DesktopBridge,
+  DesktopTranscriptionErrorEvent,
+  ModelDownloadProgressEvent,
   DesktopPreviewPointerEvent,
   DesktopPreviewRecordingFrame,
   DesktopPreviewTabState,
+  TranscriptionUpdate,
 } from "@t3tools/contracts";
 import { exposeClerkBridge } from "@clerk/electron/preload";
 import { contextBridge, ipcRenderer } from "electron";
@@ -145,6 +148,54 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return () => {
       ipcRenderer.removeListener(IpcChannels.UPDATE_STATE_CHANNEL, wrappedListener);
     };
+  },
+  transcription: {
+    getCapabilities: () => ipcRenderer.invoke(IpcChannels.TRANSCRIPTION_GET_CAPABILITIES_CHANNEL),
+    startSession: (input) =>
+      ipcRenderer.invoke(IpcChannels.TRANSCRIPTION_START_SESSION_CHANNEL, input),
+    sendAudio: (input) => ipcRenderer.invoke(IpcChannels.TRANSCRIPTION_SEND_AUDIO_CHANNEL, input),
+    stopSession: (input) =>
+      ipcRenderer.invoke(IpcChannels.TRANSCRIPTION_STOP_SESSION_CHANNEL, input),
+    cancelSession: (input) =>
+      ipcRenderer.invoke(IpcChannels.TRANSCRIPTION_CANCEL_SESSION_CHANNEL, input),
+    onUpdate: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, update: unknown) => {
+        if (typeof update !== "object" || update === null) return;
+        listener(update as TranscriptionUpdate);
+      };
+      ipcRenderer.on(IpcChannels.TRANSCRIPTION_UPDATE_CHANNEL, wrappedListener);
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.TRANSCRIPTION_UPDATE_CHANNEL, wrappedListener);
+    },
+    onError: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, error: unknown) => {
+        if (typeof error !== "object" || error === null) return;
+        listener(error as DesktopTranscriptionErrorEvent);
+      };
+      ipcRenderer.on(IpcChannels.TRANSCRIPTION_ERROR_CHANNEL, wrappedListener);
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.TRANSCRIPTION_ERROR_CHANNEL, wrappedListener);
+    },
+  },
+  voiceModels: {
+    getCatalog: () => ipcRenderer.invoke(IpcChannels.VOICE_MODELS_GET_CATALOG_CHANNEL),
+    getDownloadStates: () =>
+      ipcRenderer.invoke(IpcChannels.VOICE_MODELS_GET_DOWNLOAD_STATES_CHANNEL),
+    download: (target) => ipcRenderer.invoke(IpcChannels.VOICE_MODELS_DOWNLOAD_CHANNEL, target),
+    pauseDownload: (target) =>
+      ipcRenderer.invoke(IpcChannels.VOICE_MODELS_PAUSE_DOWNLOAD_CHANNEL, target),
+    cancelDownload: (target) =>
+      ipcRenderer.invoke(IpcChannels.VOICE_MODELS_CANCEL_DOWNLOAD_CHANNEL, target),
+    removeModel: (target) => ipcRenderer.invoke(IpcChannels.VOICE_MODELS_REMOVE_CHANNEL, target),
+    onDownloadProgress: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, progress: unknown) => {
+        if (typeof progress !== "object" || progress === null) return;
+        listener(progress as ModelDownloadProgressEvent);
+      };
+      ipcRenderer.on(IpcChannels.VOICE_MODELS_PROGRESS_CHANNEL, wrappedListener);
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.VOICE_MODELS_PROGRESS_CHANNEL, wrappedListener);
+    },
   },
   preview: {
     createTab: (tabId) => ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, { tabId }),

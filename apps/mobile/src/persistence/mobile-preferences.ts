@@ -30,6 +30,10 @@ export interface Preferences {
    * see `resolveThreadListV2Enabled`.
    */
   readonly threadListV2Enabled?: boolean;
+  /** Device-local voice routing. Local stays explicit/opt-in on mobile. */
+  readonly voiceInferenceMode?: "auto" | "local" | "server";
+  readonly voiceModelId?: string;
+  readonly voiceModelQuant?: string;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedErrorClass<MobilePreferencesLoadError>()(
@@ -81,6 +85,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     collapsedProjectGroups?: readonly string[];
     projectGroupingEnabled?: boolean;
     threadListV2Enabled?: boolean;
+    voiceInferenceMode?: "auto" | "local" | "server";
+    voiceModelId?: string;
+    voiceModelQuant?: string;
   } = {};
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {
@@ -112,6 +119,19 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.threadListV2Enabled === "boolean") {
     preferences.threadListV2Enabled = parsed.threadListV2Enabled;
+  }
+  if (
+    parsed.voiceInferenceMode === "auto" ||
+    parsed.voiceInferenceMode === "local" ||
+    parsed.voiceInferenceMode === "server"
+  ) {
+    preferences.voiceInferenceMode = parsed.voiceInferenceMode;
+  }
+  if (typeof parsed.voiceModelId === "string" && parsed.voiceModelId.length <= 256) {
+    preferences.voiceModelId = parsed.voiceModelId;
+  }
+  if (typeof parsed.voiceModelQuant === "string" && parsed.voiceModelQuant.length <= 64) {
+    preferences.voiceModelQuant = parsed.voiceModelQuant;
   }
   return preferences;
 }

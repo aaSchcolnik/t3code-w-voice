@@ -62,6 +62,9 @@ export const EnvironmentIdentificationMode = Schema.Literals(["artwork", "pill",
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
 export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
 
+export const VoiceInferenceMode = Schema.Literals(["auto", "local", "server"]);
+export type VoiceInferenceMode = typeof VoiceInferenceMode.Type;
+
 export const ClientSettingsSchema = Schema.Struct({
   autoOpenPlanSidebar: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -130,6 +133,12 @@ export const ClientSettingsSchema = Schema.Struct({
   timestampFormat: TimestampFormat.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
   ),
+  /** Per-device inference preference; server settings remain shared. */
+  voiceInferenceMode: VoiceInferenceMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("auto" as const satisfies VoiceInferenceMode)),
+  ),
+  voiceModelId: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  voiceModelQuant: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
@@ -425,6 +434,52 @@ export const SourceControlWritingStyleSettings = Schema.Struct({
 });
 export type SourceControlWritingStyleSettings = typeof SourceControlWritingStyleSettings.Type;
 
+export const MAX_VOICE_DICTIONARY_ENTRIES = 256;
+export const MAX_VOICE_DICTIONARY_ORIGINALS = 16;
+export const MAX_VOICE_DICTIONARY_TEXT_LENGTH = 256;
+
+const VoiceDictionaryText = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(MAX_VOICE_DICTIONARY_TEXT_LENGTH),
+);
+
+export const VoiceDictionaryEntry = Schema.Struct({
+  id: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
+  type: Schema.Literals(["term", "alias"]),
+  originals: Schema.Array(VoiceDictionaryText).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(MAX_VOICE_DICTIONARY_ORIGINALS),
+  ),
+  replacement: Schema.optionalKey(
+    TrimmedString.check(Schema.isMaxLength(MAX_VOICE_DICTIONARY_TEXT_LENGTH)),
+  ),
+  caseSensitive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  fuzzy: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+}).check(
+  Schema.makeFilter(
+    (entry) =>
+      entry.type === "alias"
+        ? entry.replacement !== undefined && entry.replacement.length > 0
+        : entry.replacement === undefined,
+    {
+      message:
+        "Alias dictionary entries require a non-empty replacement; term entries must omit it.",
+    },
+  ),
+);
+export type VoiceDictionaryEntry = typeof VoiceDictionaryEntry.Type;
+
+export const VoiceDictionary = Schema.Array(VoiceDictionaryEntry).check(
+  Schema.isMaxLength(MAX_VOICE_DICTIONARY_ENTRIES),
+  Schema.makeFilter(
+    (entries) => new Set(entries.map((entry) => entry.id)).size === entries.length,
+    { message: "Voice dictionary entry IDs must be unique." },
+  ),
+);
+
+export const VoiceEngine = Schema.Literals(["sidecar", "transcribecpp"]);
+export type VoiceEngine = typeof VoiceEngine.Type;
+
 export const VoiceSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Default language hint passed to the ASR sidecar (e.g. "es", "en"). Empty = auto. */
@@ -434,6 +489,10 @@ export const VoiceSettings = Schema.Struct({
   /** Minutes of no audio before the sidecar process is killed to free memory. */
   idleTimeoutMinutes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(
     Schema.withDecodingDefault(Effect.succeed(5)),
+  ),
+  dictionary: VoiceDictionary.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  engine: VoiceEngine.pipe(
+    Schema.withDecodingDefault(Effect.succeed("sidecar" as const satisfies VoiceEngine)),
   ),
 });
 export type VoiceSettings = typeof VoiceSettings.Type;
@@ -690,6 +749,8 @@ export const ServerSettingsPatch = Schema.Struct({
       language: Schema.optionalKey(TrimmedString),
       sidecarPath: Schema.optionalKey(TrimmedString),
       idleTimeoutMinutes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+      dictionary: Schema.optionalKey(VoiceDictionary),
+      engine: Schema.optionalKey(VoiceEngine),
     }),
   ),
 });
@@ -734,6 +795,9 @@ export const ClientSettingsPatch = Schema.Struct({
   sidebarV2Enabled: Schema.optionalKey(Schema.Boolean),
   sidebarV2ConfiguredByUser: Schema.optionalKey(Schema.Boolean),
   timestampFormat: Schema.optionalKey(TimestampFormat),
+  voiceInferenceMode: Schema.optionalKey(VoiceInferenceMode),
+  voiceModelId: Schema.optionalKey(TrimmedString),
+  voiceModelQuant: Schema.optionalKey(TrimmedString),
   wordWrap: Schema.optionalKey(Schema.Boolean),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

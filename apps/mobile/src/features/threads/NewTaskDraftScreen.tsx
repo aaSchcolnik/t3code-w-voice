@@ -8,12 +8,18 @@ import { useThemeColor } from "../../lib/useThemeColor";
 import { useFontFamily } from "../../lib/useFontFamily";
 
 import { EnvironmentId } from "@t3tools/contracts";
+import { replaceTextRange } from "@t3tools/shared/composerTrigger";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 
-import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
+import {
+  ComposerEditor,
+  type ComposerEditorHandle,
+  type ComposerEditorSelection,
+} from "../../components/ComposerEditor";
+import { AppText as Text } from "../../components/AppText";
 import {
   ComposerToolbarButton,
   ComposerToolbarRow,
@@ -50,6 +56,8 @@ import { useRemoteConnectionStatus } from "../../state/use-remote-environment-re
 import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
 import { useCreateProjectThread } from "./use-project-actions";
 import { useIncomingShare } from "../sharing/IncomingShareProvider";
+import { useVoiceDictation } from "../voice/useVoiceDictation";
+import { VoiceWaveform } from "../voice/VoiceWaveform";
 
 function formatWorkspaceLabel(input: {
   readonly workspaceMode: string;
@@ -96,6 +104,48 @@ export function NewTaskDraftScreen(props: {
       (environment) => environment.environmentId === selectedProject.environmentId,
     )?.connectionState === "connected";
   const promptInputRef = useRef<ComposerEditorHandle>(null);
+  const [composerSelection, setComposerSelection] = useState(() => ({
+    start: flow.prompt.length,
+    end: flow.prompt.length,
+  }));
+  const handleSelectionChange = useCallback((selection: ComposerEditorSelection) => {
+    setComposerSelection(selection);
+  }, []);
+  const handleVoiceCommit = useCallback(
+    (transcribedText: string) => {
+      const prefix =
+        composerSelection.start > 0 && !/\s$/u.test(flow.prompt.slice(0, composerSelection.start))
+          ? " "
+          : "";
+      const suffix =
+        composerSelection.end < flow.prompt.length &&
+        !/^\s/u.test(flow.prompt.slice(composerSelection.end))
+          ? " "
+          : "";
+      const replacement = `${prefix}${transcribedText}${suffix}`;
+      const result = replaceTextRange(
+        flow.prompt,
+        composerSelection.start,
+        composerSelection.end,
+        replacement,
+      );
+      setComposerSelection({ start: result.cursor, end: result.cursor });
+      flow.setPrompt(result.text);
+      requestAnimationFrame(() => promptInputRef.current?.focus());
+    },
+    [composerSelection, flow],
+  );
+  const voice = useVoiceDictation({
+    environmentId: selectedProject?.environmentId ?? EnvironmentId.make("pending"),
+    onCommit: handleVoiceCommit,
+  });
+  useEffect(() => {
+    const end = flow.prompt.length;
+    setComposerSelection((selection) => ({
+      start: Math.min(selection.start, end),
+      end: Math.min(selection.end, end),
+    }));
+  }, [flow.prompt.length]);
   const loadedBranchesProjectKeyRef = useRef<string | null>(null);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [importingShareKey, setImportingShareKey] = useState<string | null>(null);
@@ -952,7 +1002,9 @@ export function NewTaskDraftScreen(props: {
       scrollEnabled={isExpanded}
       value={flow.prompt}
       skills={flow.selectedProviderSkills}
+      selection={composerSelection}
       onChangeText={flow.setPrompt}
+      onSelectionChange={handleSelectionChange}
       onFocus={() => setIsComposerFocused(true)}
       onBlur={() => setIsComposerFocused(false)}
       onPasteImages={(uris) => void handleNativePasteImages(uris)}
@@ -1043,6 +1095,28 @@ export function NewTaskDraftScreen(props: {
       disabled={!canStart}
     />
   );
+  const voiceButton = voice.available ? (
+    <ComposerToolbarButton
+      accessibilityLabel={voice.isActive ? "Stop dictation" : "Start dictation"}
+      active={voice.isActive}
+      icon={voice.isActive ? "waveform" : "mic.fill"}
+      variant={voice.isActive ? "danger" : "default"}
+      onPress={voice.toggle}
+      showChevron={false}
+    />
+  ) : null;
+  const voiceStatus =
+    voice.error || voice.notice ? (
+      <Text
+        className={
+          voice.error
+            ? "px-2 pt-2 text-xs text-destructive"
+            : "px-2 pt-2 text-xs text-foreground-muted"
+        }
+      >
+        {voice.error ?? voice.notice}
+      </Text>
+    ) : null;
 
   if (isAndroid) {
     // The draft is a thread that doesn't exist yet, so it mirrors the thread
@@ -1096,14 +1170,33 @@ export function NewTaskDraftScreen(props: {
                   />
                 </View>
               ) : null}
+              {isExpanded && voice.isActive ? (
+                <VoiceWaveform
+                  levels={voice.waveform}
+                  transcript={voice.transcript}
+                  state={
+                    voice.state === "idle" || voice.state === "error" ? "recording" : voice.state
+                  }
+                />
+              ) : null}
               <View className={isExpanded ? undefined : "min-w-0 flex-1"}>{promptEditor}</View>
               {!isExpanded ? (
-                <ControlPill
-                  icon="arrow.up"
-                  variant="primary"
-                  disabled={!canStart}
-                  onPress={() => void handleStart()}
-                />
+                <View className="flex-row items-center gap-1">
+                  {voice.available ? (
+                    <ControlPill
+                      accessibilityLabel={voice.isActive ? "Stop dictation" : "Start dictation"}
+                      icon={voice.isActive ? "waveform" : "mic.fill"}
+                      variant={voice.isActive ? "danger" : "circle"}
+                      onPress={voice.toggle}
+                    />
+                  ) : null}
+                  <ControlPill
+                    icon="arrow.up"
+                    variant="primary"
+                    disabled={!canStart}
+                    onPress={() => void handleStart()}
+                  />
+                </View>
               ) : null}
             </ComposerSurface>
 
@@ -1115,9 +1208,11 @@ export function NewTaskDraftScreen(props: {
                 >
                   {toolbarPills}
                 </ComposerToolbarScroller>
+                {voiceButton}
                 {startButton}
               </ComposerToolbarRow>
             ) : null}
+            {voiceStatus}
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -1129,7 +1224,16 @@ export function NewTaskDraftScreen(props: {
       <NativeStackScreenOptions options={{ title: selectedProject.title }} />
 
       <KeyboardAvoidingView automaticOffset behavior="padding" className="flex-1">
-        <View className="min-h-0 flex-1 px-5 pt-2">{promptEditor}</View>
+        <View className="min-h-0 flex-1 px-5 pt-2">
+          {voice.isActive ? (
+            <VoiceWaveform
+              levels={voice.waveform}
+              transcript={voice.transcript}
+              state={voice.state === "idle" || voice.state === "error" ? "recording" : voice.state}
+            />
+          ) : null}
+          {promptEditor}
+        </View>
 
         <View className="border-t border-border" style={{ paddingBottom: controlsBottomPadding }}>
           {flow.attachments.length > 0 ? (
@@ -1149,8 +1253,10 @@ export function NewTaskDraftScreen(props: {
             >
               {toolbarPills}
             </ComposerToolbarScroller>
+            {voiceButton}
             {startButton}
           </ComposerToolbarRow>
+          {voiceStatus}
         </View>
       </KeyboardAvoidingView>
     </View>

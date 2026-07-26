@@ -196,6 +196,7 @@ const config: ExpoConfig = {
       },
       NSLocalNetworkUsageDescription:
         "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
+      NSMicrophoneUsageDescription: "Allow T3 Code to capture speech for voice dictation.",
       ITSAppUsesNonExemptEncryption: false,
     },
   },

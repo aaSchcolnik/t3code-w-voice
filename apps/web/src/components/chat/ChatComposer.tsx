@@ -93,7 +93,9 @@ import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { MicButton } from "./MicButton";
 import { useVoiceDictationSession } from "./useVoiceDictationSession";
+import { useVoiceAvailability } from "./useVoiceAvailability";
 import { VoiceRecordingOverlay } from "./VoiceRecordingOverlay";
+import { FirstRunVoiceConsentDialog } from "../settings/FirstRunVoiceConsentDialog";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -701,6 +703,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onExpandImage,
   } = props;
   const isSendDisabled = sendDisabledReason !== null;
+  const voiceAvailability = useVoiceAvailability(environmentId);
 
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
@@ -1679,6 +1682,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     start: startVoiceDictation,
     stopAndCommit: stopAndCommitVoiceDictation,
     cancel: cancelVoiceDictation,
+    consentRequest: voiceConsentRequest,
+    acceptLocalConsent,
+    declineLocalConsent,
   } = voiceDictation;
 
   const prepareVoiceDictationInsertion = useCallback(() => {
@@ -1732,10 +1738,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [composerCursor, voiceIsActive]);
 
   useEffect(() => {
-    if (!settings.voice.enabled && voiceIsActive) {
+    if (!voiceAvailability.available && voiceIsActive) {
       handleCancelVoiceDictation();
     }
-  }, [handleCancelVoiceDictation, settings.voice.enabled, voiceIsActive]);
+  }, [handleCancelVoiceDictation, voiceAvailability.available, voiceIsActive]);
 
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
@@ -1746,7 +1752,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
 
-      if (event.defaultPrevented || !settings.voice.enabled) return;
+      if (event.defaultPrevented || !voiceAvailability.available) return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
           terminalFocus: isTerminalFocused(),
@@ -1775,7 +1781,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     handleCancelVoiceDictation,
     handleStartVoiceDictation,
     handleStopAndCommitVoiceDictation,
-    settings.voice.enabled,
+    voiceAvailability.available,
     terminalOpen,
     voiceIsActive,
     voiceStartDisabled,
@@ -2994,7 +3000,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               >
                 <MicButton
                   state={voiceState}
-                  voiceEnabled={settings.voice.enabled}
+                  voiceEnabled={voiceAvailability.available}
                   disabled={voiceStartDisabled}
                   preserveFocusOnPointerDown
                   onToggle={handleToggleVoiceDictation}
@@ -3345,7 +3351,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               >
                 <MicButton
                   state={voiceState}
-                  voiceEnabled={settings.voice.enabled}
+                  voiceEnabled={voiceAvailability.available}
                   disabled={voiceStartDisabled}
                   preserveFocusOnPointerDown
                   onToggle={handleToggleVoiceDictation}
@@ -3378,6 +3384,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           )}
         </div>
       </div>
+      <FirstRunVoiceConsentDialog
+        request={voiceConsentRequest}
+        onAccept={() => void acceptLocalConsent()}
+        onDecline={() => void declineLocalConsent()}
+      />
     </form>
   );
 });

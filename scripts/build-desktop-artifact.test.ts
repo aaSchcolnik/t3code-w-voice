@@ -13,6 +13,7 @@ import {
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
   createBuildConfig,
+  DESKTOP_ASAR_UNPACK,
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
   DESKTOP_EXTRA_RESOURCES,
@@ -24,11 +25,14 @@ import {
   LinuxIconResizeError,
   MacPasskeySigningConfigurationResolutionError,
   MissingMacPasskeyProvisioningProfileError,
+  renderMacInheritedEntitlements,
   renderMacPasskeyEntitlements,
   resolveClerkPasskeyNativeArtifacts,
   resolveMacPasskeySigningConfiguration,
   resolveDesktopRuntimeDependencies,
   resolveFffNativeDependencies,
+  resolveKoffiNativePackages,
+  resolveTranscribeCppNativeArtifacts,
   resolveBuildOptions,
   resolveDesktopBuildIconAssets,
   resolveDesktopProductName,
@@ -316,6 +320,54 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ]);
   });
 
+  it("unpacks the fff shared library for filesystem and FFI access", () => {
+    assert.deepStrictEqual(DESKTOP_ASAR_UNPACK, [
+      "node_modules/@ff-labs/fff-bin-*/**/*",
+      "node_modules/transcribe-cpp/**/*",
+      "node_modules/@transcribe-cpp/**/*",
+      "node_modules/koffi/**/*",
+    ]);
+  });
+
+  it("asserts the transcribe.cpp and koffi packages for each artifact architecture", () => {
+    assert.deepStrictEqual(resolveTranscribeCppNativeArtifacts("mac", "arm64"), [
+      {
+        packageName: "@transcribe-cpp/darwin-arm64-metal",
+        libraryFileName: "libtranscribe.dylib",
+      },
+    ]);
+    assert.deepStrictEqual(resolveTranscribeCppNativeArtifacts("linux", "x64"), [
+      {
+        packageName: "@transcribe-cpp/linux-x64-cpu-vulkan",
+        libraryFileName: "libtranscribe.so",
+      },
+    ]);
+    assert.deepStrictEqual(resolveTranscribeCppNativeArtifacts("win", "x64"), [
+      {
+        packageName: "@transcribe-cpp/win32-x64-cpu-vulkan",
+        libraryFileName: "transcribe.dll",
+      },
+    ]);
+    assert.throws(
+      () => resolveTranscribeCppNativeArtifacts("win", "arm64"),
+      /does not publish a win32-arm64 runtime/u,
+    );
+    assert.deepStrictEqual(resolveTranscribeCppNativeArtifacts("mac", "universal"), [
+      {
+        packageName: "@transcribe-cpp/darwin-arm64-metal",
+        libraryFileName: "libtranscribe.dylib",
+      },
+      {
+        packageName: "@transcribe-cpp/darwin-x64-cpu",
+        libraryFileName: "libtranscribe.dylib",
+      },
+    ]);
+    assert.deepStrictEqual(resolveKoffiNativePackages("mac", "universal"), [
+      "@koromix/koffi-darwin-arm64",
+      "@koromix/koffi-darwin-x64",
+    ]);
+  });
+
   it.effect("applies platform-specific packaging to the build config", () =>
     Effect.gen(function* () {
       const mac = yield* createBuildConfig(
@@ -346,8 +398,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
       );
 
-      assert.notProperty(mac, "asarUnpack");
-      assert.notProperty(linux, "asarUnpack");
+      assert.deepStrictEqual(mac.asarUnpack, DESKTOP_ASAR_UNPACK);
+      assert.deepStrictEqual(linux.asarUnpack, DESKTOP_ASAR_UNPACK);
       assert.deepStrictEqual(win.asarUnpack, WINDOWS_ASAR_UNPACK);
       for (const config of [mac, linux, win]) {
         assert.deepStrictEqual(config.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
@@ -428,6 +480,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.include(entitlements, "<string>webcredentials:clerk.example.com</string>");
     assert.include(entitlements, "<string>webcredentials:example.clerk.accounts.dev</string>");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
+    assert.include(entitlements, "<key>com.apple.security.device.audio-input</key>");
+    const inheritedEntitlements = renderMacInheritedEntitlements();
+    assert.include(inheritedEntitlements, "<key>com.apple.security.device.audio-input</key>");
+    assert.notInclude(inheritedEntitlements, "com.apple.application-identifier");
   });
 
   it("rejects incomplete macOS passkey signing configuration", () => {
@@ -515,13 +571,19 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     Effect.gen(function* () {
       const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
         entitlementsPath: "/tmp/entitlements.mac.plist",
+        entitlementsInheritPath: "/tmp/entitlements.mac.inherit.plist",
         provisioningProfilePath: "/tmp/t3code.provisionprofile",
       });
 
       const mac = config.mac as Record<string, unknown>;
       assert.equal(config.appId, "com.t3tools.t3code");
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
+      assert.equal(mac.entitlementsInherit, "/tmp/entitlements.mac.inherit.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
+      assert.deepStrictEqual(mac.extendInfo, {
+        NSMicrophoneUsageDescription:
+          "T3 Code uses the microphone only while you are actively dictating a message.",
+      });
       assert.deepStrictEqual(mac.protocols, [
         { name: "T3 Code", schemes: ["t3code", "t3code-dev"] },
       ]);
@@ -693,7 +755,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.equal(resolved.platform, "win");
       assert.equal(resolved.target, "nsis");
-      assert.equal(resolved.arch, "arm64");
+      assert.equal(resolved.arch, "x64");
     }),
   );
 

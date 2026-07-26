@@ -1,31 +1,17 @@
-import { WS_METHODS } from "@t3tools/contracts";
-import {
-  createEnvironmentRpcCommand,
-  createEnvironmentRpcSubscriptionAtomFamily,
-} from "@t3tools/client-runtime/state/runtime";
+import { createTranscriptionAtoms } from "@t3tools/client-runtime/state/transcription";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 
-/**
- * Subscribes to streaming transcription updates for a session. Mounting the
- * returned atom issues the `transcription.start` RPC; tearing it down (the last
- * subscriber unsubscribing plus idle TTL) ends the server-side session.
- */
-export const transcriptionUpdates = createEnvironmentRpcSubscriptionAtomFamily(
-  connectionAtomRuntime,
-  {
-    label: "transcription:updates",
-    tag: WS_METHODS.transcriptionStart,
-    idleTtlMs: 1_000,
-  },
-);
+const transcription = createTranscriptionAtoms(connectionAtomRuntime);
 
-export const transcriptionSendAudio = createEnvironmentRpcCommand(connectionAtomRuntime, {
-  label: "transcription:send-audio",
-  tag: WS_METHODS.transcriptionSendAudio,
-});
-
-export const transcriptionStop = createEnvironmentRpcCommand(connectionAtomRuntime, {
-  label: "transcription:stop",
-  tag: WS_METHODS.transcriptionStop,
-});
+/** Compatibility adapter for existing web consumers. */
+export const transcriptionUpdates = transcription.updates;
+export const transcriptionSendAudio = transcription.sendAudio;
+export const transcriptionStop = transcription.stop;
+export const serverVoiceModelState = transcription.modelState;
+export const serverVoiceModelEvents = transcription.modelEvents;
+export const serverVoiceModelDownload = transcription.downloadModel;
+export const serverVoiceModelPause = transcription.pauseModelDownload;
+export const serverVoiceModelCancel = transcription.cancelModelDownload;
+export const serverVoiceModelRemove = transcription.removeModel;
+export const serverVoiceModelSelect = transcription.selectModel;

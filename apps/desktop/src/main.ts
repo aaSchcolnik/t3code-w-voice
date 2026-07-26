@@ -8,6 +8,8 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
+// @effect-diagnostics nodeBuiltinImport:off - Electron bootstrap resolves the utility host and model directory before constructing Effect services.
+import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -55,6 +57,8 @@ import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
 import * as DesktopState from "./app/DesktopState.ts";
 import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
+import * as DesktopModelManager from "./transcription/DesktopModelManager.ts";
+import * as DesktopTranscriptionService from "./transcription/DesktopTranscriptionService.ts";
 import * as BrowserSession from "./preview/BrowserSession.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
@@ -154,6 +158,21 @@ const desktopWindowLayer = DesktopWindow.layer.pipe(
   Layer.provideMerge(desktopPreviewLayer),
 );
 
+const desktopModelManagerLayer = DesktopModelManager.layer(() =>
+  NodePath.join(Electron.app.getPath("userData"), "voice-models"),
+);
+
+const desktopTranscriptionServiceLayer = DesktopTranscriptionService.layer((hostEntryPath) =>
+  Electron.utilityProcess.fork(hostEntryPath, [], {
+    serviceName: "T3 Code Voice Transcription",
+  }),
+).pipe(Layer.provide(Layer.mergeAll(desktopModelManagerLayer, desktopFoundationLayer)));
+
+const desktopTranscriptionLayer = Layer.mergeAll(
+  desktopModelManagerLayer,
+  desktopTranscriptionServiceLayer,
+);
+
 // Pool layer instantiates the backend factory once for the Windows
 // primary instance and exposes it via pool.primary. Consumers go through
 // the pool now; the legacy DesktopBackendManager service is gone. The
@@ -182,6 +201,7 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopLifecycle.layer,
   DesktopApplicationMenu.layer,
   DesktopShellEnvironment.layer,
+  desktopTranscriptionLayer,
   desktopSshLayer,
 ).pipe(
   Layer.provideMerge(DesktopUpdates.layer),

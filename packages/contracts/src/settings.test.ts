@@ -33,6 +33,119 @@ describe("ClientSettings word wrap", () => {
   });
 });
 
+describe("Voice settings", () => {
+  it("defaults per-device inference settings without changing legacy clients", () => {
+    const settings = decodeClientSettings({});
+
+    expect(settings.voiceInferenceMode).toBe("auto");
+    expect(settings.voiceModelId).toBe("");
+    expect(settings.voiceModelQuant).toBe("");
+  });
+
+  it("defaults the server voice engine and dictionary", () => {
+    const voice = decodeServerSettings({}).voice;
+
+    expect(voice.engine).toBe("sidecar");
+    expect(voice.dictionary).toEqual([]);
+  });
+
+  it("decodes voice inference and dictionary patches", () => {
+    expect(
+      decodeClientSettingsPatch({
+        voiceInferenceMode: "local",
+        voiceModelId: "parakeet-tdt-0.6b-v3",
+        voiceModelQuant: "Q8_0",
+      }),
+    ).toMatchObject({ voiceInferenceMode: "local", voiceModelQuant: "Q8_0" });
+    expect(
+      decodeServerSettingsPatch({
+        voice: {
+          engine: "transcribecpp",
+          dictionary: [
+            {
+              id: "complyq",
+              type: "alias",
+              originals: ["comply q"],
+              replacement: "ComplyQ",
+            },
+          ],
+        },
+      }).voice,
+    ).toMatchObject({
+      engine: "transcribecpp",
+      dictionary: [
+        {
+          id: "complyq",
+          caseSensitive: false,
+          fuzzy: false,
+          enabled: true,
+        },
+      ],
+    });
+  });
+
+  it("rejects malformed aliases, term replacements, and duplicate IDs at the server boundary", () => {
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: [{ id: "alias", type: "alias", originals: ["spoken"] }],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: [{ id: "term", type: "term", originals: ["ComplyQ"], replacement: "other" }],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: [
+            { id: "duplicate", type: "term", originals: ["first"] },
+            { id: "duplicate", type: "term", originals: ["second"] },
+          ],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("bounds dictionary entry counts, variants, and text lengths", () => {
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: Array.from({ length: 257 }, (_, index) => ({
+            id: `term-${index}`,
+            type: "term",
+            originals: ["term"],
+          })),
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: [
+            {
+              id: "too-many-originals",
+              type: "term",
+              originals: Array.from({ length: 17 }, (_, index) => `term-${index}`),
+            },
+          ],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: [{ id: "long", type: "term", originals: ["x".repeat(257)] }],
+        },
+      }),
+    ).toThrow();
+  });
+});
+
 describe("ClientSettings glass opacity", () => {
   it("defaults to a readable translucent surface", () => {
     expect(decodeClientSettings({}).glassOpacity).toBe(80);

@@ -92,6 +92,10 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as TranscriptionServiceModule from "./transcription/TranscriptionService.ts";
+import {
+  ServerVoiceModelManager,
+  type ServerVoiceModelManagerImpl,
+} from "./transcription/ServerVoiceModelManager.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
@@ -683,6 +687,7 @@ const buildAppUnderTest = (options?: {
 
     const servedRoutesLayer = servedRoutesWithCoreMocks.pipe(
       Layer.provide(Layer.mock(TranscriptionServiceModule.TranscriptionService)({})),
+      Layer.provide(Layer.succeed(ServerVoiceModelManager, {} as ServerVoiceModelManagerImpl)),
       Layer.provide(
         Layer.mergeAll(
           Layer.mock(PreviewManager.PreviewManager)({

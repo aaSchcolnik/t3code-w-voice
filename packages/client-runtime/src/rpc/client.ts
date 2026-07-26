@@ -53,7 +53,8 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.previewAutomationConnect
   | typeof WS_METHODS.subscribeVcsStatus
   | typeof WS_METHODS.terminalAttach
-  | typeof WS_METHODS.transcriptionStart;
+  | typeof WS_METHODS.transcriptionStart
+  | typeof WS_METHODS.subscribeVoiceModelState;
 
 export type EnvironmentStreamCommandRpcTag =
   | typeof WS_METHODS.cloudInstallRelayClient
@@ -143,7 +144,11 @@ export const request = Effect.fn("EnvironmentRpc.request")(function* <
   return yield* method(input).pipe(Effect.ensuring(completeObservation));
 });
 
-export function runStream<TTag extends EnvironmentStreamCommandRpcTag>(
+/**
+ * Runs a stream against exactly one currently active RPC session. Unlike
+ * `subscribe`, this never replays the input on a replacement connection.
+ */
+export function runStream<TTag extends EnvironmentStreamRpcTag>(
   tag: TTag,
   input: EnvironmentRpcInput<TTag>,
 ): Stream.Stream<

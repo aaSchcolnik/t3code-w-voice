@@ -1,0 +1,8 @@
+{
+  "platforms": ["apple"],
+  "apple": {
+    "modules": ["T3TranscribeModule"],
+    "appDelegateSubscribers": ["T3TranscribeAppDelegateSubscriber"],
+    "podspecPath": "T3TranscribeNative.podspec"
+  }
+}

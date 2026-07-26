@@ -69,6 +69,8 @@ import {
 } from "../../lib/providerOptions";
 import { useComposerPathSearch } from "../../state/use-composer-path-search";
 import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
+import { useVoiceDictation } from "../voice/useVoiceDictation";
+import { VoiceWaveform } from "../voice/VoiceWaveform";
 
 /**
  * Height of the collapsed composer (pill + vertical padding, excluding safe-area inset).
@@ -342,6 +344,35 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const handleSelectionChange = useCallback((selection: ComposerEditorSelection) => {
     setComposerSelection(selection);
   }, []);
+  const handleVoiceCommit = useCallback(
+    (transcribedText: string) => {
+      const prefix =
+        composerSelection.start > 0 &&
+        !/\s$/u.test(props.draftMessage.slice(0, composerSelection.start))
+          ? " "
+          : "";
+      const suffix =
+        composerSelection.end < props.draftMessage.length &&
+        !/^\s/u.test(props.draftMessage.slice(composerSelection.end))
+          ? " "
+          : "";
+      const replacement = `${prefix}${transcribedText}${suffix}`;
+      const result = replaceTextRange(
+        props.draftMessage,
+        composerSelection.start,
+        composerSelection.end,
+        replacement,
+      );
+      setComposerSelection({ start: result.cursor, end: result.cursor });
+      props.onChangeDraftMessage(result.text);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [composerSelection, inputRef, props.draftMessage, props.onChangeDraftMessage],
+  );
+  const voice = useVoiceDictation({
+    environmentId: props.environmentId,
+    onCommit: handleVoiceCommit,
+  });
   useEffect(() => {
     const end = props.draftMessage.length;
     setComposerSelection((selection) => {
@@ -764,6 +795,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           }
         >
           {/* Attachment strip — inside the card, above the text input */}
+          {isExpanded && voice.isActive ? (
+            <VoiceWaveform
+              levels={voice.waveform}
+              transcript={voice.transcript}
+              state={voice.state === "idle" || voice.state === "error" ? "recording" : voice.state}
+            />
+          ) : null}
           {isExpanded ? (
             <Animated.View
               className={props.draftAttachments.length > 0 ? "pb-2.5" : undefined}
@@ -837,16 +875,26 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           ) : null}
           {!isExpanded ? (
             <Animated.View entering={FadeIn.duration(180)} exiting={FadeOut.duration(100)}>
-              {showStopAction ? (
-                <ControlPill icon="stop.fill" variant="danger" onPress={props.onStopThread} />
-              ) : (
-                <ControlPill
-                  icon="arrow.up"
-                  variant="primary"
-                  disabled={!canSend}
-                  onPress={handleSend}
-                />
-              )}
+              <View className="flex-row items-center gap-1">
+                {voice.available && !showStopAction ? (
+                  <ControlPill
+                    accessibilityLabel={voice.isActive ? "Stop dictation" : "Start dictation"}
+                    icon={voice.isActive ? "waveform" : "mic.fill"}
+                    variant={voice.isActive ? "danger" : "circle"}
+                    onPress={voice.toggle}
+                  />
+                ) : null}
+                {showStopAction ? (
+                  <ControlPill icon="stop.fill" variant="danger" onPress={props.onStopThread} />
+                ) : (
+                  <ControlPill
+                    icon="arrow.up"
+                    variant="primary"
+                    disabled={!canSend}
+                    onPress={handleSend}
+                  />
+                )}
+              </View>
             </Animated.View>
           ) : null}
         </ComposerSurface>
@@ -897,6 +945,16 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   />
                 ) : null}
               </ComposerToolbarScroller>
+              {voice.available ? (
+                <ComposerToolbarButton
+                  accessibilityLabel={voice.isActive ? "Stop dictation" : "Start dictation"}
+                  active={voice.isActive}
+                  icon={voice.isActive ? "waveform" : "mic.fill"}
+                  variant={voice.isActive ? "danger" : "default"}
+                  onPress={voice.toggle}
+                  showChevron={false}
+                />
+              ) : null}
               <ComposerToolbarButton
                 accessibilityLabel={sendLabel}
                 icon="arrow.up"
@@ -917,6 +975,17 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               automatically.
             </Text>
           </Animated.View>
+        ) : null}
+        {voice.error || voice.notice ? (
+          <Text
+            className={
+              voice.error
+                ? "px-2 pt-2 text-xs text-danger"
+                : "px-2 pt-2 text-xs text-foreground-muted"
+            }
+          >
+            {voice.error ?? voice.notice}
+          </Text>
         ) : null}
       </Animated.View>
 
