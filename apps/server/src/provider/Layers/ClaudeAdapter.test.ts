@@ -2,6 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeTimersPromises from "node:timers/promises";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import type {
@@ -1974,6 +1975,273 @@ describe("ClaudeAdapterLive", () => {
       Effect.provide(harness.layer),
     );
   });
+
+  it.effect(
+    "projects Claude dynamic workflows and phase agents without phantom native runs",
+    () => {
+      const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-workflow-"));
+      const outputFile = NodePath.join(tempDir, "workflow-output.json");
+      NodeFS.writeFileSync(
+        outputFile,
+        JSON.stringify({
+          summary: "Workflow verified",
+          agentCount: 2,
+          result: [{ verdict: "pass" }],
+          totalTokens: 900,
+          totalToolCalls: 11,
+          workflowProgress: [
+            { type: "workflow_phase", index: 1, title: "Verify" },
+            {
+              type: "workflow_agent",
+              index: 1,
+              label: "verify:contracts",
+              phaseIndex: 1,
+              phaseTitle: "Verify",
+              agentId: "agent-1",
+              model: "claude-fable-5",
+              state: "done",
+              startedAt: 1,
+              attempt: 1,
+              tokens: 400,
+              toolCalls: 5,
+              promptPreview: "Verify contracts",
+              resultPreview: "Contracts pass",
+            },
+            {
+              type: "workflow_agent",
+              index: 2,
+              label: "verify:server",
+              phaseIndex: 1,
+              phaseTitle: "Verify",
+              agentId: "agent-2",
+              model: "claude-fable-5",
+              state: "done",
+              startedAt: 1,
+              attempt: 1,
+              tokens: 500,
+              toolCalls: 6,
+              promptPreview: "Verify server",
+              resultPreview: "Server passes",
+            },
+          ],
+        }),
+      );
+      const harness = makeHarness();
+
+      return Effect.gen(function* () {
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true })),
+        );
+        const adapter = yield* ClaudeAdapter;
+        const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+        const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+          Effect.sync(() => runtimeEvents.push(event)),
+        ).pipe(Effect.forkChild);
+
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+
+        harness.query.emit({
+          type: "stream_event",
+          session_id: "sdk-session-workflow",
+          uuid: "workflow-tool-start",
+          parent_tool_use_id: null,
+          event: {
+            type: "content_block_start",
+            index: 0,
+            content_block: {
+              type: "tool_use",
+              id: "tool-workflow-1",
+              name: "Workflow",
+              input: {
+                script:
+                  'export const meta = { name: "verify-plan", description: "Verify the plan" }',
+              },
+            },
+          },
+        } as unknown as SDKMessage);
+        harness.query.emit({
+          type: "user",
+          session_id: "sdk-session-workflow",
+          uuid: "workflow-tool-result",
+          parent_tool_use_id: null,
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "tool-workflow-1",
+                is_error: false,
+                content: "Workflow launched in background.",
+              },
+            ],
+          },
+          tool_use_result: {
+            status: "async_launched",
+            taskId: "workflow-task-1",
+            taskType: "local_workflow",
+            workflowName: "verify-plan",
+            runId: "wf_example",
+            summary: "Verify the plan",
+            transcriptDir: NodePath.join(tempDir, "transcripts"),
+            scriptPath: NodePath.join(tempDir, "verify-plan.js"),
+          },
+        } as unknown as SDKMessage);
+        harness.query.emit({
+          type: "system",
+          subtype: "task_started",
+          task_id: "workflow-task-1",
+          tool_use_id: "tool-workflow-1",
+          task_type: "local_workflow",
+          workflow_name: "verify-plan",
+          description: "Verify the plan",
+          session_id: "sdk-session-workflow",
+          uuid: "workflow-task-started",
+        } as unknown as SDKMessage);
+        harness.query.emit({
+          type: "system",
+          subtype: "task_progress",
+          task_id: "workflow-task-1",
+          description: "Verify the plan",
+          workflow_progress: [
+            { type: "workflow_phase", index: 1, title: "Verify" },
+            {
+              type: "workflow_agent",
+              index: 1,
+              label: "verify:contracts",
+              phaseIndex: 1,
+              phaseTitle: "Verify",
+              agentId: "agent-1",
+              model: "claude-fable-5",
+              state: "done",
+              startedAt: 1,
+              attempt: 1,
+              tokens: 400,
+              toolCalls: 5,
+              promptPreview: "Verify contracts",
+              resultPreview: "Contracts pass",
+            },
+            {
+              type: "workflow_agent",
+              index: 2,
+              label: "verify:server",
+              phaseIndex: 1,
+              phaseTitle: "Verify",
+              agentId: "agent-2",
+              model: "claude-fable-5",
+              state: "progress",
+              startedAt: 1,
+              attempt: 1,
+              tokens: 250,
+              toolCalls: 3,
+              promptPreview: "Verify server",
+              lastToolSummary: "Checking adapter",
+            },
+          ],
+          session_id: "sdk-session-workflow",
+          uuid: "workflow-progress",
+        } as unknown as SDKMessage);
+
+        yield* Effect.yieldNow;
+        yield* Effect.yieldNow;
+        const cancelled = yield* adapter.cancelSubagent!({
+          rootThreadId: THREAD_ID,
+          runId: SubagentRunId.make("claude-wf:wf_example"),
+          expectedSequence: 0,
+        });
+        assert.equal(cancelled, true);
+        assert.deepEqual(harness.query.stopTaskCalls, ["workflow-task-1"]);
+
+        harness.query.emit({
+          type: "system",
+          subtype: "task_notification",
+          task_id: "workflow-task-1",
+          status: "killed",
+          summary: "Workflow verified",
+          output_file: outputFile,
+          session_id: "sdk-session-workflow",
+          uuid: "workflow-completed",
+        } as unknown as SDKMessage);
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          if (
+            runtimeEvents.some(
+              (event) =>
+                event.type === "subagent.completed" &&
+                event.executionScope?.subagentRunId === "claude-wf:wf_example",
+            )
+          ) {
+            break;
+          }
+          yield* Effect.promise(() => NodeTimersPromises.setImmediate());
+        }
+
+        const lifecycleEvents = runtimeEvents.filter(
+          (event) =>
+            event.type === "subagent.started" ||
+            event.type === "subagent.updated" ||
+            event.type === "subagent.completed",
+        );
+        const workflowStarted = lifecycleEvents.find(
+          (event) =>
+            event.type === "subagent.started" &&
+            event.executionScope?.subagentRunId === "claude-wf:wf_example",
+        );
+        assert.equal(workflowStarted?.type, "subagent.started");
+        if (workflowStarted?.type === "subagent.started") {
+          assert.equal(workflowStarted.payload.runKind, "workflow");
+          assert.equal(workflowStarted.payload.capabilities?.canCancel, true);
+        }
+        const completedWorkflow = lifecycleEvents.find(
+          (event) =>
+            event.type === "subagent.completed" &&
+            event.executionScope?.subagentRunId === "claude-wf:wf_example",
+        );
+        assert.equal(completedWorkflow?.type, "subagent.completed");
+        if (completedWorkflow?.type === "subagent.completed") {
+          assert.equal(completedWorkflow.payload.status, "cancelled");
+          assert.deepEqual(completedWorkflow.payload.stats, {
+            agentCount: 2,
+            totalTokens: 900,
+            totalToolCalls: 11,
+          });
+        }
+        const taskCompleted = runtimeEvents.find(
+          (event) => event.type === "task.completed" && event.payload.taskId === "workflow-task-1",
+        );
+        assert.equal(taskCompleted?.type, "task.completed");
+        if (taskCompleted?.type === "task.completed") {
+          assert.equal(taskCompleted.payload.status, "stopped");
+        }
+        const completedAgents = lifecycleEvents.filter(
+          (event) =>
+            event.type === "subagent.completed" &&
+            event.executionScope?.parentSubagentRunId === "claude-wf:wf_example",
+        );
+        assert.deepEqual(
+          [
+            ...new Set(completedAgents.map((event) => event.executionScope?.subagentRunId)),
+          ].toSorted(),
+          [
+            SubagentRunId.make("claude-wf:wf_example:1"),
+            SubagentRunId.make("claude-wf:wf_example:2"),
+          ],
+        );
+        assert.equal(
+          lifecycleEvents.some(
+            (event) => event.executionScope?.subagentRunId === "tool-workflow-1",
+          ),
+          false,
+        );
+        runtimeEventsFiber.interruptUnsafe();
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
 
   it.effect("consumes undeclared and UX-internal system subtypes without warning rows", () => {
     const harness = makeHarness();

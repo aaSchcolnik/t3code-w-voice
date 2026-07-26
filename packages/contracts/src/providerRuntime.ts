@@ -20,7 +20,9 @@ import {
   SubagentModelResolution,
   SubagentRunId,
   SubagentSource,
+  SubagentStats,
   SubagentStatus,
+  SubagentWorkflowInfo,
 } from "./subagent.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
@@ -517,6 +519,9 @@ export type TaskCompletedPayload = typeof TaskCompletedPayload.Type;
 export const SubagentLifecyclePayload = Schema.Struct({
   source: SubagentSource,
   status: SubagentStatus,
+  runKind: Schema.optional(Schema.Literals(["agent", "workflow"])),
+  workflow: Schema.optional(SubagentWorkflowInfo),
+  stats: Schema.optional(SubagentStats),
   title: Schema.optional(TrimmedNonEmptyStringSchema),
   taskPreview: Schema.optional(TrimmedNonEmptyStringSchema),
   agentType: Schema.optional(TrimmedNonEmptyStringSchema),

@@ -44,6 +44,26 @@ export const SubagentCapabilities = Schema.Struct({
 });
 export type SubagentCapabilities = typeof SubagentCapabilities.Type;
 
+export const SubagentWorkflowInfo = Schema.Struct({
+  runId: TrimmedNonEmptyString,
+  name: Schema.optional(TrimmedNonEmptyString),
+  phaseIndex: Schema.optional(NonNegativeInt),
+  phaseTitle: Schema.optional(TrimmedNonEmptyString),
+  agentIndex: Schema.optional(NonNegativeInt),
+  agentId: Schema.optional(TrimmedNonEmptyString),
+  attempt: Schema.optional(NonNegativeInt),
+  tokens: Schema.optional(NonNegativeInt),
+  toolCalls: Schema.optional(NonNegativeInt),
+});
+export type SubagentWorkflowInfo = typeof SubagentWorkflowInfo.Type;
+
+export const SubagentStats = Schema.Struct({
+  agentCount: NonNegativeInt,
+  totalTokens: NonNegativeInt,
+  totalToolCalls: NonNegativeInt,
+});
+export type SubagentStats = typeof SubagentStats.Type;
+
 export const SubagentRun = Schema.Struct({
   id: SubagentRunId,
   source: SubagentSource,
@@ -67,6 +87,9 @@ export const SubagentRun = Schema.Struct({
   finalMessage: Schema.NullOr(Schema.String),
   error: Schema.NullOr(Schema.String),
   capabilities: SubagentCapabilities,
+  runKind: Schema.optional(Schema.Literals(["agent", "workflow"])),
+  workflow: Schema.optional(SubagentWorkflowInfo),
+  stats: Schema.optional(SubagentStats),
   resumeOfRunId: Schema.optional(SubagentRunId),
   createdAt: IsoDateTime,
   startedAt: Schema.NullOr(IsoDateTime),

@@ -7,20 +7,25 @@ import {
   type SubagentRun,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import { BrainIcon, SearchIcon, ShieldCheckIcon, WorkflowIcon, WrenchIcon } from "lucide-react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 
 import {
   flattenSubagentRunTree,
+  groupWorkflowChildrenByPhase,
   partitionSubagentRuns,
+  reconcileWorkflowCollapseState,
   subagentRunIdForActivation,
   SubagentsPanel,
+  workflowIconFor,
 } from "./SubagentsPanel";
 import {
   findNewActiveSubagentRun,
   hasDetailedSubagentTranscript,
   isActiveSubagentStatus,
   resolveSubagentMetadata,
+  subagentSummaryResult,
   subagentStatusLabel,
 } from "./subagents/subagentRunPresentation";
 
@@ -90,12 +95,130 @@ describe("flattenSubagentRunTree", () => {
     expect(partitioned.done.map(({ id }) => id)).toEqual(["completed", "failed"]);
   });
 
+  it("pulls workflow roots and descendants out of active and done sections", () => {
+    const workflow = run("workflow", {
+      runKind: "workflow",
+      workflow: { runId: "wf_example" },
+    });
+    const completedAgent = run("workflow-agent", {
+      parentRunId: workflow.id,
+      depth: 1,
+      status: "completed",
+      workflow: { runId: "wf_example", agentIndex: 1 },
+    });
+    const nested = run("workflow-descendant", {
+      parentRunId: completedAgent.id,
+      depth: 2,
+    });
+    const regular = run("regular");
+
+    const partitioned = partitionSubagentRuns([completedAgent, nested, regular, workflow]);
+    expect(partitioned.workflows.map(({ id }) => id)).toEqual([
+      "workflow-agent",
+      "workflow-descendant",
+      "workflow",
+    ]);
+    expect(partitioned.active.map(({ id }) => id)).toEqual(["regular"]);
+    expect(partitioned.done).toEqual([]);
+  });
+
   it("hides descendants when a parent is collapsed", () => {
     const root = run("root");
     const child = run("child", { parentRunId: root.id, depth: 1 });
     const flattened = flattenSubagentRunTree([root, child], new Set(["root"]));
     expect(flattened.map(({ run }) => run.id)).toEqual(["root"]);
     expect(flattened[0]).toMatchObject({ hasChildren: true, collapsed: true });
+  });
+});
+
+describe("groupWorkflowChildrenByPhase", () => {
+  it("sorts phases and agents while keeping phase-less agents in an untitled final group", () => {
+    const phaseTwoAgentTwo = run("phase-2-agent-2", {
+      workflow: { runId: "wf_example", phaseIndex: 2, phaseTitle: "Review", agentIndex: 4 },
+    });
+    const phaseOne = run("phase-1", {
+      workflow: { runId: "wf_example", phaseIndex: 1, phaseTitle: "Plan", agentIndex: 1 },
+    });
+    const phaseTwoAgentOne = run("phase-2-agent-1", {
+      workflow: { runId: "wf_example", phaseIndex: 2, phaseTitle: "Review", agentIndex: 3 },
+    });
+    const unphased = run("unphased", {
+      workflow: { runId: "wf_example", agentIndex: 2 },
+    });
+
+    const groups = groupWorkflowChildrenByPhase([
+      phaseTwoAgentTwo,
+      unphased,
+      phaseOne,
+      phaseTwoAgentOne,
+    ]);
+    expect(
+      groups.map((group) => ({
+        phaseIndex: group.phaseIndex,
+        phaseTitle: group.phaseTitle,
+        ids: group.children.map(({ id }) => id),
+      })),
+    ).toEqual([
+      { phaseIndex: 1, phaseTitle: "Plan", ids: ["phase-1"] },
+      {
+        phaseIndex: 2,
+        phaseTitle: "Review",
+        ids: ["phase-2-agent-1", "phase-2-agent-2"],
+      },
+      { phaseIndex: null, phaseTitle: null, ids: ["unphased"] },
+    ]);
+  });
+});
+
+describe("workflowIconFor", () => {
+  it("maps workflow intent keywords to semantic icons", () => {
+    expect(workflowIconFor("Plan the migration")).toBe(BrainIcon);
+    expect(workflowIconFor("Verify implementation")).toBe(ShieldCheckIcon);
+    expect(workflowIconFor("Research dependencies")).toBe(SearchIcon);
+    expect(workflowIconFor("Fix the adapter")).toBe(WrenchIcon);
+    expect(workflowIconFor("Coordinate agents")).toBe(WorkflowIcon);
+  });
+});
+
+describe("reconcileWorkflowCollapseState", () => {
+  it("auto-collapses only on terminal transitions and preserves a user expansion", () => {
+    const terminalWorkflow = run("workflow", {
+      runKind: "workflow",
+      workflow: { runId: "wf_example" },
+      status: "completed",
+    });
+    const transitioned = reconcileWorkflowCollapseState(
+      [terminalWorkflow],
+      new Set(),
+      new Set(),
+      new Set(),
+    );
+    expect([...transitioned.collapsedIds]).toEqual(["workflow"]);
+
+    const userExpanded = reconcileWorkflowCollapseState(
+      [terminalWorkflow, run("unrelated")],
+      new Set(),
+      new Set(),
+      transitioned.terminalWorkflowIds,
+    );
+    expect([...userExpanded.collapsedIds]).toEqual([]);
+  });
+
+  it("re-expands an automatically collapsed workflow when it retries", () => {
+    const runningWorkflow = run("workflow", {
+      runKind: "workflow",
+      workflow: { runId: "wf_example" },
+      status: "running",
+    });
+    const retried = reconcileWorkflowCollapseState(
+      [runningWorkflow],
+      new Set(["workflow"]),
+      new Set(["workflow"]),
+      new Set(["workflow"]),
+    );
+
+    expect([...retried.collapsedIds]).toEqual([]);
+    expect([...retried.autoCollapsedIds]).toEqual([]);
   });
 });
 
@@ -126,6 +249,91 @@ describe("SubagentsPanel", () => {
 
     expect(html).toContain('aria-label="Active subagents"');
     expect(html).toContain('aria-label="Done subagents"');
+  });
+
+  it("renders dynamic workflows first with stats and phase-grouped agent rows", () => {
+    const workflow = run("workflow", {
+      provider: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      runKind: "workflow",
+      workflow: { runId: "wf_example", name: "Verify migration" },
+      title: "Verify migration",
+      taskPreview: "Verify the migration",
+      stats: { agentCount: 2, totalTokens: 900, totalToolCalls: 11 },
+      capabilities: {
+        canCancel: true,
+        canSteer: false,
+        canRespond: false,
+        canResume: false,
+        transcriptQuality: "summary",
+      },
+    });
+    const workflowAgent = run("workflow-agent", {
+      provider: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      parentRunId: workflow.id,
+      depth: 1,
+      title: "verify:contracts",
+      workflow: {
+        runId: "wf_example",
+        phaseIndex: 1,
+        phaseTitle: "Verify",
+        agentIndex: 1,
+      },
+      capabilities: {
+        canCancel: false,
+        canSteer: false,
+        canRespond: false,
+        canResume: false,
+        transcriptQuality: "summary",
+      },
+    });
+    const active = run("regular-active");
+
+    const html = renderToStaticMarkup(
+      createElement(SubagentsPanel, {
+        runs: [active, workflowAgent, workflow],
+        provider: undefined,
+        providers: [],
+        fallbackDriverKind: ProviderDriverKind.make("claudeAgent"),
+        environmentId: EnvironmentId.make("environment-1"),
+        threadId: ThreadId.make("thread-1"),
+      }),
+    );
+
+    expect(html).toContain('aria-label="Dynamic workflow subagents"');
+    expect(html).toContain("2 agents · 900 tokens");
+    expect(html).toContain(">Verify<");
+    expect(html).toContain("verify:contracts");
+    expect(html.indexOf("Dynamic workflow")).toBeLessThan(html.indexOf("Active subagents"));
+  });
+
+  it("collapses workflows that are already terminal", () => {
+    const workflow = run("terminal-workflow", {
+      runKind: "workflow",
+      workflow: { runId: "wf_terminal" },
+      status: "completed",
+    });
+    const child = run("hidden-workflow-agent", {
+      parentRunId: workflow.id,
+      depth: 1,
+      status: "completed",
+      workflow: { runId: "wf_terminal", agentIndex: 1 },
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(SubagentsPanel, {
+        runs: [child, workflow],
+        provider: undefined,
+        providers: [],
+        fallbackDriverKind: ProviderDriverKind.make("claudeAgent"),
+        environmentId: EnvironmentId.make("environment-1"),
+        threadId: ThreadId.make("thread-1"),
+      }),
+    );
+
+    expect(html).toContain("Expand terminal-workflow subagents");
+    expect(html).not.toContain("hidden-workflow-agent");
   });
 
   it("renders plain metadata without provider or transcript badges", () => {
@@ -239,5 +447,20 @@ describe("subagent metadata presentation", () => {
     };
 
     expect(resolveSubagentMetadata(metadataRun, provider)).toEqual(["GPT 5.6 Sol"]);
+  });
+});
+
+describe("subagent summary result", () => {
+  it("prefers the error for failed agents even when progress summaries exist", () => {
+    expect(
+      subagentSummaryResult(
+        run("failed-agent", {
+          status: "failed",
+          error: "Contract verification failed",
+          finalMessage: "A stale final message",
+          lastSummary: "Running contract verification",
+        }),
+      ),
+    ).toBe("Contract verification failed");
   });
 });

@@ -140,7 +140,19 @@ const providerIndexKey = (key: string, value: string): string => `${key}\u0000${
 
 function mergeRun(current: SubagentRun | undefined, incoming: SubagentRun): SubagentRun {
   if (!current) return incoming;
-  const status = reduceSubagentStatus(current.status, incoming.status);
+  const currentAttempt = current.workflow?.attempt;
+  const incomingAttempt = incoming.workflow?.attempt;
+  const newerWorkflowAgentAttempt =
+    current.runKind !== "workflow" &&
+    incoming.runKind !== "workflow" &&
+    current.workflow !== undefined &&
+    incoming.workflow !== undefined &&
+    current.workflow.runId === incoming.workflow.runId &&
+    incomingAttempt !== undefined &&
+    incomingAttempt > (currentAttempt ?? 0);
+  const status = newerWorkflowAgentAttempt
+    ? incoming.status
+    : reduceSubagentStatus(current.status, incoming.status);
   return {
     ...current,
     ...incoming,
@@ -149,10 +161,21 @@ function mergeRun(current: SubagentRun | undefined, incoming: SubagentRun): Suba
     rootThreadId: current.rootThreadId,
     createdAt: current.createdAt,
     status,
-    startedAt: current.startedAt ?? incoming.startedAt,
+    ...(newerWorkflowAgentAttempt
+      ? {
+          error: null,
+          finalMessage: null,
+          lastSummary: incoming.lastSummary,
+          startedAt: incoming.startedAt,
+        }
+      : {
+          startedAt: current.startedAt ?? incoming.startedAt,
+        }),
     completedAt: TERMINAL_STATUSES.has(status)
       ? (incoming.completedAt ?? current.completedAt)
-      : current.completedAt,
+      : newerWorkflowAgentAttempt
+        ? null
+        : current.completedAt,
     sequence: current.sequence + 1,
   };
 }
@@ -425,6 +448,15 @@ const make = Effect.gen(function* () {
           finalMessage: payload?.finalMessage ?? current?.finalMessage ?? null,
           error: payload?.error ?? current?.error ?? null,
           capabilities,
+          ...((payload?.runKind ?? current?.runKind)
+            ? { runKind: payload?.runKind ?? current?.runKind }
+            : {}),
+          ...((payload?.workflow ?? current?.workflow)
+            ? { workflow: payload?.workflow ?? current?.workflow }
+            : {}),
+          ...((payload?.stats ?? current?.stats)
+            ? { stats: payload?.stats ?? current?.stats }
+            : {}),
           ...(payload?.resumeOfRunId ? { resumeOfRunId: payload.resumeOfRunId } : {}),
           createdAt: current?.createdAt ?? event.createdAt,
           startedAt:

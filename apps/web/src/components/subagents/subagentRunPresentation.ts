@@ -87,6 +87,14 @@ export function resolveSubagentMetadata(
   return [modelLabel, reasoning, mode].filter((value): value is string => Boolean(value));
 }
 
+export function subagentSummaryResult(run: SubagentRun): string | null {
+  if (run.status === "failed") {
+    return run.error ?? run.finalMessage ?? run.lastSummary;
+  }
+
+  return run.finalMessage ?? run.lastSummary ?? run.error;
+}
+
 const TERMINAL_STATUSES = new Set<SubagentStatus>(["completed", "failed", "cancelled"]);
 
 export function isActiveSubagentStatus(status: SubagentStatus): boolean {

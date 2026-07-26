@@ -49,6 +49,7 @@ describe("SubagentRun", () => {
 
   it("decodes runs written before option metadata and preserves enriched details when present", () => {
     expect(decodeSubagentRun(baseRun).resolvedOptionDetails).toBeUndefined();
+    expect(decodeSubagentRun(baseRun).runKind).toBeUndefined();
 
     const run = decodeSubagentRun({
       ...baseRun,
@@ -65,6 +66,34 @@ describe("SubagentRun", () => {
     });
 
     expect(run.resolvedOptionDetails?.[0]?.valueLabel).toBe("Fast");
+  });
+
+  it("decodes workflow roots and agents with aggregate and retry metadata", () => {
+    const workflow = decodeSubagentRun({
+      ...baseRun,
+      id: "claude-wf:wf_example",
+      runKind: "workflow",
+      workflow: { runId: "wf_example", name: "Review migration" },
+      stats: { agentCount: 2, totalTokens: 1200, totalToolCalls: 7 },
+    });
+    const agent = decodeSubagentRun({
+      ...baseRun,
+      id: "claude-wf:wf_example:1",
+      runKind: "agent",
+      workflow: {
+        runId: "wf_example",
+        phaseIndex: 1,
+        phaseTitle: "Review",
+        agentId: "agent-1",
+        attempt: 2,
+        tokens: 600,
+        toolCalls: 3,
+      },
+    });
+
+    expect(workflow.stats?.agentCount).toBe(2);
+    expect(agent.workflow?.attempt).toBe(2);
+    expect(agent.workflow?.phaseTitle).toBe("Review");
   });
 
   it("rejects unsupported capability and status values", () => {

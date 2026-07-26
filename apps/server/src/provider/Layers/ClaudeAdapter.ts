@@ -111,6 +111,11 @@ import {
   ClaudeNativeSubagentTracker,
   type ClaudeNativeSubagentRecord,
 } from "../claude/ClaudeNativeSubagentTracker.ts";
+import {
+  ClaudeWorkflowTracker,
+  type ClaudeWorkflowRunRecord,
+  type ClaudeWorkflowSnapshotResult,
+} from "../claude/ClaudeWorkflowTracker.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.UnknownFromJsonString);
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.UnknownFromJsonString);
 
@@ -249,6 +254,7 @@ interface ClaudeSessionContext {
   >;
   readonly claudeTasks: Map<string, ClaudeTaskState>;
   readonly nativeSubagents: ClaudeNativeSubagentTracker;
+  readonly workflows: ClaudeWorkflowTracker;
   turnState: ClaudeTurnState | undefined;
   lastKnownContextWindow: number | undefined;
   lastKnownTokenUsage: ThreadTokenUsageSnapshot | undefined;
@@ -761,8 +767,16 @@ function isClaudeNativeSubagentTool(toolName: string): toolName is "Agent" | "Ta
   return toolName === "Agent" || toolName === "Task";
 }
 
+function isClaudeWorkflowTool(toolName: string): boolean {
+  return toolName === "Workflow";
+}
+
 function normalizeClaudeTaskStatus(value: unknown): PlanStep["status"] {
   return value === "completed" ? "completed" : value === "in_progress" ? "inProgress" : "pending";
+}
+
+function normalizeClaudeTaskCompletionStatus(value: unknown): "completed" | "failed" | "stopped" {
+  return value === "completed" || value === "failed" ? value : "stopped";
 }
 
 function readString(value: unknown): string | undefined {
@@ -779,7 +793,11 @@ function readClaudeToolUseResult(message: SDKMessage): Record<string, unknown> |
   if (message.type !== "user") {
     return undefined;
   }
-  const result = (message as { readonly tool_use_result?: unknown }).tool_use_result;
+  const raw = message as {
+    readonly tool_use_result?: unknown;
+    readonly toolUseResult?: unknown;
+  };
+  const result = raw.tool_use_result ?? raw.toolUseResult;
   return result !== null && typeof result === "object" && !Array.isArray(result)
     ? (result as Record<string, unknown>)
     : undefined;
@@ -1563,6 +1581,97 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         payload: rawPayload,
       },
     });
+  });
+
+  const emitWorkflowLifecycle = Effect.fn("emitWorkflowLifecycle")(function* (
+    context: ClaudeSessionContext,
+    run: ClaudeWorkflowRunRecord,
+    rawMethod: string,
+    rawPayload: unknown,
+  ) {
+    const stamp = yield* makeEventStamp();
+    const isTerminal =
+      run.status === "completed" || run.status === "failed" || run.status === "cancelled";
+    yield* offerRuntimeEvent({
+      type: isTerminal
+        ? "subagent.completed"
+        : run.status === "starting"
+          ? "subagent.started"
+          : "subagent.updated",
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      providerInstanceId: boundInstanceId,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+      executionScope: {
+        kind: "subagent",
+        subagentRunId: run.runId,
+        ...(run.parentRunId ? { parentSubagentRunId: run.parentRunId } : {}),
+        depth: run.depth,
+      },
+      payload: {
+        source: "native",
+        status: run.status,
+        runKind: run.runKind,
+        workflow: run.workflow,
+        ...(run.stats ? { stats: run.stats } : {}),
+        title: run.title,
+        taskPreview: run.taskPreview,
+        ...(run.agentType ? { agentType: run.agentType } : {}),
+        ...(run.resolvedModel
+          ? { resolvedModel: run.resolvedModel, modelResolution: "reported" as const }
+          : { modelResolution: "unknown" as const }),
+        ...(run.lastSummary !== undefined ? { lastSummary: run.lastSummary } : {}),
+        ...(run.finalMessage !== undefined ? { finalMessage: run.finalMessage } : {}),
+        ...(run.error !== undefined ? { error: run.error } : {}),
+        capabilities: {
+          canCancel:
+            run.runKind === "workflow" &&
+            !isTerminal &&
+            run.taskId !== undefined &&
+            context.query.stopTask !== undefined,
+          canSteer: false,
+          canRespond: false,
+          canResume: false,
+          transcriptQuality: "summary",
+        },
+      },
+      providerRefs: nativeProviderRefs(context, {
+        providerItemId: run.toolUseId,
+        providerToolUseId: run.toolUseId,
+        providerTaskId: run.taskId,
+        providerAgentId: run.agentId,
+      }),
+      raw: {
+        source: "claude.sdk.message",
+        method: rawMethod,
+        payload: rawPayload,
+      },
+    });
+  });
+
+  const emitWorkflowSnapshot = Effect.fn("emitWorkflowSnapshot")(function* (
+    context: ClaudeSessionContext,
+    snapshot: ClaudeWorkflowSnapshotResult,
+    rawMethod: string,
+    rawPayload: unknown,
+  ) {
+    yield* emitWorkflowLifecycle(context, snapshot.workflow, rawMethod, rawPayload);
+    yield* Effect.forEach(
+      snapshot.agents,
+      (agent) => emitWorkflowLifecycle(context, agent, rawMethod, rawPayload),
+      { discard: true },
+    );
+  });
+
+  const readWorkflowOutputFile = Effect.fn("readWorkflowOutputFile")(function* (
+    outputFile: string,
+  ) {
+    return yield* fileSystem.readFileString(outputFile).pipe(
+      Effect.map(tryParseJsonRecord),
+      Effect.orElseSucceed(() => undefined),
+    );
   });
 
   const recoverNativeSubagents = Effect.fn("recoverNativeSubagents")(function* (
@@ -2462,6 +2571,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
               message,
             );
           }
+        } else if (isClaudeWorkflowTool(nextTool.toolName)) {
+          context.workflows.updateToolInput(nextTool.itemId, nextTool.input);
         }
 
         if (
@@ -2589,6 +2700,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           "claude/stream_event/content_block_start",
           message,
         );
+      } else if (isClaudeWorkflowTool(toolName)) {
+        context.workflows.startTool({
+          toolUseId: itemId,
+          toolInput,
+        });
       }
 
       const stamp = yield* makeEventStamp();
@@ -2691,6 +2807,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           );
           if (nativeRun) {
             yield* emitNativeSubagentLifecycle(context, nativeRun, "claude/user/subagent", message);
+          }
+        } else if (child && isClaudeWorkflowTool(child.toolName)) {
+          const workflow = context.workflows.applyToolResult({
+            toolUseId: toolResult.toolUseId,
+            ...(toolUseResult ? { result: toolUseResult } : {}),
+            isError: toolResult.isError,
+            fallbackText: toolResult.text,
+          });
+          if (workflow) {
+            yield* emitWorkflowLifecycle(context, workflow, "claude/user/subagent", message);
           }
         }
         context.childTools.delete(toolResult.toolUseId);
@@ -2806,6 +2932,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         if (nativeRun) {
           yield* emitNativeSubagentLifecycle(context, nativeRun, "claude/user", message);
         }
+      } else if (isClaudeWorkflowTool(tool.toolName)) {
+        const workflow = context.workflows.applyToolResult({
+          toolUseId: tool.itemId,
+          ...(toolUseResult ? { result: toolUseResult } : {}),
+          isError: toolResult.isError,
+          fallbackText: toolResult.text,
+        });
+        if (workflow) {
+          yield* emitWorkflowLifecycle(context, workflow, "claude/user", message);
+        }
       }
 
       if (
@@ -2907,6 +3043,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           parentToolUseId,
         });
         yield* emitNativeSubagentLifecycle(context, childRun, "claude/assistant/subagent", message);
+      } else if (isClaudeWorkflowTool(toolName)) {
+        context.workflows.startTool({
+          toolUseId,
+          toolInput: input,
+          ...(enclosingRun ? { parentRunId: enclosingRun.runId } : {}),
+          depth: enclosingRun ? enclosingRun.depth + 1 : 0,
+        });
       }
       const stamp = yield* makeEventStamp();
       yield* offerRuntimeEvent({
@@ -3224,20 +3367,44 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         return;
       case "task_started":
         {
-          const nativeRun = context.nativeSubagents.linkTask({
-            taskId: message.task_id,
-            ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
-            description: message.description,
-            ...(message.subagent_type ? { agentType: message.subagent_type } : {}),
-            ...(message.prompt ? { prompt: message.prompt } : {}),
-          });
-          if (nativeRun) {
-            yield* emitNativeSubagentLifecycle(
-              context,
-              nativeRun,
-              "claude/system/task_started",
-              message,
-            );
+          if (message.task_type === "local_workflow") {
+            const workflow = context.workflows.linkTask({
+              taskId: message.task_id,
+              ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
+              ...(readString(
+                (message as unknown as { readonly workflow_name?: unknown }).workflow_name,
+              )
+                ? {
+                    workflowName: readString(
+                      (message as unknown as { readonly workflow_name?: unknown }).workflow_name,
+                    )!,
+                  }
+                : {}),
+            });
+            if (workflow) {
+              yield* emitWorkflowLifecycle(
+                context,
+                workflow,
+                "claude/system/task_started",
+                message,
+              );
+            }
+          } else {
+            const nativeRun = context.nativeSubagents.linkTask({
+              taskId: message.task_id,
+              ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
+              description: message.description,
+              ...(message.subagent_type ? { agentType: message.subagent_type } : {}),
+              ...(message.prompt ? { prompt: message.prompt } : {}),
+            });
+            if (nativeRun) {
+              yield* emitNativeSubagentLifecycle(
+                context,
+                nativeRun,
+                "claude/system/task_started",
+                message,
+              );
+            }
           }
         }
         yield* offerRuntimeEvent({
@@ -3260,20 +3427,34 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           },
         );
         {
-          const nativeRun = context.nativeSubagents.updateTask({
-            taskId: message.task_id,
-            ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
-            status: "running",
-            description: message.description,
-            ...(message.summary ? { summary: message.summary } : {}),
-          });
-          if (nativeRun) {
-            yield* emitNativeSubagentLifecycle(
-              context,
-              nativeRun,
-              "claude/system/task_progress",
-              message,
-            );
+          const workflowProgress = (message as unknown as { readonly workflow_progress?: unknown })
+            .workflow_progress;
+          if (workflowProgress !== undefined) {
+            const snapshot = context.workflows.applyProgress(message.task_id, workflowProgress);
+            if (snapshot) {
+              yield* emitWorkflowSnapshot(
+                context,
+                snapshot,
+                "claude/system/task_progress",
+                message,
+              );
+            }
+          } else if (!context.workflows.byTaskId(message.task_id)) {
+            const nativeRun = context.nativeSubagents.updateTask({
+              taskId: message.task_id,
+              ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
+              status: "running",
+              description: message.description,
+              ...(message.summary ? { summary: message.summary } : {}),
+            });
+            if (nativeRun) {
+              yield* emitNativeSubagentLifecycle(
+                context,
+                nativeRun,
+                "claude/system/task_progress",
+                message,
+              );
+            }
           }
         }
         yield* offerRuntimeEvent({
@@ -3289,6 +3470,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         return;
       case "task_updated": {
+        if (context.workflows.byTaskId(message.task_id)) {
+          return;
+        }
         const nativeRun = context.nativeSubagents.updateTask({
           taskId: message.task_id,
           ...(message.patch.status ? { status: message.patch.status } : {}),
@@ -3319,12 +3503,47 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           type: "task.completed",
           payload: {
             taskId: RuntimeTaskId.make(message.task_id),
-            status: message.status,
+            status: normalizeClaudeTaskCompletionStatus(message.status),
             ...(message.summary ? { summary: message.summary } : {}),
             ...(message.usage ? { usage: message.usage } : {}),
           },
         });
         {
+          const workflow = context.workflows.byTaskId(message.task_id);
+          if (workflow) {
+            const outputFile = readString(message.output_file);
+            const output = outputFile ? yield* readWorkflowOutputFile(outputFile) : undefined;
+            const rawWorkflowProgress = (
+              message as unknown as { readonly workflow_progress?: unknown }
+            ).workflow_progress;
+            const completed = context.workflows.completeTask({
+              taskId: message.task_id,
+              status: message.status,
+              ...((readString(output?.summary) ?? readString(message.summary))
+                ? { summary: (readString(output?.summary) ?? readString(message.summary))! }
+                : {}),
+              ...(output?.result !== undefined ? { result: output.result } : {}),
+              ...(output?.workflowProgress !== undefined || rawWorkflowProgress !== undefined
+                ? {
+                    workflowProgress: output?.workflowProgress ?? rawWorkflowProgress,
+                  }
+                : {}),
+              ...(output?.agentCount !== undefined ? { agentCount: output.agentCount } : {}),
+              ...(output?.totalTokens !== undefined ? { totalTokens: output.totalTokens } : {}),
+              ...(output?.totalToolCalls !== undefined
+                ? { totalToolCalls: output.totalToolCalls }
+                : {}),
+            });
+            if (completed) {
+              yield* emitWorkflowSnapshot(
+                context,
+                completed,
+                "claude/system/task_notification",
+                message,
+              );
+            }
+            return;
+          }
           const nativeRun = context.nativeSubagents.updateTask({
             taskId: message.task_id,
             ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
@@ -3807,6 +4026,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const inFlightTools = new Map<number, ToolInFlight>();
       const claudeTasks = new Map<string, ClaudeTaskState>();
       const nativeSubagents = new ClaudeNativeSubagentTracker();
+      const workflows = new ClaudeWorkflowTracker();
 
       const contextRef = yield* Ref.make<ClaudeSessionContext | undefined>(undefined);
 
@@ -4325,6 +4545,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         childTools: new Map(),
         claudeTasks,
         nativeSubagents,
+        workflows,
         turnState: undefined,
         lastKnownContextWindow: initialContextWindow,
         lastKnownTokenUsage: undefined,
@@ -4557,7 +4778,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     "cancelSubagent",
   )(function* (input) {
     const context = yield* requireSession(input.rootThreadId);
-    const run = context.nativeSubagents.byRunId(input.runId);
+    const nativeRun = context.nativeSubagents.byRunId(input.runId);
+    const workflowRun = context.workflows.byRunId(input.runId);
+    const run = nativeRun ?? workflowRun;
     if (!run?.taskId || !context.query.stopTask) return false;
     const exit = yield* Effect.exit(
       Effect.tryPromise({
@@ -4567,9 +4790,18 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     );
     if (Exit.isFailure(exit)) {
       const message = `Claude rejected cancellation for task '${run.taskId}'.`;
-      const updated = context.nativeSubagents.markCancelError(input.runId, message);
-      if (updated) {
-        yield* emitNativeSubagentLifecycle(context, updated, "claude/query/stopTask/failed", {
+      const updatedNative = nativeRun
+        ? context.nativeSubagents.markCancelError(input.runId, message)
+        : undefined;
+      const updatedWorkflow = workflowRun
+        ? context.workflows.markCancelError(input.runId, message)
+        : undefined;
+      if (updatedNative) {
+        yield* emitNativeSubagentLifecycle(context, updatedNative, "claude/query/stopTask/failed", {
+          taskId: run.taskId,
+        });
+      } else if (updatedWorkflow) {
+        yield* emitWorkflowLifecycle(context, updatedWorkflow, "claude/query/stopTask/failed", {
           taskId: run.taskId,
         });
       }
