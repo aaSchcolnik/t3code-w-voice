@@ -137,3 +137,17 @@ Full glossary with file links: `docs/reference/encyclopedia.md`
 
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## Additional vendored repository requirements
+
+- Prefer examples and patterns from the vendored source code over generated guesses or web search results.
+- Do not edit files under `.repos/` unless explicitly asked.
+- Do not import from `.repos/`; application code must continue importing from normal package dependencies.
+- Manage vendored subtrees with `vpr sync:repos`; use `vpr sync:repos --repo <id>` to sync one configured repository.
+- When updating a dependency with a configured vendored subtree, sync that subtree in the same change so
+  `.repos/` matches the installed dependency version.
+- When writing Effect code, read `.repos/effect-smol/LLMS.md` first and inspect `.repos/effect-smol/` for
+  examples of idiomatic usage, tests, module structure, and API design.
+- When writing relay infrastructure code with Alchemy, inspect `.repos/alchemy-effect/` for examples of
+  idiomatic usage, tests, module structure, and API design.
+- If using XcodeBuildMCP, use the installed XcodeBuildMCP skill before calling XcodeBuildMCP tools.
