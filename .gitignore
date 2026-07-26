@@ -1,4 +1,6 @@
 node_modules
+.pnpm-store/
+/release-nightly-subagents/
 .bun
 .turbo
 .DS_Store
