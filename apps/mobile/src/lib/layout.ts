@@ -52,6 +52,18 @@ export interface FileInspectorPaneLayout {
   readonly width: number | null;
 }
 
+/**
+ * Measured against the grid's own width, not the window: the usage screen is
+ * presented as a form sheet, which stays far narrower than an iPad display.
+ */
+export const USAGE_CARD_MIN_COLUMN_WIDTH = 340;
+
+export function deriveUsageCardColumnCount(availableWidth: number): 1 | 2 {
+  return Number.isFinite(availableWidth) && availableWidth >= USAGE_CARD_MIN_COLUMN_WIDTH * 2
+    ? 2
+    : 1;
+}
+
 export type WorkspaceAuxiliaryPaneRole = "supplementary" | "inspector";
 
 export function deriveLayout(input: { readonly width: number; readonly height: number }): Layout {

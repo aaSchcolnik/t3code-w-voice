@@ -7,10 +7,22 @@ import {
   deriveFileInspectorPaneLayout,
   deriveLayout,
   deriveStableFormSheetDetent,
+  deriveUsageCardColumnCount,
   deriveWorkspacePaneLayout,
   SPLIT_LAYOUT_MIN_HEIGHT,
   SPLIT_LAYOUT_MIN_WIDTH,
+  USAGE_CARD_MIN_COLUMN_WIDTH,
 } from "./layout";
+
+describe("deriveUsageCardColumnCount", () => {
+  it("splits the usage grid only once both columns clear the minimum card width", () => {
+    expect(deriveUsageCardColumnCount(390)).toBe(1);
+    expect(deriveUsageCardColumnCount(USAGE_CARD_MIN_COLUMN_WIDTH * 2 - 1)).toBe(1);
+    expect(deriveUsageCardColumnCount(USAGE_CARD_MIN_COLUMN_WIDTH * 2)).toBe(2);
+    expect(deriveUsageCardColumnCount(1_024)).toBe(2);
+    expect(deriveUsageCardColumnCount(Number.NaN)).toBe(1);
+  });
+});
 
 describe("resizable pane constraints", () => {
   it("keeps a preferred sidebar width across large windows and clamps it in a narrow split view", () => {

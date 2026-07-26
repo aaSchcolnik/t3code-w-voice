@@ -4,6 +4,16 @@ import type {
   SubscriptionUsageProvider,
 } from "@t3tools/contracts";
 import {
+  describeUsageSource,
+  formatProgressPrimary,
+  formatProgressSecondary,
+  formatResetTime,
+  formatUsageUpdatedAt,
+  formatUsageValue,
+  resolveUsageCardMessage,
+  usageMeterTone,
+} from "@t3tools/client-runtime/state/usage";
+import {
   AlertTriangleIcon,
   ChartNoAxesColumnIncreasingIcon,
   Clock3Icon,
@@ -30,14 +40,7 @@ import { Kbd } from "../ui/kbd";
 import { Skeleton } from "../ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SettingsPageContainer, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
-import {
-  formatProgressPrimary,
-  formatProgressSecondary,
-  formatResetTime,
-  formatUsageValue,
-  isEditableUsageShortcutTarget,
-  isUsageRefreshShortcut,
-} from "./UsageSettings.logic";
+import { isEditableUsageShortcutTarget, isUsageRefreshShortcut } from "./UsageSettings.logic";
 
 const REFRESH_INTERVAL_MS = 5 * 60_000;
 const PROVIDER_ICON: Record<SubscriptionUsageProvider, ComponentType<SVGProps<SVGSVGElement>>> = {
@@ -56,6 +59,7 @@ function MetricProgress({
 }) {
   const secondary = formatProgressSecondary(metric);
   const valueText = `${Math.round(metric.remainingPercent)}% remaining`;
+  const tone = usageMeterTone(metric.remainingPercent);
   return (
     <div className="space-y-2.5">
       <div className="flex min-w-0 items-baseline justify-between gap-3">
@@ -76,10 +80,8 @@ function MetricProgress({
         <div
           className={cn(
             "h-full rounded-full bg-primary transition-[width] duration-200 ease-out motion-reduce:transition-none",
-            metric.remainingPercent <= 10 && "bg-destructive",
-            metric.remainingPercent > 10 &&
-              metric.remainingPercent <= 25 &&
-              "bg-amber-500 dark:bg-amber-400",
+            tone === "critical" && "bg-destructive",
+            tone === "warning" && "bg-amber-500 dark:bg-amber-400",
           )}
           style={{ width: `${metric.remainingPercent}%` }}
         />
@@ -108,6 +110,7 @@ function MetricValue({ metric }: { metric: Extract<SubscriptionUsageMetric, { ki
 
 function ProviderCard({ card, nowMs }: { card: SubscriptionUsageCard; nowMs: number }) {
   const Icon = PROVIDER_ICON[card.provider];
+  const source = describeUsageSource(card.sourceStability);
   return (
     <article
       className="flex min-w-0 flex-col rounded-2xl border border-border/70 bg-card/50 px-4 py-4 shadow-xs sm:px-5 sm:py-5"
@@ -130,10 +133,8 @@ function ProviderCard({ card, nowMs }: { card: SubscriptionUsageCard; nowMs: num
             ) : null}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
-            <span>
-              {card.sourceStability === "official" ? "Provider API" : "Best-effort source"}
-            </span>
-            {card.sourceStability === "vendor-private" ? (
+            <span>{source.label}</span>
+            {source.description ? (
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -147,9 +148,7 @@ function ProviderCard({ card, nowMs }: { card: SubscriptionUsageCard; nowMs: num
                   }
                 />
                 <TooltipPopup className="max-w-72 text-wrap text-left">
-                  This provider does not publish a stable personal subscription quota API. T3
-                  mirrors the local provider client and may show partial data if the vendor changes
-                  it.
+                  {source.description}
                 </TooltipPopup>
               </Tooltip>
             ) : null}
@@ -179,10 +178,7 @@ function ProviderCard({ card, nowMs }: { card: SubscriptionUsageCard; nowMs: num
       ) : (
         <div className="mt-5 flex min-h-24 items-center rounded-xl border border-dashed border-border/70 bg-muted/20 px-4 py-3">
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {card.message ??
-              (card.status === "unavailable"
-                ? "No local subscription credentials were found."
-                : "No quota data is available for this account.")}
+            {resolveUsageCardMessage(card)}
           </p>
         </div>
       )}
@@ -280,12 +276,7 @@ export function UsageSettingsPanel() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleRefresh]);
 
-  const updatedAt = usage.data
-    ? new Date(usage.data.fetchedAt).toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit",
-      })
-    : null;
+  const updatedAt = usage.data ? formatUsageUpdatedAt(usage.data.fetchedAt) : null;
 
   return (
     <SettingsPageContainer className="max-w-6xl gap-8">
@@ -296,7 +287,7 @@ export function UsageSettingsPanel() {
           <div className="flex items-center gap-2">
             {updatedAt ? (
               <span className="hidden text-[11px] text-muted-foreground sm:inline">
-                Updated {updatedAt}
+                {updatedAt}
               </span>
             ) : null}
             <Tooltip>
