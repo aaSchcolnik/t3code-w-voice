@@ -1,11 +1,23 @@
-import { BotIcon, ChevronDownIcon, ChevronRightIcon, LoaderCircleIcon } from "lucide-react";
-import { memo, useEffect, useState } from "react";
+import {
+  BotIcon,
+  BrainIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  LoaderCircleIcon,
+  SearchIcon,
+  ShieldCheckIcon,
+  WorkflowIcon,
+  WrenchIcon,
+  type LucideIcon,
+} from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { EnvironmentId, ProviderDriverKind, SubagentRun, ThreadId } from "@t3tools/contracts";
 
 import { driverKindLabel, type ProviderInstanceEntry } from "../providerInstances";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { cn } from "../lib/utils";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
 import { SubagentTranscriptPanel } from "./subagents/SubagentTranscriptPanel";
@@ -43,8 +55,15 @@ interface VisibleRun {
 }
 
 interface PartitionedSubagentRuns {
+  readonly workflows: SubagentRun[];
   readonly active: SubagentRun[];
   readonly done: SubagentRun[];
+}
+
+export interface WorkflowPhaseGroup {
+  readonly phaseIndex: number | null;
+  readonly phaseTitle: string | null;
+  readonly children: SubagentRun[];
 }
 
 function resolveRowIdentity(
@@ -73,12 +92,67 @@ function sortRuns(runs: ReadonlyArray<SubagentRun>): SubagentRun[] {
 }
 
 export function partitionSubagentRuns(runs: ReadonlyArray<SubagentRun>): PartitionedSubagentRuns {
+  const workflowRunIds = new Set(
+    runs.filter((run) => run.runKind === "workflow").map((run) => String(run.id)),
+  );
+  let addedDescendant = true;
+  while (addedDescendant) {
+    addedDescendant = false;
+    for (const run of runs) {
+      const parentId = run.parentRunId ? String(run.parentRunId) : undefined;
+      if (!workflowRunIds.has(String(run.id)) && parentId && workflowRunIds.has(parentId)) {
+        workflowRunIds.add(String(run.id));
+        addedDescendant = true;
+      }
+    }
+  }
+
+  const workflows: SubagentRun[] = [];
   const active: SubagentRun[] = [];
   const done: SubagentRun[] = [];
   for (const run of runs) {
-    (isActiveSubagentStatus(run.status) ? active : done).push(run);
+    if (workflowRunIds.has(String(run.id))) {
+      workflows.push(run);
+    } else {
+      (isActiveSubagentStatus(run.status) ? active : done).push(run);
+    }
   }
-  return { active, done };
+  return { workflows, active, done };
+}
+
+export function groupWorkflowChildrenByPhase(
+  children: ReadonlyArray<SubagentRun>,
+): WorkflowPhaseGroup[] {
+  const groups = new Map<number | null, SubagentRun[]>();
+  for (const child of children) {
+    const phaseIndex = child.workflow?.phaseIndex ?? null;
+    groups.set(phaseIndex, [...(groups.get(phaseIndex) ?? []), child]);
+  }
+  return [...groups.entries()]
+    .toSorted(([left], [right]) => {
+      if (left === null) return right === null ? 0 : 1;
+      if (right === null) return -1;
+      return left - right;
+    })
+    .map(([phaseIndex, phaseChildren]) => ({
+      phaseIndex,
+      phaseTitle:
+        phaseChildren.find((child) => child.workflow?.phaseTitle)?.workflow?.phaseTitle ?? null,
+      children: [...phaseChildren].toSorted((left, right) => {
+        const leftIndex = left.workflow?.agentIndex ?? Number.MAX_SAFE_INTEGER;
+        const rightIndex = right.workflow?.agentIndex ?? Number.MAX_SAFE_INTEGER;
+        return leftIndex === rightIndex ? left.id.localeCompare(right.id) : leftIndex - rightIndex;
+      }),
+    }));
+}
+
+export function workflowIconFor(name: string): LucideIcon {
+  const normalized = name.toLowerCase();
+  if (/\b(plan|design)\b/.test(normalized)) return BrainIcon;
+  if (/\b(review|verify|audit)\b/.test(normalized)) return ShieldCheckIcon;
+  if (/\b(research|search|explore)\b/.test(normalized)) return SearchIcon;
+  if (/\b(fix|implement|migrate)\b/.test(normalized)) return WrenchIcon;
+  return WorkflowIcon;
 }
 
 export function subagentRunIdForActivation(
@@ -115,11 +189,28 @@ export function flattenSubagentRunTree(
   return visible;
 }
 
+function workflowStatsLabel(run: SubagentRun): string | null {
+  if (!run.stats) return null;
+  const agentLabel = run.stats.agentCount === 1 ? "agent" : "agents";
+  const tokenLabel = run.stats.totalTokens === 1 ? "token" : "tokens";
+  return `${run.stats.agentCount} ${agentLabel} · ${run.stats.totalTokens.toLocaleString("en-US")} ${tokenLabel}`;
+}
+
+function workflowStatusVariant(
+  status: SubagentRun["status"],
+): "error" | "secondary" | "success" | "warning" {
+  if (status === "failed") return "error";
+  if (status === "completed") return "success";
+  if (status === "cancelled" || status === "unknown") return "warning";
+  return "secondary";
+}
+
 function SubagentRow({
   visible,
   provider,
   providers,
   fallbackDriverKind,
+  leadingIcon: LeadingIcon,
   selected,
   onOpen,
   onToggle,
@@ -128,6 +219,7 @@ function SubagentRow({
   provider: ProviderInstanceEntry | undefined;
   providers: ReadonlyArray<ProviderInstanceEntry>;
   fallbackDriverKind: ProviderDriverKind;
+  leadingIcon?: LucideIcon | undefined;
   selected: boolean;
   onOpen: (run: SubagentRun) => void;
   onToggle: (runId: string) => void;
@@ -135,6 +227,7 @@ function SubagentRow({
   const { run, hasChildren, collapsed, depth } = visible;
   const timestamp = run.completedAt ?? run.updatedAt;
   const active = isActiveSubagentStatus(run.status);
+  const workflowStats = run.runKind === "workflow" ? workflowStatsLabel(run) : null;
   const { rowProvider, driverKind, providerLabel } = resolveRowIdentity(
     run,
     provider,
@@ -153,7 +246,7 @@ function SubagentRow({
       <button
         type="button"
         onClick={() => onOpen(run)}
-        aria-label={`${providerLabel} subagent “${run.title}” — ${subagentStatusLabel(run.status)}. Open details.`}
+        aria-label={`${run.runKind === "workflow" ? "Dynamic workflow" : `${providerLabel} subagent`} “${run.title}” — ${subagentStatusLabel(run.status)}. Open details.`}
         aria-current={selected || undefined}
         className={cn(
           "group flex min-w-0 flex-1 gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
@@ -162,16 +255,20 @@ function SubagentRow({
         )}
       >
         <div className="relative mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background/70">
-          <ProviderInstanceIcon
-            driverKind={driverKind}
-            displayName={providerLabel}
-            accentColor={rowProvider?.accentColor}
-            showBadge={rowProvider?.accentColor !== undefined}
-            className="size-5"
-            iconClassName="size-4.5"
-            badgeClassName="h-3 min-w-3 px-0.5 text-[7px]"
-            indicatorBackground="var(--background)"
-          />
+          {LeadingIcon ? (
+            <LeadingIcon className="size-4.5 text-muted-foreground" aria-hidden="true" />
+          ) : (
+            <ProviderInstanceIcon
+              driverKind={driverKind}
+              displayName={providerLabel}
+              accentColor={rowProvider?.accentColor}
+              showBadge={rowProvider?.accentColor !== undefined}
+              className="size-5"
+              iconClassName="size-4.5"
+              badgeClassName="h-3 min-w-3 px-0.5 text-[7px]"
+              indicatorBackground="var(--background)"
+            />
+          )}
           {active ? (
             <LoaderCircleIcon className="absolute -right-1 -bottom-1 size-3.5 animate-spin rounded-full bg-background p-0.5 text-primary" />
           ) : run.status === "failed" ? (
@@ -190,12 +287,27 @@ function SubagentRow({
               {formatRelativeTimeLabel(timestamp)}
             </time>
           </div>
-          <div className="mt-1">
-            <SubagentMetadataLine run={run} provider={rowProvider} />
-          </div>
-          <p className="mt-1 text-[10px] font-medium text-muted-foreground">
-            {subagentStatusLabel(run.status)}
-          </p>
+          {run.runKind === "workflow" ? (
+            <div className="mt-1 flex items-center gap-2">
+              <Badge size="sm" variant={workflowStatusVariant(run.status)}>
+                {subagentStatusLabel(run.status)}
+              </Badge>
+              {workflowStats ? (
+                <span className="ml-auto truncate text-[10px] tabular-nums text-muted-foreground/75">
+                  {workflowStats}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <div className="mt-1">
+                <SubagentMetadataLine run={run} provider={rowProvider} />
+              </div>
+              <p className="mt-1 text-[10px] font-medium text-muted-foreground">
+                {subagentStatusLabel(run.status)}
+              </p>
+            </>
+          )}
           {run.lastSummary ? (
             <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
               {run.lastSummary}
@@ -253,9 +365,9 @@ function SubagentSection({
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           {title}
         </h2>
-        <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+        <Badge size="sm" variant="secondary">
           {count}
-        </span>
+        </Badge>
       </div>
       <div role="tree" aria-label={`${title} subagents`} className="flex flex-col gap-0.5">
         {entries.map((visible) => (
@@ -275,6 +387,166 @@ function SubagentSection({
   );
 }
 
+function WorkflowSection({
+  runs,
+  collapsedIds,
+  provider,
+  providers,
+  fallbackDriverKind,
+  selectedId,
+  onOpen,
+  onToggle,
+}: {
+  runs: ReadonlyArray<SubagentRun>;
+  collapsedIds: ReadonlySet<string>;
+  provider: ProviderInstanceEntry | undefined;
+  providers: ReadonlyArray<ProviderInstanceEntry>;
+  fallbackDriverKind: ProviderDriverKind;
+  selectedId: string | null;
+  onOpen: (run: SubagentRun) => void;
+  onToggle: (runId: string) => void;
+}) {
+  const workflowRoots = sortRuns(runs.filter((run) => run.runKind === "workflow"));
+  const childrenByParent = new Map<string, SubagentRun[]>();
+  for (const run of runs) {
+    if (!run.parentRunId) continue;
+    const parentId = String(run.parentRunId);
+    childrenByParent.set(parentId, [...(childrenByParent.get(parentId) ?? []), run]);
+  }
+  const sectionTitle = workflowRoots.length === 1 ? "Dynamic workflow" : "Dynamic workflows";
+
+  return (
+    <section>
+      <div className="mb-1 flex items-center gap-2 px-3">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          {sectionTitle}
+        </h2>
+        <Badge size="sm" variant="secondary">
+          {workflowRoots.length}
+        </Badge>
+      </div>
+      <div role="tree" aria-label={`${sectionTitle} subagents`} className="flex flex-col gap-0.5">
+        {workflowRoots.map((workflow) => {
+          const children = childrenByParent.get(String(workflow.id)) ?? [];
+          const groups = groupWorkflowChildrenByPhase(children);
+          const collapsed = collapsedIds.has(String(workflow.id));
+          const phaseNames = groups
+            .map((group) => group.phaseTitle)
+            .filter((title): title is string => title !== null);
+          const LeadingIcon = workflowIconFor([workflow.title, ...phaseNames].join(" "));
+          return (
+            <div key={workflow.id} role="group" aria-label={workflow.title}>
+              <SubagentRow
+                visible={{
+                  run: workflow,
+                  hasChildren: children.length > 0,
+                  collapsed,
+                  depth: 0,
+                }}
+                provider={provider}
+                providers={providers}
+                fallbackDriverKind={fallbackDriverKind}
+                leadingIcon={LeadingIcon}
+                selected={workflow.id === selectedId}
+                onOpen={onOpen}
+                onToggle={onToggle}
+              />
+              {!collapsed
+                ? groups.map((group) => (
+                    <div
+                      key={group.phaseIndex === null ? "unphased" : `phase-${group.phaseIndex}`}
+                      role="group"
+                      aria-label={
+                        group.phaseTitle ??
+                        (group.phaseIndex === null
+                          ? "Workflow agents"
+                          : `Workflow phase ${group.phaseIndex}`)
+                      }
+                    >
+                      {group.phaseTitle || group.phaseIndex !== null ? (
+                        <div
+                          role="presentation"
+                          className="flex items-center gap-2 px-3 py-1 text-muted-foreground"
+                          style={{ paddingInlineStart: "28px" }}
+                        >
+                          <span className="truncate text-[10px] font-semibold uppercase tracking-[0.08em]">
+                            {group.phaseTitle ?? `Phase ${group.phaseIndex}`}
+                          </span>
+                          <Badge size="sm" variant="secondary">
+                            {group.children.length}
+                          </Badge>
+                        </div>
+                      ) : null}
+                      {group.children.map((child) => (
+                        <SubagentRow
+                          key={child.id}
+                          visible={{
+                            run: child,
+                            hasChildren: false,
+                            collapsed: false,
+                            depth: 1,
+                          }}
+                          provider={provider}
+                          providers={providers}
+                          fallbackDriverKind={fallbackDriverKind}
+                          selected={child.id === selectedId}
+                          onOpen={onOpen}
+                          onToggle={onToggle}
+                        />
+                      ))}
+                    </div>
+                  ))
+                : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function defaultCollapsedWorkflowIds(runs: ReadonlyArray<SubagentRun>): ReadonlySet<string> {
+  return new Set(
+    runs
+      .filter((run) => run.runKind === "workflow" && !isActiveSubagentStatus(run.status))
+      .map((run) => String(run.id)),
+  );
+}
+
+export function reconcileWorkflowCollapseState(
+  runs: ReadonlyArray<SubagentRun>,
+  collapsedIds: ReadonlySet<string>,
+  autoCollapsedIds: ReadonlySet<string>,
+  terminalWorkflowIdsSeen: ReadonlySet<string>,
+): {
+  readonly collapsedIds: ReadonlySet<string>;
+  readonly autoCollapsedIds: ReadonlySet<string>;
+  readonly terminalWorkflowIds: ReadonlySet<string>;
+} {
+  const terminalWorkflowIds = defaultCollapsedWorkflowIds(runs);
+  const activeWorkflowIds = new Set(
+    runs
+      .filter((run) => run.runKind === "workflow" && isActiveSubagentStatus(run.status))
+      .map((run) => String(run.id)),
+  );
+  const nextCollapsedIds = new Set(collapsedIds);
+  const nextAutoCollapsedIds = new Set(autoCollapsedIds);
+  for (const workflowId of activeWorkflowIds) {
+    if (!nextAutoCollapsedIds.delete(workflowId)) continue;
+    nextCollapsedIds.delete(workflowId);
+  }
+  for (const workflowId of terminalWorkflowIds) {
+    if (terminalWorkflowIdsSeen.has(workflowId)) continue;
+    nextAutoCollapsedIds.add(workflowId);
+    nextCollapsedIds.add(workflowId);
+  }
+  return {
+    collapsedIds: nextCollapsedIds,
+    autoCollapsedIds: nextAutoCollapsedIds,
+    terminalWorkflowIds,
+  };
+}
+
 export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanelProps) {
   const {
     runs,
@@ -288,13 +560,36 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
     workspaceRoot,
   } = props;
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(() =>
+    defaultCollapsedWorkflowIds(runs),
+  );
+  const runsRef = useRef(runs);
+  runsRef.current = runs;
+  const autoCollapsedWorkflowIds = useRef(new Set(defaultCollapsedWorkflowIds(runs)));
+  const terminalWorkflowIdsSeen = useRef(new Set(defaultCollapsedWorkflowIds(runs)));
   const pendingActivation = usePendingSubagentNotificationActivation();
 
   useEffect(() => {
+    const defaultCollapsedIds = defaultCollapsedWorkflowIds(runsRef.current);
     setSelectedId(null);
-    setCollapsedIds(new Set());
+    setCollapsedIds(defaultCollapsedIds);
+    autoCollapsedWorkflowIds.current = new Set(defaultCollapsedIds);
+    terminalWorkflowIdsSeen.current = new Set(defaultCollapsedIds);
   }, [threadId]);
+
+  useEffect(() => {
+    setCollapsedIds((current) => {
+      const next = reconcileWorkflowCollapseState(
+        runs,
+        current,
+        autoCollapsedWorkflowIds.current,
+        terminalWorkflowIdsSeen.current,
+      );
+      autoCollapsedWorkflowIds.current = new Set(next.autoCollapsedIds);
+      terminalWorkflowIdsSeen.current = new Set(next.terminalWorkflowIds);
+      return next.collapsedIds;
+    });
+  }, [runs]);
 
   useEffect(() => {
     if (
@@ -346,13 +641,21 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
   }
 
   const partitionedRuns = partitionSubagentRuns(runs);
+  const workflowRootCount = partitionedRuns.workflows.filter(
+    (run) => run.runKind === "workflow",
+  ).length;
   const active = flattenSubagentRunTree(partitionedRuns.active, collapsedIds);
   const done = flattenSubagentRunTree(partitionedRuns.done, collapsedIds);
   const onToggle = (runId: string) =>
     setCollapsedIds((current) => {
       const next = new Set(current);
-      if (next.has(runId)) next.delete(runId);
-      else next.add(runId);
+      if (next.has(runId)) {
+        next.delete(runId);
+        autoCollapsedWorkflowIds.current.delete(runId);
+      } else {
+        next.add(runId);
+        autoCollapsedWorkflowIds.current.delete(runId);
+      }
       return next;
     });
   const sectionProps = {
@@ -365,8 +668,17 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
   };
 
   return (
-    <ScrollArea className={cn("min-h-0 flex-1", active.length === 0 && "pt-1")}>
+    <ScrollArea
+      className={cn("min-h-0 flex-1", workflowRootCount === 0 && active.length === 0 && "pt-1")}
+    >
       <div className="flex flex-col gap-5 p-3">
+        {workflowRootCount > 0 ? (
+          <WorkflowSection
+            {...sectionProps}
+            runs={partitionedRuns.workflows}
+            collapsedIds={collapsedIds}
+          />
+        ) : null}
         {active.length > 0 ? (
           <SubagentSection
             {...sectionProps}

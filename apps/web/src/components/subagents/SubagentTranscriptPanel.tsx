@@ -19,6 +19,7 @@ import { SubagentTimeline } from "./SubagentTimeline";
 import {
   hasDetailedSubagentTranscript,
   isActiveSubagentStatus,
+  subagentSummaryResult,
   subagentStatusLabel,
 } from "./subagentRunPresentation";
 
@@ -36,7 +37,7 @@ interface SubagentTranscriptPanelProps {
 }
 
 function RunSummary({ run }: { run: SubagentRun }) {
-  const result = run.finalMessage ?? run.lastSummary ?? run.error;
+  const result = subagentSummaryResult(run);
   return (
     <div className="min-h-0 flex-1 overflow-auto p-4">
       <div className="mx-auto flex max-w-2xl flex-col gap-4">

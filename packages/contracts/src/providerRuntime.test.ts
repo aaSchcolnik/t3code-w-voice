@@ -69,6 +69,43 @@ describe("ProviderRuntimeEvent", () => {
     expect(parsed.payload.planMarkdown).toBe("# Ship it");
   });
 
+  it("decodes workflow metadata on subagent lifecycle events", () => {
+    const parsed = decodeRuntimeEvent({
+      type: "subagent.updated",
+      eventId: "event-workflow-agent-1",
+      provider: "claudeAgent",
+      providerInstanceId: "claudeAgent",
+      createdAt: "2026-07-26T00:00:00.000Z",
+      threadId: "thread-1",
+      executionScope: {
+        kind: "subagent",
+        subagentRunId: "claude-wf:wf_example:1",
+        parentSubagentRunId: "claude-wf:wf_example",
+        depth: 1,
+      },
+      payload: {
+        source: "native",
+        status: "running",
+        runKind: "agent",
+        workflow: {
+          runId: "wf_example",
+          phaseIndex: 1,
+          phaseTitle: "Implement",
+          agentId: "agent-1",
+          attempt: 2,
+          tokens: 200,
+          toolCalls: 4,
+        },
+      },
+    });
+
+    expect(parsed.type).toBe("subagent.updated");
+    if (parsed.type === "subagent.updated") {
+      expect(parsed.payload.workflow?.phaseTitle).toBe("Implement");
+      expect(parsed.payload.workflow?.attempt).toBe(2);
+    }
+  });
+
   it("decodes user-input.requested with structured questions", () => {
     const parsed = decodeRuntimeEvent({
       type: "user-input.requested",

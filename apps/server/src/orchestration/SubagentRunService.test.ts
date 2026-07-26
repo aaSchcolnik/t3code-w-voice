@@ -327,3 +327,113 @@ it("keeps terminal evidence sticky while allowing completion to outrank cancella
   expect(SubagentRunService.reduceSubagentStatus("cancelled", "completed")).toBe("completed");
   expect(SubagentRunService.reduceSubagentStatus("failed", "cancelled")).toBe("failed");
 });
+
+it.live("allows only newer workflow-agent attempts to reset terminal status", () =>
+  withTestServices(
+    "subagent-run-workflow-retry-test-",
+    Effect.gen(function* () {
+      const service = yield* SubagentRunService.__testing.make;
+      const attempt1StartedAt = "2026-07-14T00:00:00.000Z";
+      const attempt2StartedAt = "2026-07-14T00:05:00.000Z";
+      const workflowAgent = makeRun({
+        id: SubagentRunId.make("claude-wf:wf_example:1"),
+        runKind: "agent",
+        workflow: { runId: "wf_example", attempt: 1 },
+        status: "failed",
+        lastSummary: "Attempt 1 summary",
+        finalMessage: "Attempt 1 result",
+        error: "First attempt failed",
+        startedAt: attempt1StartedAt,
+        completedAt: now,
+      });
+      yield* service.upsert({ eventId: "attempt-1-failed", run: workflowAgent });
+
+      const sameAttempt = yield* service.upsert({
+        eventId: "attempt-1-stale-progress",
+        run: { ...workflowAgent, status: "running", completedAt: null },
+      });
+      expect(sameAttempt.status).toBe("failed");
+      expect(sameAttempt.completedAt).toBe(now);
+      expect(sameAttempt.lastSummary).toBe("Attempt 1 summary");
+      expect(sameAttempt.finalMessage).toBe("Attempt 1 result");
+      expect(sameAttempt.error).toBe("First attempt failed");
+      expect(sameAttempt.startedAt).toBe(attempt1StartedAt);
+
+      const retry = yield* service.upsert({
+        eventId: "attempt-2-running",
+        run: {
+          ...workflowAgent,
+          workflow: { runId: "wf_example", attempt: 2 },
+          status: "running",
+          lastSummary: null,
+          finalMessage: "stale final from naive spread",
+          error: "stale error from naive spread",
+          startedAt: attempt2StartedAt,
+          completedAt: null,
+        },
+      });
+      expect(retry.status).toBe("running");
+      expect(retry.completedAt).toBeNull();
+      expect(retry.lastSummary).toBeNull();
+      expect(retry.finalMessage).toBeNull();
+      expect(retry.error).toBeNull();
+      expect(retry.startedAt).toBe(attempt2StartedAt);
+
+      const unrelatedAgent = makeRun({
+        id: SubagentRunId.make("plain-agent"),
+        status: "failed",
+        completedAt: now,
+      });
+      yield* service.upsert({ eventId: "plain-failed", run: unrelatedAgent });
+      const plainProgress = yield* service.upsert({
+        eventId: "plain-progress",
+        run: { ...unrelatedAgent, status: "running", completedAt: null },
+      });
+      expect(plainProgress.status).toBe("failed");
+    }),
+  ),
+);
+
+it.live("projects workflow lifecycle metadata through runtime ingestion", () =>
+  withTestServices(
+    "subagent-run-workflow-ingestion-test-",
+    Effect.gen(function* () {
+      const service = yield* SubagentRunService.__testing.make;
+      const workflowRunId = SubagentRunId.make("claude-wf:wf_example");
+      yield* service.ingest({
+        eventId: EventId.make("workflow-started"),
+        type: "subagent.started",
+        provider: ProviderDriverKind.make("claudeAgent"),
+        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+        threadId: rootThreadId,
+        createdAt: now,
+        executionScope: { kind: "subagent", subagentRunId: workflowRunId, depth: 0 },
+        payload: {
+          source: "native",
+          status: "starting",
+          runKind: "workflow",
+          workflow: { runId: "wf_example", name: "Verify plan" },
+          stats: { agentCount: 2, totalTokens: 300, totalToolCalls: 5 },
+          title: "Verify plan",
+          taskPreview: "Verify the implementation plan",
+          capabilities: {
+            canCancel: true,
+            canSteer: false,
+            canRespond: false,
+            canResume: false,
+            transcriptQuality: "summary",
+          },
+        },
+      } as ProviderRuntimeEvent);
+
+      const projected = yield* service.getOwned(rootThreadId, workflowRunId);
+      expect(projected.runKind).toBe("workflow");
+      expect(projected.workflow?.name).toBe("Verify plan");
+      expect(projected.stats).toEqual({
+        agentCount: 2,
+        totalTokens: 300,
+        totalToolCalls: 5,
+      });
+    }),
+  ),
+);
