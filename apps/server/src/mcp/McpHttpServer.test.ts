@@ -805,6 +805,7 @@ const RegistryStubLive = Layer.succeed(
   McpSessionRegistry.McpSessionRegistry.of({
     issue: () => Effect.die("issue is unused in transport tests"),
     resolve: (token) => Effect.succeed(token === validToken ? invocation : undefined),
+    touch: () => Effect.void,
     revokeProviderSession: () => Effect.void,
     revokeThread: () => Effect.void,
     revokeAll: Effect.void,

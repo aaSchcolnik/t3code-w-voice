@@ -40,15 +40,17 @@ export function KnowledgeScanAgentSettings() {
   const explicitScanner = settings.mcp.engine.delegation.roles.scanner;
 
   const updateScanner = (scanner: ReadonlyArray<EngineDelegationTarget> | undefined) => {
-    const roles = { ...settings.mcp.engine.delegation.roles };
-    if (scanner === undefined) delete roles.scanner;
-    else roles.scanner = scanner;
+    const currentRoles = settings.mcp.engine.delegation.roles;
+    const roles = {
+      ...(currentRoles.scout === undefined ? {} : { scout: currentRoles.scout }),
+      ...(currentRoles.worker === undefined ? {} : { worker: currentRoles.worker }),
+      ...(currentRoles.consensus === undefined ? {} : { consensus: currentRoles.consensus }),
+      ...(scanner === undefined ? {} : { scanner }),
+    };
     updateSettings({
       mcp: {
-        ...settings.mcp,
         engine: {
-          ...settings.mcp.engine,
-          delegation: { ...settings.mcp.engine.delegation, roles },
+          delegation: { roles },
         },
       },
     });
@@ -112,9 +114,7 @@ export function KnowledgeScanAgentSettings() {
                   onChange={(mainThreadModelPreference) =>
                     updateSettings({
                       mcp: {
-                        ...settings.mcp,
                         engine: {
-                          ...settings.mcp.engine,
                           knowledgeScan: { mainThreadModelPreference },
                         },
                       },

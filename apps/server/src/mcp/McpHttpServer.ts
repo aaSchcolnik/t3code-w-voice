@@ -252,26 +252,6 @@ const McpTransportLive = McpServer.layerHttp({
   path: "/mcp",
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-// The Streamable HTTP transport only offers POST JSON-RPC (plus DELETE session
-// termination); it has no SSE listener, so a client-opened GET must receive a
-// protocol-compatible 405 instead of falling through to an application route.
-export const mcpMethodNotAllowedResponse = HttpServerResponse.empty({
-  status: 405,
-  headers: {
-    allow: "POST, DELETE",
-    "cache-control": "no-store",
-  },
-});
-
-const McpGetRouteLive = HttpRouter.add(
-  "GET",
-  "/mcp",
-  Effect.gen(function* () {
-    yield* McpInvocationContext.McpInvocationContext;
-    return mcpMethodNotAllowedResponse;
-  }),
-).pipe(Layer.provide(McpAuthMiddlewareLive));
-
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   CodexAgentToolkitRegistrationLive,
@@ -279,5 +259,4 @@ export const layer = Layer.mergeAll(
   ClaudeAgentToolkitRegistrationLive,
   EngineKnowledgeToolkitRegistrationLive,
   EngineToolkitRegistrationLive,
-  McpGetRouteLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

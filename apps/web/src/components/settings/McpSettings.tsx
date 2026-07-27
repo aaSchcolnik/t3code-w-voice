@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { type ProjectMcpOverrides } from "@t3tools/contracts";
+import { type ProjectMcpOverrides, type ServerSettingsPatch } from "@t3tools/contracts";
 import { MonitorSmartphoneIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -107,8 +107,8 @@ export function McpSettingsPanel() {
       entry.driverKind === "claudeAgent" && entry.enabled && entry.installed && entry.isAvailable,
   );
 
-  const updateMcp = (patch: Partial<typeof settings.mcp>) =>
-    updateSettings({ mcp: { ...settings.mcp, ...patch } });
+  const updateMcp = (patch: NonNullable<ServerSettingsPatch["mcp"]>) =>
+    updateSettings({ mcp: patch });
   const persistProjectOverrides = (next: ProjectMcpOverrides) => {
     if (selectedProject === undefined) return;
     void updateProjectMcp({
