@@ -211,7 +211,7 @@ import { formatProviderSkillDisplayName } from "../../providerSkillPresentation"
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindings";
+import { shortcutLabelForCommand } from "../../keybindings";
 import { isTerminalFocused } from "../../lib/terminalFocus";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
