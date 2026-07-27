@@ -1,5 +1,6 @@
 import type { LocalTranscriptionCapabilities } from "@t3tools/contracts";
 import type { Recognizer, RecognizerOptions, RecognizerResult } from "@t3tools/voice-core";
+import { applyAsarTranscribeLibraryOverride } from "@t3tools/voice-core/transcribe-library";
 import type {
   Capabilities,
   FamilyExtension,
@@ -11,11 +12,16 @@ interface LoadedBinding {
   readonly TranscribeModel: {
     load(path: string): Promise<TranscribeModel>;
   };
+  readonly artifactDir?: () => string;
 }
 
 export type LoadTranscribeCppBinding = () => Promise<LoadedBinding>;
 
-const loadDefaultBinding: LoadTranscribeCppBinding = () => import("transcribe-cpp");
+const loadDefaultBinding: LoadTranscribeCppBinding = async () => {
+  const binding = await import("transcribe-cpp");
+  applyAsarTranscribeLibraryOverride(binding);
+  return binding;
+};
 
 const EMPTY_CAPABILITIES: LocalTranscriptionCapabilities = {
   languages: [],

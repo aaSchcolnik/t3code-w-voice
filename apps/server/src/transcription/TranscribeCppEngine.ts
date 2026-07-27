@@ -15,6 +15,7 @@ import {
   type RecognizerCapabilities,
   type RecognizerOptions,
 } from "@t3tools/voice-core";
+import { applyAsarTranscribeLibraryOverride } from "@t3tools/voice-core/transcribe-library";
 import type {
   Capabilities as UpstreamCapabilities,
   Feature as UpstreamFeature,
@@ -116,10 +117,13 @@ const defaultLoader = async (): Promise<TranscribeCppModelLoader> => {
   // dlopen koffi or a transcribe.cpp backend.
   const moduleId = "transcribe-cpp";
   const loaded: unknown = await import(moduleId);
-  const transcribeModel =
-    typeof loaded === "object" && loaded !== null && "TranscribeModel" in loaded
-      ? loaded.TranscribeModel
-      : undefined;
+  if (typeof loaded !== "object" || loaded === null) {
+    throw new Error("transcribe-cpp did not expose TranscribeModel.load");
+  }
+  // Redirect dlopen off the asar path before the first native load caches the
+  // resolved binding (packaged desktop runs this server via ELECTRON_RUN_AS_NODE).
+  applyAsarTranscribeLibraryOverride(loaded);
+  const transcribeModel = "TranscribeModel" in loaded ? loaded.TranscribeModel : undefined;
   const load =
     typeof transcribeModel === "function" && "load" in transcribeModel
       ? transcribeModel.load

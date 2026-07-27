@@ -10,6 +10,10 @@
     "./node": {
       "types": "./src/download/node.ts",
       "import": "./src/download/node.ts"
+    },
+    "./transcribe-library": {
+      "types": "./src/transcribeLibrary.ts",
+      "import": "./src/transcribeLibrary.ts"
     }
   },
   "scripts": {
