@@ -198,6 +198,16 @@ export interface LegacySubagentFallbackContext {
   readonly providerInstanceId?: ProviderInstanceId | undefined;
 }
 
+function legacySubagentCorrelationIds(entry: SubagentEntry): ReadonlyArray<string> {
+  const ids = [entry.id, entry.transcriptId].filter(
+    (candidate): candidate is string => candidate !== null,
+  );
+  const nativeCodexGroup = entry.id.startsWith("collab-agent:")
+    ? entry.id.slice("collab-agent:".length).split("+")
+    : [];
+  return [...ids, ...nativeCodexGroup];
+}
+
 export function mergeSubagentRunsWithLegacyFallback(
   normalizedRuns: ReadonlyArray<SubagentRun>,
   legacyEntries: ReadonlyArray<SubagentEntry>,
@@ -208,7 +218,7 @@ export function mergeSubagentRunsWithLegacyFallback(
   const normalizedIds = new Set(normalizedRuns.map((run) => String(run.id)));
   const fallbackRuns = legacyEntries.flatMap((entry) => {
     const correlationId = entry.transcriptId ?? entry.id;
-    if (normalizedIds.has(entry.id) || normalizedIds.has(correlationId)) return [];
+    if (legacySubagentCorrelationIds(entry).some((id) => normalizedIds.has(id))) return [];
     const provider = entry.providerDriver ?? context.provider;
     const status =
       entry.status === "active"

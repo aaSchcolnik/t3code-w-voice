@@ -1110,6 +1110,48 @@ describe("deriveSubagentEntries", () => {
     });
   });
 
+  it("ignores uncorrelated Codex coordination calls", () => {
+    const entries = deriveSubagentEntries([
+      makeActivity({
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Wait for agent started",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "inProgress",
+          data: {
+            toolCallId: "call-wait",
+            item: {
+              type: "collabAgentToolCall",
+              id: "item-wait",
+              tool: "wait",
+              status: "inProgress",
+              senderThreadId: "parent-thread",
+              receiverThreadIds: [],
+              agentsStates: {},
+            },
+          },
+        },
+      }),
+      makeActivity({
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Wait for agent",
+        turnId: "turn-1",
+        payload: {
+          itemType: "collab_agent_tool_call",
+          status: "completed",
+          data: {
+            toolCallId: "call-wait-replayed",
+          },
+        },
+      }),
+    ]);
+
+    expect(entries).toEqual([]);
+  });
+
   it("marks collab agents that error or shut down with the agent outcome", () => {
     const [errored] = deriveSubagentEntries([
       makeActivity({

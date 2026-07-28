@@ -176,6 +176,26 @@ describe("mergeSubagentRunsWithLegacyFallback", () => {
     ).toHaveLength(1);
   });
 
+  it("deduplicates Codex collaboration activities by their receiver thread", () => {
+    expect(
+      mergeSubagentRunsWithLegacyFallback(
+        [run({ id: SubagentRunId.make("agent-thread-9") })],
+        [
+          {
+            ...legacyEntry,
+            id: "collab-agent:agent-thread-9",
+            transcriptId: "call-spawn-agent",
+          },
+        ],
+        {
+          rootThreadId: ThreadId.make("thread-1"),
+          provider: ProviderDriverKind.make("codex"),
+        },
+        true,
+      ),
+    ).toHaveLength(1);
+  });
+
   it("can disable fallback for rollback-window cleanup", () => {
     expect(
       mergeSubagentRunsWithLegacyFallback(

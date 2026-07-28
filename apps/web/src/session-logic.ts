@@ -776,6 +776,9 @@ const COLLAB_AGENT_OUTCOMES: Record<string, "completed" | "failed" | "stopped"> 
   shutdown: "completed",
 };
 
+const CODEX_COORDINATION_ACTIVITY =
+  /^(?:Wait for agent|Send input to agent|Resume agent|Close agent)(?: started)?$/u;
+
 function collabAgentGroup(data: Record<string, unknown> | null): CollabAgentGroup | null {
   const item = subagentItem(data);
   if (!item) return null;
@@ -880,6 +883,21 @@ export function deriveSubagentEntries(
     const data = asRecord(payload.data);
     const toolCallId = asTrimmedString(data?.toolCallId);
     const collab = collabAgentGroup(data);
+    const item = subagentItem(data);
+    // Codex coordination calls such as `wait` can arrive without receiver
+    // thread IDs. They describe orchestration around an agent, not another
+    // agent run, and cannot be correlated with the authoritative projection.
+    // Persisted activities retain the canonical title but may omit the raw
+    // item, so recognize both the live and replayed shapes.
+    if (
+      collab === null &&
+      (item?.type === "collabAgentToolCall" ||
+        (item === null &&
+          toolCallId !== null &&
+          CODEX_COORDINATION_ACTIVITY.test(activity.summary)))
+    ) {
+      continue;
+    }
     const fallbackKey = [
       activity.turnId ?? "no-turn",
       activity.summary.replace(/\s+(?:started|completed)$/iu, "").trim(),
