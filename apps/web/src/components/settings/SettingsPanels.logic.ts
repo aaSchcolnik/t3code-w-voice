@@ -7,6 +7,7 @@ import type {
   ServerSettings,
   ServerSettingsPatch,
   SidebarProjectGroupingMode,
+  UnifiedSettings,
 } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import {

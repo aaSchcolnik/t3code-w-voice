@@ -809,7 +809,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it.effect("rejects universal builds on Linux and Windows before staging binaries", () =>
     Effect.gen(function* () {
-      for (const platform of ["linux", "win"] as const) {
+      for (const [platform, supportedArchitectures] of [
+        ["linux", ["x64", "arm64"]],
+        ["win", ["x64"]],
+      ] as const) {
         const error = yield* Effect.flip(
           resolveBuildOptions({
             platform: Option.some(platform),
@@ -828,7 +831,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         );
 
         assert.instanceOf(error, UnsupportedDesktopBuildArchitectureError);
-        assert.deepStrictEqual(error.supportedArchitectures, ["x64", "arm64"]);
+        assert.deepStrictEqual(error.supportedArchitectures, supportedArchitectures);
       }
     }),
   );

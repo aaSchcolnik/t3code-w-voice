@@ -1916,8 +1916,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // Voice transcription loads native shared libraries through FFI, so those
     // packages must be real files on macOS and Linux. Windows already unpacks
     // the complete dependency tree for its WSL backend.
-    asarUnpack:
-      platform === "win" ? [...WINDOWS_ASAR_UNPACK] : [...DESKTOP_ASAR_UNPACK],
+    asarUnpack: platform === "win" ? [...WINDOWS_ASAR_UNPACK] : [...DESKTOP_ASAR_UNPACK],
     extraResources: DESKTOP_EXTRA_RESOURCES,
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
