@@ -192,6 +192,18 @@ export function useActiveSubagentCounts(
 export const LEGACY_SUBAGENT_FALLBACK_ENABLED =
   import.meta.env.VITE_SUBAGENT_LEGACY_FALLBACK !== "0";
 
+/**
+ * Activity payload projection removes delegated-run correlation metadata to
+ * keep thread snapshots small. Legacy activity rows are therefore useful only
+ * until the normalized run subscription has delivered its authoritative view.
+ */
+export function shouldUseLegacySubagentFallback(
+  normalizedRunsAuthoritative: boolean,
+  fallbackEnabled = LEGACY_SUBAGENT_FALLBACK_ENABLED,
+): boolean {
+  return fallbackEnabled && !normalizedRunsAuthoritative;
+}
+
 export interface LegacySubagentFallbackContext {
   readonly rootThreadId: ThreadId;
   readonly provider: ProviderDriverKind;

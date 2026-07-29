@@ -150,7 +150,11 @@ import {
   isActiveSubagentStatus,
 } from "./subagents/subagentRunPresentation";
 import { deriveProviderInstanceEntries, getProviderInstanceEntry } from "../providerInstances";
-import { mergeSubagentRunsWithLegacyFallback, useSubagentRunList } from "../state/subagents";
+import {
+  mergeSubagentRunsWithLegacyFallback,
+  shouldUseLegacySubagentFallback,
+  useSubagentRunList,
+} from "../state/subagents";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
@@ -2064,6 +2068,7 @@ function ChatViewContent(props: ChatViewProps) {
                 ? { providerInstanceId: activeThread.modelSelection.instanceId }
                 : {}),
             },
+            shouldUseLegacySubagentFallback(normalizedSubagentRunList.authoritative),
           )
         : [],
     [
@@ -2071,6 +2076,7 @@ function ChatViewContent(props: ChatViewProps) {
       activeThread?.session?.providerName,
       activeThreadId,
       legacySubagentEntries,
+      normalizedSubagentRunList.authoritative,
       normalizedSubagentRunList.runs,
       selectedProvider,
     ],

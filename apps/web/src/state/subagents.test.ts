@@ -14,6 +14,7 @@ import {
   applySubagentRunEvent,
   makeActiveSubagentCountsAtom,
   mergeSubagentRunsWithLegacyFallback,
+  shouldUseLegacySubagentFallback,
 } from "./subagents";
 
 const run = (overrides: Partial<SubagentRun> = {}): SubagentRun => ({
@@ -208,6 +209,35 @@ describe("mergeSubagentRunsWithLegacyFallback", () => {
         false,
       ),
     ).toEqual([]);
+  });
+
+  it("replaces uncorrelated fallback rows once normalized runs are authoritative", () => {
+    const context = {
+      rootThreadId: ThreadId.make("thread-1"),
+      provider: ProviderDriverKind.make("codex"),
+    };
+    const uncorrelatedLegacyEntry = {
+      ...legacyEntry,
+      id: "parent-tool-call",
+      transcriptId: "parent-tool-call",
+    };
+
+    expect(
+      mergeSubagentRunsWithLegacyFallback(
+        [],
+        [uncorrelatedLegacyEntry],
+        context,
+        shouldUseLegacySubagentFallback(false, true),
+      ),
+    ).toHaveLength(1);
+    expect(
+      mergeSubagentRunsWithLegacyFallback(
+        [run()],
+        [uncorrelatedLegacyEntry],
+        context,
+        shouldUseLegacySubagentFallback(true, true),
+      ),
+    ).toEqual([run()]);
   });
 
   it("retains execution option metadata in synthetic fallback runs", () => {
