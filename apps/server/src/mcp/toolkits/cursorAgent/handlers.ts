@@ -10,7 +10,6 @@ import {
   startActiveDelegatedRun,
 } from "../../../orchestration/DelegatedRunService.ts";
 import { CursorAgentToolkit } from "./tools.ts";
-import { startCompatibilityDelegation } from "../delegationRouter/handlers.ts";
 
 const requireCapability = McpInvocationContext.requireMcpCapability("cursor-agent").pipe(
   Effect.mapError(
@@ -38,7 +37,7 @@ const ownedRun = Effect.fn("CursorAgentToolkit.ownedRun")(function* (runId: Dele
   return run;
 });
 
-export const CursorAgentToolkitHandlersLive = CursorAgentToolkit.toLayer({
+export const cursorAgentHandlers = CursorAgentToolkit.of({
   cursor_capabilities: () =>
     requireCapability.pipe(Effect.andThen(getActiveDelegatedCapabilities("cursor"))),
   cursor_start: (input) =>
@@ -50,22 +49,9 @@ export const CursorAgentToolkitHandlersLive = CursorAgentToolkit.toLayer({
           message: "Delegation is disabled by the current project settings.",
         });
       }
-      if (input.profile === undefined) {
-        return yield* startCompatibilityDelegation(scope, "cursor", {
-          ...input,
-        }).pipe(
-          Effect.mapError(
-            (error) =>
-              new DelegatedRunError({
-                operation: "start",
-                message: error.message,
-              }),
-          ),
-        );
-      }
-      const { idempotencyKey, ...legacyInput } = input;
+      const { idempotencyKey, ...startInput } = input;
       return yield* startActiveDelegatedRun({
-        ...legacyInput,
+        ...startInput,
         ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
         provider: "cursor",
         parentThreadId: McpInvocationContext.mcpOwnerThreadId(scope),
@@ -79,3 +65,5 @@ export const CursorAgentToolkitHandlersLive = CursorAgentToolkit.toLayer({
   cursor_respond: ({ runId, answers }) =>
     ownedRun(runId).pipe(Effect.andThen(respondToActiveDelegatedRun(runId, answers))),
 });
+
+export const CursorAgentToolkitHandlersLive = CursorAgentToolkit.toLayer(cursorAgentHandlers);

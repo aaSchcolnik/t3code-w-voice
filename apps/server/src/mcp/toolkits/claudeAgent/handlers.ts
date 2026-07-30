@@ -9,7 +9,6 @@ import {
   startActiveDelegatedRun,
 } from "../../../orchestration/DelegatedRunService.ts";
 import { ClaudeAgentToolkit } from "./tools.ts";
-import { startCompatibilityDelegation } from "../delegationRouter/handlers.ts";
 
 const requireCapability = McpInvocationContext.requireMcpCapability("claude-agent").pipe(
   Effect.mapError(
@@ -37,7 +36,7 @@ const ownedRun = Effect.fn("ClaudeAgentToolkit.ownedRun")(function* (runId: Dele
   return run;
 });
 
-export const ClaudeAgentToolkitHandlersLive = ClaudeAgentToolkit.toLayer({
+export const claudeAgentHandlers = ClaudeAgentToolkit.of({
   claude_capabilities: () =>
     requireCapability.pipe(Effect.andThen(getActiveDelegatedCapabilities("claudeAgent"))),
   claude_start: (input) =>
@@ -49,22 +48,9 @@ export const ClaudeAgentToolkitHandlersLive = ClaudeAgentToolkit.toLayer({
           message: "Delegation is disabled by the current project settings.",
         });
       }
-      if (input.profile === undefined) {
-        return yield* startCompatibilityDelegation(scope, "claudeAgent", {
-          ...input,
-        }).pipe(
-          Effect.mapError(
-            (error) =>
-              new DelegatedRunError({
-                operation: "start",
-                message: error.message,
-              }),
-          ),
-        );
-      }
-      const { idempotencyKey, ...legacyInput } = input;
+      const { idempotencyKey, ...startInput } = input;
       return yield* startActiveDelegatedRun({
-        ...legacyInput,
+        ...startInput,
         ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
         provider: "claudeAgent",
         parentThreadId: McpInvocationContext.mcpOwnerThreadId(scope),
@@ -76,3 +62,5 @@ export const ClaudeAgentToolkitHandlersLive = ClaudeAgentToolkit.toLayer({
       Effect.map((cancelled) => ({ runId, cancelled })),
     ),
 });
+
+export const ClaudeAgentToolkitHandlersLive = ClaudeAgentToolkit.toLayer(claudeAgentHandlers);

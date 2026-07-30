@@ -62,6 +62,7 @@ const promptText = NodeProcess.argv[4] ?? "helo";
 const targetReasoning = NodeProcess.env.CURSOR_REASONING ?? "";
 const targetContext = NodeProcess.env.CURSOR_CONTEXT ?? "";
 const targetFast = NodeProcess.env.CURSOR_FAST ?? "";
+const forceUnadvertisedModel = NodeProcess.env.CURSOR_FORCE_UNADVERTISED_MODEL === "1";
 const agentBin = NodeProcess.env.CURSOR_AGENT_BIN ?? "cursor-agent";
 const promptWaitMs = Number(NodeProcess.env.CURSOR_PROMPT_WAIT_MS ?? "4000");
 const requestTimeoutMs = Number(NodeProcess.env.CURSOR_REQUEST_TIMEOUT_MS ?? "20000");
@@ -128,6 +129,7 @@ class JsonRpcChild {
   readonly pending = new Map<JsonRpcId, PendingRequest>();
   nextId = 1;
   closed = false;
+  assistantText = "";
 
   constructor(bin: string, args: string[], cwd: string) {
     const spawnCommand = Effect.runSync(resolveSpawnCommand(bin, args));
@@ -266,6 +268,25 @@ class JsonRpcChild {
       return;
     }
 
+    if (message.method === "session/update") {
+      const params = message.params as
+        | {
+            update?: {
+              sessionUpdate?: unknown;
+              content?: { type?: unknown; text?: unknown };
+            };
+          }
+        | undefined;
+      const update = params?.update;
+      if (
+        update?.sessionUpdate === "agent_message_chunk" &&
+        update.content?.type === "text" &&
+        typeof update.content.text === "string"
+      ) {
+        this.assistantText += update.content.text;
+      }
+    }
+
     if (message.method === "session/request_permission" && typeof message.id !== "undefined") {
       this.respond(message.id, {
         outcome: {
@@ -374,10 +395,16 @@ async function main() {
       fail("Cursor ACP did not expose a select-type model config option.");
     }
 
-    if (!advertisedModels.includes(targetModel)) {
+    const modelWasAdvertised = advertisedModels.includes(targetModel);
+    if (!modelWasAdvertised && !forceUnadvertisedModel) {
       fail(
         `Cursor ACP did not advertise model ${JSON.stringify(targetModel)}. Advertised values: ${advertisedModels.join(", ")}`,
       );
+    }
+    if (!modelWasAdvertised) {
+      logSection("FORCING_UNADVERTISED_MODEL", {
+        requestedModel: targetModel,
+      });
     }
 
     const setModelResponse = (await rpc.request("session/set_config_option", {
@@ -426,6 +453,25 @@ async function main() {
       ],
     });
     logSection("PROMPT_RESPONSE", promptResponse);
+    const providerError =
+      /(?:NonRetriableError|Provider Error|trouble connecting to the model provider)/iu.test(
+        rpc.assistantText,
+      );
+    const success = rpc.assistantText.trim().length > 0 && !providerError;
+    const probeResult = {
+      success,
+      requestedModel: targetModel,
+      modelWasAdvertised,
+      forcedUnadvertisedModel: !modelWasAdvertised && forceUnadvertisedModel,
+      requestedReasoning: targetReasoning || null,
+      promptResponse,
+      assistantText: rpc.assistantText,
+      providerError,
+    };
+    NodeProcess.stdout.write(`PROBE_RESULT ${JSON.stringify(probeResult)}\n`);
+    if (!success) {
+      process.exitCode = 1;
+    }
 
     await sleep(promptWaitMs);
     rpc.notify("session/cancel", { sessionId });
@@ -435,8 +481,17 @@ async function main() {
 }
 
 void main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  NodeProcess.stdout.write(
+    `PROBE_RESULT ${JSON.stringify({
+      success: false,
+      requestedModel: targetModel,
+      requestedReasoning: targetReasoning || null,
+      error: message,
+    })}\n`,
+  );
   NodeProcess.stderr.write(
-    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+    `${error instanceof Error ? (error.stack ?? error.message) : message}\n`,
   );
   process.exitCode = 1;
 });
