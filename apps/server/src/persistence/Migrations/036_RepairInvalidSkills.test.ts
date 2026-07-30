@@ -5,8 +5,12 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "../NodeSqliteClient.ts";
+import ProjectionThreadsSettled from "./033_ProjectionThreadsSettled.ts";
+import ProjectionThreadsSnoozed from "./034_ProjectionThreadsSnoozed.ts";
+import ProjectionThreadTitleRegeneration from "./035_ProjectionThreadTitleRegeneration.ts";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const upstreamLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
 
 layer("036_RepairInvalidSkills", (it) => {
   it.effect("removes versionless skills and repairs invalid active versions", () =>
@@ -51,6 +55,34 @@ layer("036_RepairInvalidSkills", (it) => {
       assert.deepStrictEqual(skills, [{ skillId: "skill-invalid-active", activeVersion: 1 }]);
       const foreignKeyViolations = yield* sql`PRAGMA foreign_key_check`;
       assert.deepStrictEqual(foreignKeyViolations, []);
+    }),
+  );
+});
+
+upstreamLayer("036_RepairInvalidSkills (upstream history)", (it) => {
+  it.effect("bootstraps project skills after an upstream database recorded migration 35", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 32 });
+      yield* ProjectionThreadsSettled;
+      yield* ProjectionThreadsSnoozed;
+      yield* ProjectionThreadTitleRegeneration;
+      yield* sql`
+        INSERT INTO effect_sql_migrations (migration_id, name)
+        VALUES
+          (33, 'ProjectionThreadsSettled'),
+          (34, 'ProjectionThreadsSnoozed'),
+          (35, 'ProjectionThreadTitleRegeneration')
+      `;
+
+      yield* runMigrations({ toMigrationInclusive: 36 });
+
+      const columns = yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(skills)
+      `;
+      const names = columns.map((column) => column.name);
+      assert.include(names, "project_id");
+      assert.include(names, "imported_from");
     }),
   );
 });

@@ -1,8 +1,19 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import ProjectSkills from "./035_ProjectSkills.ts";
 
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const skillColumns = yield* sql<{ readonly name: string }>`
+    PRAGMA table_info(skills)
+  `;
+
+  // Upstream now owns migration 35. Databases that reached that migration
+  // before switching to this branch skip our migrations 33-35, so establish
+  // the complete project-skills schema before applying the repair.
+  if (!skillColumns.some((column) => column.name === "project_id")) {
+    yield* ProjectSkills;
+  }
 
   yield* sql`
     UPDATE skills

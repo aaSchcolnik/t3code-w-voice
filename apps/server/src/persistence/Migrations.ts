@@ -52,6 +52,7 @@ import Migration0036 from "./Migrations/036_RepairInvalidSkills.ts";
 import Migration0037 from "./Migrations/037_ProjectionThreadMessageSystemEvent.ts";
 import Migration0038 from "./Migrations/038_ReconcileLayeredProjectionSchema.ts";
 import Migration0039 from "./Migrations/039_RepairLayeredProjectionSchema.ts";
+import Migration0040 from "./Migrations/040_ProjectionThreadTitleRegeneration.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -103,6 +104,7 @@ export const migrationEntries = [
   [37, "ProjectionThreadMessageSystemEvent", Migration0037],
   [38, "ReconcileLayeredProjectionSchema", Migration0038],
   [39, "RepairLayeredProjectionSchema", Migration0039],
+  [40, "ProjectionThreadTitleRegeneration", Migration0040],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>
