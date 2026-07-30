@@ -414,8 +414,9 @@ function SkillCard({
               <CollapsiblePanel>
                 <FieldGroup className="pt-4">
                   <p className="text-xs text-muted-foreground">
-                    These provider, model, and reasoning choices are saved with the skill version.
-                    The server validates candidate availability and exclusions when the skill runs.
+                    These choices override the MCP Scout and Worker chains only while this skill
+                    runs, and are saved with the skill version. Use default inherits the MCP chain.
+                    The server validates candidate availability and exclusions at run time.
                   </p>
                   {delegatedRoles.map((role) => (
                     <Field key={role}>

@@ -16,6 +16,9 @@ describe("trackedDelegationInstructions", () => {
       new Set<McpCapability>(["delegation-router", "codex-agent"]),
     );
     expect(instructions).toContain("prefer `delegate_start`");
+    expect(instructions).toContain("read-only research/planning/evidence lanes as `scout`");
+    expect(instructions).toContain("implementation/debugging/testing lanes as `worker`");
+    expect(instructions).toContain("final verification on the parent thread");
     expect(instructions).toContain("stable idempotency key");
     expect(instructions).toContain("does not mean a provider accepted");
   });

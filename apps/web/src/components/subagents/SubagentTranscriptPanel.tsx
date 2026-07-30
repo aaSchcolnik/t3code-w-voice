@@ -1,8 +1,14 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { CircleDashedIcon, RouteIcon, ScrollTextIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CircleDashedIcon,
+  RouteIcon,
+  ScrollTextIcon,
+} from "lucide-react";
 import {
   buildSubagentInputAnswers,
   setSubagentInputCustomAnswer,
@@ -45,6 +51,10 @@ import {
   subagentSummaryResult,
   subagentPhaseLabel,
 } from "./subagentRunPresentation";
+import {
+  updateRouteDetailsCollapse,
+  type RouteDetailsCollapseState,
+} from "./subagentRouteCollapse";
 
 interface SubagentTranscriptPanelProps {
   environmentId: EnvironmentId;
@@ -62,18 +72,30 @@ interface SubagentTranscriptPanelProps {
 export function SubagentRouteDetails({
   run,
   details,
+  collapsed = false,
+  onToggle,
 }: {
   run: SubagentRun;
   details?: SubagentRunDetails | null;
+  collapsed?: boolean;
+  onToggle?: (() => void) | undefined;
 }) {
   const diagnostics = resolveSubagentRouteDiagnostics(run, details);
   if (!diagnostics) return null;
 
   const model = run.resolvedModel ?? run.route?.model ?? run.requestedModel;
+  const detailsId = `subagent-route-details-${run.id}`;
   return (
     <section aria-label="Delegation route details" className="border-b border-border/60 px-4 py-3">
       <div className="mx-auto flex max-w-2xl flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="-m-1 flex min-w-0 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+          aria-controls={detailsId}
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? "Expand" : "Collapse"} delegation route details`}
+          onClick={onToggle}
+        >
           <RouteIcon className="size-4 text-muted-foreground" aria-hidden />
           <h2 className="text-xs font-medium text-foreground">Delegation route</h2>
           {run.route ? (
@@ -88,86 +110,135 @@ export function SubagentRouteDetails({
               Policy v{diagnostics.policyVersion}
             </span>
           ) : null}
-        </div>
-        {diagnostics.explanation ? (
-          <p className="text-xs leading-relaxed text-muted-foreground">{diagnostics.explanation}</p>
-        ) : null}
-        {diagnostics.grouping.length > 0 ? (
-          <dl className="grid gap-2 text-xs sm:grid-cols-2">
-            {diagnostics.grouping.map((item) => (
-              <div key={item.label} className="min-w-0">
-                <dt className="text-muted-foreground">{item.label}</dt>
-                <dd className="truncate font-mono text-[11px] text-foreground" title={item.value}>
-                  {item.value}
-                </dd>
+          <span className="ml-auto text-[10px] font-medium text-muted-foreground">
+            {collapsed ? "Show" : "Hide"}
+          </span>
+          {collapsed ? (
+            <ChevronRightIcon className="size-3.5 text-muted-foreground" aria-hidden />
+          ) : (
+            <ChevronDownIcon className="size-3.5 text-muted-foreground" aria-hidden />
+          )}
+        </button>
+        {!collapsed ? (
+          <div id={detailsId} className="flex flex-col gap-3">
+            {diagnostics.explanation ? (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {diagnostics.explanation}
+              </p>
+            ) : null}
+            {diagnostics.grouping.length > 0 ? (
+              <dl className="grid gap-2 text-xs sm:grid-cols-2">
+                {diagnostics.grouping.map((item) => (
+                  <div key={item.label} className="min-w-0">
+                    <dt className="text-muted-foreground">{item.label}</dt>
+                    <dd
+                      className="truncate font-mono text-[11px] text-foreground"
+                      title={item.value}
+                    >
+                      {item.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+            {diagnostics.candidates.length > 0 ? (
+              <div className="flex flex-col gap-1.5">
+                <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Candidate diagnostics
+                </h3>
+                {diagnostics.candidates.map((candidate) => (
+                  <div
+                    key={`${candidate.target}:${candidate.eligible}:${candidate.reasons.join(":")}`}
+                    className="flex flex-wrap items-baseline gap-2 text-xs"
+                  >
+                    <Badge variant={candidate.eligible ? "success" : "secondary"}>
+                      {candidate.eligible ? "Eligible" : "Excluded"}
+                    </Badge>
+                    <span className="font-mono text-[11px] text-foreground">
+                      {candidate.target}
+                    </span>
+                    {candidate.reasons.length > 0 ? (
+                      <span className="text-muted-foreground">{candidate.reasons.join(" · ")}</span>
+                    ) : null}
+                  </div>
+                ))}
               </div>
-            ))}
-          </dl>
-        ) : null}
-        {diagnostics.candidates.length > 0 ? (
-          <div className="flex flex-col gap-1.5">
-            <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Candidate diagnostics
-            </h3>
-            {diagnostics.candidates.map((candidate) => (
-              <div
-                key={`${candidate.target}:${candidate.eligible}:${candidate.reasons.join(":")}`}
-                className="flex flex-wrap items-baseline gap-2 text-xs"
-              >
-                <Badge variant={candidate.eligible ? "success" : "secondary"}>
-                  {candidate.eligible ? "Eligible" : "Excluded"}
-                </Badge>
-                <span className="font-mono text-[11px] text-foreground">{candidate.target}</span>
-                {candidate.reasons.length > 0 ? (
-                  <span className="text-muted-foreground">{candidate.reasons.join(" · ")}</span>
-                ) : null}
+            ) : null}
+            {diagnostics.fallbackChain.length > 0 ? (
+              <div className="flex flex-col gap-1">
+                <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Fallback chain
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {diagnostics.fallbackChain.join(" → ")}
+                </p>
               </div>
-            ))}
+            ) : null}
+            {diagnostics.attempts.length > 0 ? (
+              <div className="flex flex-col gap-1.5">
+                <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Attempt history
+                </h3>
+                {diagnostics.attempts.map((attempt) => (
+                  <div key={attempt.id} className="text-xs text-muted-foreground">
+                    <span className="font-mono text-[11px] text-foreground">{attempt.target}</span>
+                    {" · "}
+                    {attempt.phase}
+                    {attempt.fallbackFrom ? ` · fallback from ${attempt.fallbackFrom}` : ""}
+                    {attempt.failure ? ` · ${attempt.failure}` : ""}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {diagnostics.completeness.length > 0 ? (
+              <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                {diagnostics.completeness.map((item) => (
+                  <div key={item.label} className="flex items-baseline gap-1">
+                    <dt className="text-muted-foreground">{item.label}:</dt>
+                    <dd className="text-foreground">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
           </div>
-        ) : null}
-        {diagnostics.fallbackChain.length > 0 ? (
-          <div className="flex flex-col gap-1">
-            <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Fallback chain
-            </h3>
-            <p className="text-xs text-muted-foreground">{diagnostics.fallbackChain.join(" → ")}</p>
-          </div>
-        ) : null}
-        {diagnostics.attempts.length > 0 ? (
-          <div className="flex flex-col gap-1.5">
-            <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-              Attempt history
-            </h3>
-            {diagnostics.attempts.map((attempt) => (
-              <div key={attempt.id} className="text-xs text-muted-foreground">
-                <span className="font-mono text-[11px] text-foreground">{attempt.target}</span>
-                {" · "}
-                {attempt.phase}
-                {attempt.fallbackFrom ? ` · fallback from ${attempt.fallbackFrom}` : ""}
-                {attempt.failure ? ` · ${attempt.failure}` : ""}
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {diagnostics.completeness.length > 0 ? (
-          <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-            {diagnostics.completeness.map((item) => (
-              <div key={item.label} className="flex items-baseline gap-1">
-                <dt className="text-muted-foreground">{item.label}:</dt>
-                <dd className="text-foreground">{item.value}</dd>
-              </div>
-            ))}
-          </dl>
         ) : null}
       </div>
     </section>
   );
 }
 
-function RunSummary({ run }: { run: SubagentRun }) {
+const scrollKeys = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "]);
+
+function RunSummary({
+  run,
+  onUserScrollPositionChange,
+}: {
+  run: SubagentRun;
+  onUserScrollPositionChange?: ((atTop: boolean) => void) | undefined;
+}) {
   const result = subagentSummaryResult(run);
+  const userScrollIntent = useRef(false);
+  const markUserScrollIntent = () => {
+    userScrollIntent.current = true;
+  };
+  const markKeyboardScrollIntent = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (scrollKeys.has(event.key)) markUserScrollIntent();
+  };
   return (
-    <div className="min-h-0 flex-1 overflow-auto p-4">
+    <div
+      className="min-h-0 flex-1 overflow-auto p-4"
+      tabIndex={0}
+      onKeyDown={markKeyboardScrollIntent}
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) markUserScrollIntent();
+      }}
+      onTouchMove={markUserScrollIntent}
+      onWheel={markUserScrollIntent}
+      onScroll={(event) => {
+        if (!userScrollIntent.current) return;
+        onUserScrollPositionChange?.(event.currentTarget.scrollTop <= 1);
+      }}
+    >
       <div className="mx-auto flex max-w-2xl flex-col gap-4">
         <div className="flex items-center gap-2">
           <ScrollTextIcon className="size-4 text-muted-foreground" />
@@ -364,6 +435,10 @@ export function SubagentTranscriptPanel({
   onBack,
 }: SubagentTranscriptPanelProps) {
   const [cancelling, setCancelling] = useState(false);
+  const [routeCollapse, setRouteCollapse] = useState<RouteDetailsCollapseState>({
+    manual: false,
+    automatic: false,
+  });
   const cancelRun = useAtomCommand(subagentsCancelRun, { label: "subagents cancel run" });
   const respondRun = useAtomCommand(subagentsRespond, { label: "subagents respond" });
   const detailsAtom = useMemo(
@@ -386,6 +461,18 @@ export function SubagentTranscriptPanel({
         : null,
     [environmentId, run.capabilities.transcriptQuality, run.id, threadId],
   );
+  useEffect(() => {
+    setRouteCollapse((current) => updateRouteDetailsCollapse(current, { type: "reset" }));
+  }, [run.id]);
+  const routeCollapsed = routeCollapse.manual || routeCollapse.automatic;
+  const toggleRoute = useCallback(() => {
+    setRouteCollapse((current) => updateRouteDetailsCollapse(current, { type: "toggle" }));
+  }, []);
+  const onUserScrollPositionChange = useCallback((atTop: boolean) => {
+    setRouteCollapse((current) =>
+      updateRouteDetailsCollapse(current, { type: "user-scroll", atTop }),
+    );
+  }, []);
 
   const onCancel =
     run.capabilities.canCancel && isActiveSubagentStatus(run.status)
@@ -427,8 +514,13 @@ export function SubagentTranscriptPanel({
       <div className="flex min-h-0 flex-1 flex-col">
         {header}
         {inputResponse}
-        <SubagentRouteDetails run={run} details={details} />
-        <RunSummary run={run} />
+        <SubagentRouteDetails
+          run={run}
+          details={details}
+          collapsed={routeCollapsed}
+          onToggle={toggleRoute}
+        />
+        <RunSummary run={run} onUserScrollPositionChange={onUserScrollPositionChange} />
       </div>
     );
   }
@@ -437,12 +529,18 @@ export function SubagentTranscriptPanel({
     <div className="flex min-h-0 flex-1 flex-col">
       {header}
       {inputResponse}
-      <SubagentRouteDetails run={run} details={details} />
+      <SubagentRouteDetails
+        run={run}
+        details={details}
+        collapsed={routeCollapsed}
+        onToggle={toggleRoute}
+      />
       <SubagentTranscriptBody
         atom={transcriptAtom}
         run={run}
         cwd={cwd}
         workspaceRoot={workspaceRoot}
+        onUserScrollPositionChange={onUserScrollPositionChange}
       />
     </div>
   );
@@ -453,15 +551,19 @@ function SubagentTranscriptBody({
   run,
   cwd,
   workspaceRoot,
+  onUserScrollPositionChange,
 }: {
   atom: NonNullable<ReturnType<typeof subagentTranscriptAtomFamily>>;
   run: SubagentRun;
   cwd?: string | undefined;
   workspaceRoot?: string | undefined;
+  onUserScrollPositionChange?: ((atTop: boolean) => void) | undefined;
 }) {
   const result = useAtomValue(atom);
 
-  if (AsyncResult.isFailure(result)) return <RunSummary run={run} />;
+  if (AsyncResult.isFailure(result)) {
+    return <RunSummary run={run} onUserScrollPositionChange={onUserScrollPositionChange} />;
+  }
   if (!AsyncResult.isSuccess(result)) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center">
@@ -480,6 +582,7 @@ function SubagentTranscriptBody({
         entry={toTimelineEntry(run)}
         cwd={cwd}
         workspaceRoot={workspaceRoot}
+        onUserScrollPositionChange={onUserScrollPositionChange}
       />
     </div>
   );

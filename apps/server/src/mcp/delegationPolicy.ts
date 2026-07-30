@@ -59,7 +59,7 @@ export function trackedDelegationInstructions(
     : undefined;
   const neutralInstruction =
     delegationMode === "proactive" && capabilities.has("delegation-router")
-      ? "For independent bounded work, prefer `delegate_start`: submit one to four neutral task lanes together and provide a stable idempotency key. Reuse that key only when retrying the identical request. The returned `allocated` state does not mean a provider accepted the turn."
+      ? "Actively look for independent, bounded work that benefits from delegation; prefer `delegate_start`. Submit one to four neutral task lanes together, classify read-only research/planning/evidence lanes as `scout`, classify implementation/debugging/testing lanes as `worker`, and provide a stable idempotency key. Keep synthesis, consequential decisions, and final verification on the parent thread. Reuse that key only when retrying the identical request. The returned `allocated` state does not mean a provider accepted the turn."
       : undefined;
   if (
     callable.length === 0 &&

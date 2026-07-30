@@ -26,6 +26,24 @@ or answer supported input requests; mobile configuration is available only when 
 environment that exposes the router settings RPC. Configuration always belongs to the server
 environment, so remote clients see one authoritative policy.
 
+The parent agent—not the router—decides whether work should be delegated and decomposes it into
+independent lanes. In Proactive mode, new parent sessions are instructed to look for useful lanes.
+They classify read-only research, planning, and evidence gathering as **Scout** work, and
+implementation, debugging, and testing as **Worker** work. The corresponding chain is an ordered
+fallback policy: the router filters unavailable or incapable targets and selects the first eligible
+entry, except when the optional batch-diversity preference selects another eligible provider.
+
+Changing a chain entry does not launch a subagent and does not change the current parent thread's
+model. It controls a future delegated lane that resolves through that entry. Router mode and
+instruction changes require a new parent session because the provider instruction capsule is built
+when the session starts; chain selection itself is evaluated when `delegate_start` is called.
+
+Skill-level delegation settings are narrower overrides, not a separate routing system. When an
+Implementation Engine skill runs, a chain saved with that skill version wins for the corresponding
+role. Otherwise a built-in workflow override is used when one exists, followed by the MCP role
+chain and its automatic provider defaults. Generic parent-agent delegation through `delegate_start`
+does not require a skill.
+
 ## Starting and following a run
 
 `delegate_start` accepts one to four independent lanes and a stable idempotency key. Retry the
@@ -37,6 +55,11 @@ An `allocated` response means the server atomically reserved the batch and persi
 does **not** mean a provider accepted a turn. The run moves through session start and dispatch, then
 becomes `running` only after provider acceptance. The UI presents both allocation and acceptance so
 a queued or starting run never looks accepted.
+
+In a subagent transcript, the delegation route opens with its diagnostics visible. It can be
+collapsed manually and remains collapsed while the result is scrolled. When it was not manually
+collapsed, scrolling the result hides it automatically and returning to the true top reveals it
+again.
 
 Delegated children cannot delegate again. Admission also enforces batch size, per-parent and
 environment concurrency, workspace ownership, attachment ownership, adapter capabilities, and

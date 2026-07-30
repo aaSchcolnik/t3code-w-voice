@@ -29,6 +29,7 @@ interface SubagentTimelineProps {
   entry: SubagentEntry;
   cwd?: string | undefined;
   workspaceRoot?: string | undefined;
+  onUserScrollPositionChange?: ((atTop: boolean) => void) | undefined;
 }
 
 export const SubagentTimeline = memo(function SubagentTimeline({
@@ -36,8 +37,10 @@ export const SubagentTimeline = memo(function SubagentTimeline({
   entry,
   cwd,
   workspaceRoot,
+  onUserScrollPositionChange,
 }: SubagentTimelineProps) {
   const listRef = useRef<LegendListRef | null>(null);
+  const userScrollIntentRef = useRef(false);
   const stableRowsRef = useRef<StableSubagentTimelineRowsState>({ byId: new Map(), result: [] });
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -59,6 +62,17 @@ export const SubagentTimeline = memo(function SubagentTimeline({
     stableRowsRef.current = next;
     return next.result;
   }, [rawRows]);
+  const markUserScrollIntent = useCallback(() => {
+    userScrollIntentRef.current = true;
+  }, []);
+  const markKeyboardScrollIntent = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "].includes(event.key)) {
+        markUserScrollIntent();
+      }
+    },
+    [markUserScrollIntent],
+  );
 
   const toggleWithAnchor = useCallback(
     (
@@ -156,14 +170,26 @@ export const SubagentTimeline = memo(function SubagentTimeline({
           const state = listRef.current?.getState?.();
           const next = state?.isNearEnd ?? state?.isAtEnd;
           if (next !== undefined) setIsAtEnd(next);
+          if (state && userScrollIntentRef.current) {
+            onUserScrollPositionChange?.(state.isAtStart || state.scroll <= 1);
+          }
         }}
+        onKeyDown={markKeyboardScrollIntent}
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) markUserScrollIntent();
+        }}
+        onTouchMove={markUserScrollIntent}
+        onWheel={markUserScrollIntent}
         className="h-full min-h-0 overflow-x-hidden overscroll-y-contain py-1.5 [overflow-anchor:none]"
       />
       {!isAtEnd ? (
         <button
           type="button"
           className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-background/95 px-2.5 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
-          onClick={() => void listRef.current?.scrollToEnd?.({ animated: true })}
+          onClick={() => {
+            markUserScrollIntent();
+            void listRef.current?.scrollToEnd?.({ animated: true });
+          }}
         >
           <ArrowDownIcon className="size-3" aria-hidden /> Latest
         </button>

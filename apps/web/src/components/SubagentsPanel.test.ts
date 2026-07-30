@@ -36,6 +36,7 @@ import {
   SubagentInputResponseForm,
   SubagentRouteDetails,
 } from "./subagents/SubagentTranscriptPanel";
+import { updateRouteDetailsCollapse } from "./subagents/subagentRouteCollapse";
 
 const run = (id: string, overrides: Partial<SubagentRun> = {}): SubagentRun => ({
   id: SubagentRunId.make(id),
@@ -658,6 +659,14 @@ describe("subagent route diagnostics", () => {
     expect(html).toContain("Attempt history");
     expect(html).toContain("fallback from cursor / composer-2.5");
     expect(html).toContain("Policy v3");
+
+    const collapsedHtml = renderToStaticMarkup(
+      createElement(SubagentRouteDetails, { run: routed, details, collapsed: true }),
+    );
+    expect(collapsedHtml).toContain('aria-expanded="false"');
+    expect(collapsedHtml).toContain("Delegation route");
+    expect(collapsedHtml).not.toContain("Candidate diagnostics");
+    expect(collapsedHtml).not.toContain("Attempt history");
   });
 
   it("does not probe rich diagnostics from the compact streamed run", () => {
@@ -678,6 +687,56 @@ describe("subagent route diagnostics", () => {
       attempts: [],
       grouping: [],
     });
+  });
+});
+
+describe("subagent route collapse behavior", () => {
+  it("auto-collapses after user scrolling and expands again at the top", () => {
+    const initial = { manual: false, automatic: false };
+    const scrolled = updateRouteDetailsCollapse(initial, {
+      type: "user-scroll",
+      atTop: false,
+    });
+    expect(scrolled).toEqual({ manual: false, automatic: true });
+    expect(
+      updateRouteDetailsCollapse(scrolled, {
+        type: "user-scroll",
+        atTop: true,
+      }),
+    ).toEqual(initial);
+  });
+
+  it("keeps a manual collapse closed across scroll position changes", () => {
+    const collapsed = updateRouteDetailsCollapse(
+      { manual: false, automatic: false },
+      { type: "toggle" },
+    );
+    expect(collapsed).toEqual({ manual: true, automatic: false });
+    expect(
+      updateRouteDetailsCollapse(collapsed, {
+        type: "user-scroll",
+        atTop: true,
+      }),
+    ).toBe(collapsed);
+  });
+
+  it("allows an automatically or manually collapsed route to be reopened", () => {
+    expect(
+      updateRouteDetailsCollapse(
+        { manual: false, automatic: true },
+        {
+          type: "toggle",
+        },
+      ),
+    ).toEqual({ manual: false, automatic: false });
+    expect(
+      updateRouteDetailsCollapse(
+        { manual: true, automatic: false },
+        {
+          type: "toggle",
+        },
+      ),
+    ).toEqual({ manual: false, automatic: false });
   });
 });
 

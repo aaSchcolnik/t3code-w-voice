@@ -44,6 +44,18 @@ const modelPreferenceKey = (selection: ModelSelection): string => {
   return key;
 };
 
+export function compactDelegationTarget(target: EngineDelegationTarget): EngineDelegationTarget {
+  return {
+    provider: target.provider,
+    ...(target.providerInstanceId === undefined
+      ? {}
+      : { providerInstanceId: target.providerInstanceId }),
+    ...(target.model === undefined ? {} : { model: target.model }),
+    ...(target.options === undefined ? {} : { options: target.options }),
+    ...(target.focus === undefined ? {} : { focus: target.focus }),
+  };
+}
+
 function targetAvailability(
   target: EngineDelegationTarget,
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -74,7 +86,9 @@ const replaceTarget = (
   index: number,
   target: EngineDelegationTarget,
 ): ReadonlyArray<EngineDelegationTarget> =>
-  chain.map((entry, entryIndex) => (entryIndex === index ? target : entry));
+  chain.map((entry, entryIndex) =>
+    entryIndex === index ? compactDelegationTarget(target) : entry,
+  );
 
 export function findDelegationReasoningDescriptor(
   target: EngineDelegationTarget,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   routerModeLabels,
+  withGlobalRouterRole,
   withoutProjectRouterSettings,
   withProjectRouterRole,
   withProjectRouterSetting,
@@ -66,5 +67,13 @@ describe("delegation router settings", () => {
         undefined,
       ),
     ).toEqual({ skills: { "skill-1": true } });
+  });
+
+  it("updates one global role without discarding the other role customization", () => {
+    const scout = [{ provider: "cursor" as const, model: "composer-2.5" }];
+    const worker = [{ provider: "codex" as const, model: "gpt-5.6-sol" }];
+
+    expect(withGlobalRouterRole({ scout }, "worker", worker)).toEqual({ scout, worker });
+    expect(withGlobalRouterRole({ scout, worker }, "scout", undefined)).toEqual({ worker });
   });
 });

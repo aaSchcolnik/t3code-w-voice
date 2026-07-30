@@ -167,7 +167,12 @@ export const DelegationTaskSpec = Schema.Struct({
   title: TrimmedNonEmptyString,
   task: TrimmedNonEmptyString,
   kind: Schema.optional(DelegationTaskKind),
-  role: Schema.optional(DelegationRole),
+  role: Schema.optional(
+    DelegationRole.annotate({
+      description:
+        "Routing class. Use 'scout' for read-only research, planning, and evidence gathering. Use 'worker' for implementation, debugging, and testing. Omitted roles default to 'worker'.",
+    }),
+  ),
   workspaceAccess: DelegationWorkspaceAccess.annotate({
     description:
       "Required workspace permission. Use 'read-only' when the task must not modify files; use 'workspace-write' only when edits are required.",

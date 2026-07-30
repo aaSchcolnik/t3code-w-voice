@@ -3,6 +3,7 @@ import {
   type DelegationMode,
   type DelegationRouterSettings,
   type EngineDelegationRole,
+  type EngineDelegationSettings,
   type EngineDelegationTarget,
   type ProjectMcpOverrides,
   type ServerSettingsPatch,
@@ -52,6 +53,9 @@ import { ComputerUseSettingsSection } from "./ComputerUseSettings";
 type McpBooleanKey = "preview" | "codexAgent" | "cursorAgent" | "claudeAgent";
 type RouterSettingKey = keyof DelegationRouterSettings;
 type RouterRole = Extract<EngineDelegationRole, "scout" | "worker">;
+type GlobalRouterRolesPatch = Partial<
+  Record<EngineDelegationRole, ReadonlyArray<EngineDelegationTarget>>
+>;
 
 export const routerModeLabels: Record<DelegationMode, string> = {
   off: "Off",
@@ -99,6 +103,21 @@ export function withProjectRouterRole(
   if (Object.keys(engine).length === 0) delete next.engine;
   else next.engine = engine;
   return next as ProjectMcpOverrides;
+}
+
+export function withGlobalRouterRole(
+  roles: EngineDelegationSettings["roles"],
+  role: RouterRole,
+  chain: ReadonlyArray<EngineDelegationTarget> | undefined,
+): GlobalRouterRolesPatch {
+  const next: GlobalRouterRolesPatch = {};
+  if (roles.scout !== undefined) next.scout = roles.scout;
+  if (roles.worker !== undefined) next.worker = roles.worker;
+  if (roles.consensus !== undefined) next.consensus = roles.consensus;
+  if (roles.scanner !== undefined) next.scanner = roles.scanner;
+  if (chain === undefined) delete next[role];
+  else next[role] = chain;
+  return next;
 }
 
 function RouterModeControl({
@@ -337,12 +356,28 @@ export function McpSettingsPanel() {
     projectOverrides?.engine?.delegation?.roles?.[role] ?? globalRoleChain(role);
   const updateRoleChain = (role: RouterRole, chain: ReadonlyArray<EngineDelegationTarget>) => {
     if (selectedProject === undefined) {
-      updateMcp({ engine: { delegation: { roles: { [role]: chain } } } });
+      updateMcp({
+        engine: {
+          delegation: {
+            roles: withGlobalRouterRole(settings.mcp.engine.delegation.roles, role, chain),
+          },
+        },
+      });
       return;
     }
     persistProjectOverrides(withProjectRouterRole(projectOverrides, role, chain));
   };
   const resetRoleChain = (role: RouterRole) => {
+    if (selectedProject === undefined) {
+      updateMcp({
+        engine: {
+          delegation: {
+            roles: withGlobalRouterRole(settings.mcp.engine.delegation.roles, role, undefined),
+          },
+        },
+      });
+      return;
+    }
     persistProjectOverrides(withProjectRouterRole(projectOverrides, role, undefined));
   };
 
@@ -359,8 +394,9 @@ export function McpSettingsPanel() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">MCP</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Control the built-in toolkits granted to new agent sessions. Changes apply when a new
-          session starts.
+          Control the built-in toolkits granted to agent sessions. Router mode and instruction
+          changes apply when a new session starts; routing chains are read when a delegated run is
+          requested.
         </p>
       </div>
       <Field>
@@ -424,7 +460,7 @@ export function McpSettingsPanel() {
       >
         <SettingsRow
           title="Router mode"
-          description="Controls whether parent agents can use provider-neutral delegation. Turning it off leaves existing runs available to inspect, cancel, or answer."
+          description="Off blocks new delegation. Suggested makes the tool available without asking the parent to seek work for it. Proactive instructs a new parent session to look for safe, independent lanes; the parent still decides whether delegation is useful."
           status={
             selectedProject !== undefined
               ? projectOverrides?.router?.mode === undefined
@@ -654,8 +690,8 @@ export function McpSettingsPanel() {
               title={`${role === "scout" ? "Scout" : "Worker"} chain`}
               description={
                 role === "scout"
-                  ? "Ordered server routing targets for research, planning, and evidence gathering."
-                  : "Ordered server routing targets for implementation, debugging, and testing."
+                  ? "Fallback order for read-only research, planning, and evidence gathering. The first eligible target is used unless batch diversity selects another eligible provider."
+                  : "Fallback order for implementation, debugging, and testing that may write to the workspace. The first eligible target is used unless batch diversity selects another eligible provider."
               }
               status={
                 selectedProject !== undefined
@@ -665,15 +701,27 @@ export function McpSettingsPanel() {
                   : "The server validates candidate capabilities and exclusions at route time."
               }
               resetAction={
-                selectedProject !== undefined && overridden ? (
+                (
+                  selectedProject === undefined
+                    ? settings.mcp.engine.delegation.roles[role] !== undefined
+                    : overridden
+                ) ? (
                   <SettingResetButton
-                    label={`${role} chain to global`}
+                    label={
+                      selectedProject === undefined
+                        ? `${role} chain to automatic defaults`
+                        : `${role} chain to global`
+                    }
                     onClick={() => resetRoleChain(role)}
                   />
                 ) : null
               }
             >
-              <div className="pt-3">
+              <div className="space-y-2 pt-3">
+                <p className="text-xs text-muted-foreground">
+                  Changing a target configures future delegated {role} lanes. It does not start a
+                  run or change the model used by the current parent thread.
+                </p>
                 <ChainEditor
                   role={role}
                   chain={effectiveRoleChain(role)}
