@@ -18,7 +18,11 @@ import { SkillRepository } from "../persistence/Services/Skills.ts";
 import { buildMcpSessionInstructions } from "./delegationPolicy.ts";
 import type { McpCapability } from "./McpInvocationContext.ts";
 import type { McpProviderSessionConfig } from "./McpProviderSession.ts";
-import { renderSkillCatalogSection } from "./skillCatalog.ts";
+import {
+  parseSkillSearchHandle,
+  renderSkillCatalogSection,
+  searchSkillCatalog,
+} from "./skillCatalog.ts";
 
 const capabilities = (...values: McpCapability[]) => new Set(values);
 
@@ -40,7 +44,7 @@ const skill = (slug: string, overrides: Partial<SkillSummary> = {}): SkillSummar
   }) as SkillSummary;
 
 describe("renderSkillCatalogSection", () => {
-  it("renders capability-eligible built-in skills and custom skills separately", () => {
+  it("renders only compact discovery metadata instead of every skill", () => {
     const rendered = renderSkillCatalogSection({
       skills: [
         skill("plan-brief", {
@@ -58,12 +62,11 @@ describe("renderSkillCatalogSection", () => {
       capabilities: capabilities("engine-planning", "engine-knowledge"),
     });
 
-    expect(rendered).toContain("### Built-in");
-    expect(rendered).toContain("**Live plan brief title**");
-    expect(rendered).toContain("Live edited plan description.");
-    expect(rendered).toContain("`engine_plan_brief`");
-    expect(rendered).toContain("### Custom");
-    expect(rendered).toContain("**Release notes** (`release-notes`)");
+    expect(rendered).toContain("2 reusable workflows");
+    expect(rendered).toContain("engine_skill_search");
+    expect(rendered).toContain("Catalog revision");
+    expect(rendered).not.toContain("Live edited plan description.");
+    expect(rendered).not.toContain("Draft merged changes");
   });
 
   it("drops globally disabled and project-disabled skills", () => {
@@ -75,9 +78,7 @@ describe("renderSkillCatalogSection", () => {
       capabilities: capabilities("engine-knowledge"),
     });
 
-    expect(rendered).not.toContain("global-off");
-    expect(rendered).not.toContain("project-off");
-    expect(rendered).toContain("available");
+    expect(rendered).toContain("1 reusable workflow");
   });
 
   it("does not apply global override keys to project-owned skills", () => {
@@ -90,7 +91,7 @@ describe("renderSkillCatalogSection", () => {
       capabilities: capabilities("engine-knowledge"),
     });
 
-    expect(rendered).toContain("project-owned");
+    expect(rendered).toContain("1 reusable workflow");
   });
 
   it("drops a built-in skill when its dedicated tool capability is absent", () => {
@@ -106,8 +107,7 @@ describe("renderSkillCatalogSection", () => {
       capabilities: capabilities("engine-knowledge"),
     });
 
-    expect(rendered).not.toContain("engine_implement");
-    expect(rendered).toContain("release-notes");
+    expect(rendered).toContain("1 reusable workflow");
   });
 
   it("omits the entire section when no skills are available", () => {
@@ -121,6 +121,41 @@ describe("renderSkillCatalogSection", () => {
   });
 });
 
+describe("searchSkillCatalog", () => {
+  it("searches only metadata, ranks deterministically, and returns bounded handles", () => {
+    const result = searchSkillCatalog({
+      skills: [
+        skill("release-notes", {
+          title: "Release notes",
+          description: "Draft release notes from merged changes.",
+        }),
+        skill("plan-brief", {
+          title: "Quick planning",
+          description: "Build a compact implementation plan.",
+          source: "builtin",
+          capability: "engine-planning",
+        }),
+      ],
+      projectSkillOverrides: undefined,
+      capabilities: capabilities("engine-knowledge", "engine-planning"),
+      query: "release",
+      limit: 1,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      slug: "release-notes",
+      scope: "global",
+      tool: "engine_skill_run",
+    });
+    expect(parseSkillSearchHandle(result[0]!.handle)).toEqual({
+      skillId: "release-notes-id",
+      version: 1,
+    });
+    expect(result[0]).not.toHaveProperty("content");
+  });
+});
+
 describe("buildMcpSessionInstructions", () => {
   it.effect("renders live repository metadata for built-in and custom skills", () => {
     const session: McpProviderSessionConfig = {
@@ -130,6 +165,7 @@ describe("buildMcpSessionInstructions", () => {
       providerSessionId: "provider-session-live-catalog-test",
       providerInstanceId: ProviderInstanceId.make("codex"),
       capabilities: capabilities("engine-knowledge", "engine-planning"),
+      protocolProfile: "auto",
       endpoint: "http://127.0.0.1/mcp",
       authorizationHeader: "Bearer test",
     };
@@ -163,11 +199,15 @@ describe("buildMcpSessionInstructions", () => {
     );
 
     return Effect.gen(function* () {
-      const instructions = yield* buildMcpSessionInstructions(session);
-      expect(instructions).toContain("## T3 Code skills");
-      expect(instructions).toContain("Edited planning trigger");
-      expect(instructions).toContain("Use for tiny planning requests from the live database.");
-      expect(instructions).toContain("`release-notes`");
+      const instructions = yield* buildMcpSessionInstructions(session, () =>
+        Effect.succeed(["Keep provider routing deterministic."]),
+      );
+      expect(instructions).toContain("T3 Code project capsule v1");
+      expect(instructions).toContain("engine_skill_search");
+      expect(instructions).toContain("Keep provider routing deterministic.");
+      expect(instructions).not.toContain("Edited planning trigger");
+      expect(instructions).not.toContain("Use for tiny planning requests from the live database.");
+      expect(instructions).not.toContain("release-notes");
     }).pipe(Effect.provide(repositories));
   });
 
@@ -179,6 +219,7 @@ describe("buildMcpSessionInstructions", () => {
       providerSessionId: "provider-session-catalog-test",
       providerInstanceId: ProviderInstanceId.make("codex"),
       capabilities: capabilities("engine-knowledge"),
+      protocolProfile: "auto",
       endpoint: "http://127.0.0.1/mcp",
       authorizationHeader: "Bearer test",
     };
@@ -200,8 +241,8 @@ describe("buildMcpSessionInstructions", () => {
 
     return Effect.gen(function* () {
       const instructions = yield* buildMcpSessionInstructions(session);
-      expect(instructions).toContain("## T3 Code Implementation Engine");
-      expect(instructions).not.toContain("## T3 Code skills");
+      expect(instructions).toContain("T3 Code project capsule v1");
+      expect(instructions).not.toContain("### Custom");
     }).pipe(Effect.provide(repositories));
   });
 });

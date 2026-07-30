@@ -128,6 +128,11 @@ function LocalSettingsRouteScreen() {
             target="SettingsEnvironments"
           />
           <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
+          <SettingsRow
+            icon="arrow.triangle.branch"
+            label="Delegation Router"
+            target="SettingsRouter"
+          />
           <SettingsRow icon="waveform" label="Voice" target="SettingsVoice" />
         </SettingsSection>
 
@@ -484,6 +489,11 @@ function ConfiguredSettingsRouteScreen() {
             target="SettingsEnvironments"
           />
           <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
+          <SettingsRow
+            icon="arrow.triangle.branch"
+            label="Delegation Router"
+            target="SettingsRouter"
+          />
           <SettingsRow icon="waveform" label="Voice" target="SettingsVoice" />
           <SettingsSwitchRow
             icon="bell.badge"

@@ -11,22 +11,32 @@ import type { McpCapability } from "./McpInvocationContext.ts";
 const capabilities = (...values: McpCapability[]) => new Set(values);
 
 describe("trackedDelegationInstructions", () => {
+  it("prefers provider-neutral allocation and explains idempotent retry semantics", () => {
+    const instructions = trackedDelegationInstructions(
+      new Set<McpCapability>(["delegation-router", "codex-agent"]),
+    );
+    expect(instructions).toContain("prefer `delegate_start`");
+    expect(instructions).toContain("stable idempotency key");
+    expect(instructions).toContain("does not mean a provider accepted");
+  });
+
   it("adds authoritative guidance when tracked delegation is available", () => {
     const instructions = trackedDelegationInstructions(
       capabilities("cursor-agent"),
       ProviderDriverKind.make("codex"),
       true,
     );
-    expect(instructions).toContain("MUST use");
+    expect(instructions).toContain("Compatibility tools remain available");
+    expect(instructions).toContain("stable idempotency key");
     expect(instructions).toContain("cursor_start");
     expect(instructions).toContain("Subagents panel");
-    expect(instructions).toContain("then end your turn");
-    expect(instructions).toContain("delivered automatically");
-    expect(instructions).toContain("NEVER wait, poll, sleep");
+    expect(instructions).toContain("then end the turn");
+    expect(instructions).toContain("arrive automatically");
+    expect(instructions).toContain("never wait, poll, sleep");
     expect(instructions).not.toContain("cursor_result");
-    expect(instructions).toContain("server-locked workspace-write sandbox");
-    expect(instructions).toContain("never require user action");
-    expect(instructions).toContain("Git read-only policy");
+    expect(instructions).toContain("inside the workspace");
+    expect(instructions).toContain("server handles permission requests");
+    expect(instructions).toContain("Git read-only");
     expect(instructions).toContain("Codex collaboration tools");
     expect(instructions).not.toContain("claude_start");
     expect(instructions).not.toContain("codex_start");
@@ -34,6 +44,15 @@ describe("trackedDelegationInstructions", () => {
 
   it("does not add guidance without a delegation capability", () => {
     expect(trackedDelegationInstructions(capabilities("preview"))).toBeUndefined();
+  });
+
+  it("injects start guidance only in proactive mode", () => {
+    const available = capabilities("delegation-router", "codex-agent");
+    expect(trackedDelegationInstructions(available, undefined, false, "suggested")).toBeUndefined();
+    expect(trackedDelegationInstructions(available, undefined, false, "off")).toBeUndefined();
+    expect(trackedDelegationInstructions(available, undefined, false, "proactive")).toContain(
+      "prefer `delegate_start`",
+    );
   });
 
   it("names only callable cross-provider tools and the native same-provider path", () => {
@@ -59,9 +78,8 @@ describe("trackedDelegationInstructions", () => {
     expect(instructions).toContain("codex_start");
     expect(instructions).toContain("cursor_start");
     expect(instructions).toContain("claude_start");
-    expect(instructions).toContain("The list order is not a provider preference.");
-    expect(instructions).toContain("choose whichever available tracked mechanism best fits");
-    expect(instructions).toContain("Honor an explicit provider");
+    expect(instructions).toContain("explicit provider requests");
+    expect(instructions).toContain("stable idempotency key");
     expect(instructions).not.toContain("1. Codex");
   });
 });

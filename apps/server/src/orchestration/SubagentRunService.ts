@@ -150,9 +150,15 @@ function mergeRun(current: SubagentRun | undefined, incoming: SubagentRun): Suba
     current.workflow.runId === incoming.workflow.runId &&
     incomingAttempt !== undefined &&
     incomingAttempt > (currentAttempt ?? 0);
-  const status = newerWorkflowAgentAttempt
+  const workflowAggregateUpdate =
+    current.runKind === "workflow" &&
+    incoming.runKind === "workflow" &&
+    current.workflowId === incoming.workflowId;
+  const status = workflowAggregateUpdate
     ? incoming.status
-    : reduceSubagentStatus(current.status, incoming.status);
+    : newerWorkflowAgentAttempt
+      ? incoming.status
+      : reduceSubagentStatus(current.status, incoming.status);
   return {
     ...current,
     ...incoming,
@@ -392,6 +398,49 @@ const make = Effect.gen(function* () {
         snapshotSequence: result.snapshotSequence,
         run: result.run,
       });
+      if (result.run.runKind !== "workflow" && result.run.workflowId) {
+        const state = yield* SynchronizedRef.get(stateRef);
+        const root = state.runs.get(SubagentRunId.make(result.run.workflowId))?.run;
+        if (root?.runKind === "workflow") {
+          const children = [...state.runs.values()]
+            .map((entry) => entry.run)
+            .filter(
+              (run) =>
+                run.runKind !== "workflow" &&
+                run.workflowId === result.run.workflowId &&
+                run.batchId === result.run.batchId,
+            );
+          const terminalChildren = children.filter((run) => TERMINAL_STATUSES.has(run.status));
+          const status: SubagentStatus = children.some((run) => run.status === "waiting_for_input")
+            ? "waiting_for_input"
+            : terminalChildren.length < children.length
+              ? children.some((run) => run.status === "running" || run.status === "starting")
+                ? "running"
+                : "queued"
+              : children.every((run) => run.status === "completed")
+                ? "completed"
+                : children.every((run) => run.status === "cancelled")
+                  ? "cancelled"
+                  : "failed";
+          yield* upsert({
+            eventId: `${input.eventId}:workflow`,
+            run: {
+              ...root,
+              status,
+              lastSummary: `${terminalChildren.length}/${children.length} delegated tasks settled`,
+              error:
+                status === "failed"
+                  ? `${children.filter((run) => run.status === "failed").length} delegated task(s) failed`
+                  : null,
+              startedAt:
+                root.startedAt ?? children.find((run) => run.startedAt !== null)?.startedAt ?? null,
+              completedAt: TERMINAL_STATUSES.has(status) ? result.run.updatedAt : null,
+              updatedAt: result.run.updatedAt,
+              sequence: root.sequence,
+            },
+          });
+        }
+      }
       return result.run;
     },
   );

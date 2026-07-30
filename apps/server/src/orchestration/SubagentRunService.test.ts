@@ -2,6 +2,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
   EventId,
+  DelegationBatchId,
+  DelegationWorkflowId,
   ProviderDriverKind,
   ProviderInstanceId,
   SubagentRunId,
@@ -434,6 +436,57 @@ it.live("projects workflow lifecycle metadata through runtime ingestion", () =>
         totalTokens: 300,
         totalToolCalls: 5,
       });
+    }),
+  ),
+);
+
+it.live("aggregates routed children into their workflow root", () =>
+  withTestServices(
+    "subagent-run-routed-workflow-test-",
+    Effect.gen(function* () {
+      const service = yield* SubagentRunService.__testing.make;
+      const workflowId = DelegationWorkflowId.make("workflow-routed");
+      const batchId = DelegationBatchId.make("batch-routed");
+      const rootId = SubagentRunId.make(workflowId);
+      yield* service.upsert({
+        eventId: "workflow-root",
+        run: makeRun({
+          id: rootId,
+          runKind: "workflow",
+          workflowId,
+          batchId,
+          status: "queued",
+          startedAt: null,
+        }),
+      });
+      yield* service.upsert({
+        eventId: "workflow-child-one",
+        run: makeRun({
+          id: SubagentRunId.make("child-one"),
+          runKind: "agent",
+          workflowId,
+          batchId,
+          status: "completed",
+          completedAt: now,
+        }),
+      });
+      yield* service.upsert({
+        eventId: "workflow-child-two",
+        run: makeRun({
+          id: SubagentRunId.make("child-two"),
+          runKind: "agent",
+          workflowId,
+          batchId,
+          status: "failed",
+          error: "startup failed",
+          completedAt: now,
+        }),
+      });
+
+      const workflow = yield* service.getOwned(rootThreadId, rootId);
+      expect(workflow.status).toBe("failed");
+      expect(workflow.lastSummary).toBe("2/2 delegated tasks settled");
+      expect(workflow.error).toBe("1 delegated task(s) failed");
     }),
   ),
 );

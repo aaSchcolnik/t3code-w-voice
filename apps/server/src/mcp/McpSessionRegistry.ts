@@ -3,6 +3,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   resolveEffectiveMcpSettings,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -18,12 +19,16 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "./McpProviderSession.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
+import type { ProviderSessionKind } from "../provider/Services/ProviderSessionDirectory.ts";
 import { ProjectionProjectRepository } from "../persistence/Services/ProjectionProjects.ts";
 import { ProjectionThreadRepository } from "../persistence/Services/ProjectionThreads.ts";
+import type { McpProtocolProfile } from "./protocol/McpProtocolProfile.ts";
 
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly sessionKind?: ProviderSessionKind;
+  readonly ownerThreadId?: ThreadId;
 }
 
 export interface McpIssuedCredential {
@@ -85,19 +90,18 @@ export interface McpSessionRegistryOptions {
  */
 const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
-const parentThreadByDelegatedThread = new Map<ThreadId, ThreadId>();
 const nativeTrackingEnvironmentKeys = {
   claudeAgent: "T3CODE_NATIVE_SUBAGENTS_CLAUDE",
   codex: "T3CODE_NATIVE_SUBAGENTS_CODEX",
   cursor: "T3CODE_NATIVE_SUBAGENTS_CURSOR",
 } as const;
 
-export const registerDelegatedMcpProjectContext = (
-  delegatedThreadId: ThreadId,
-  parentThreadId: ThreadId,
-): void => {
-  parentThreadByDelegatedThread.set(delegatedThreadId, parentThreadId);
-};
+const protocolProfileForProvider = (driver: ProviderDriverKind | undefined): McpProtocolProfile =>
+  driver === ProviderDriverKind.make("claudeAgent")
+    ? "legacy"
+    : driver === undefined
+      ? "legacy"
+      : "auto";
 
 const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -146,6 +150,73 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       ? `http://${getHttpMcpEndpointHost(httpServer.address.hostname)}:${httpServer.address.port}/mcp`
       : "http://127.0.0.1/mcp";
 
+  const capabilitiesFor = (
+    effectiveMcp: ReturnType<typeof resolveEffectiveMcpSettings>,
+    providers: ReadonlyArray<ServerProvider>,
+    parentProviderDriver: ProviderDriverKind | undefined,
+    sessionKind: "parent" | "delegated",
+  ) => {
+    const providerAvailable = (driver: string) =>
+      providers.some(
+        (provider) =>
+          provider.driver === ProviderDriverKind.make(driver) &&
+          provider.enabled &&
+          provider.installed &&
+          provider.availability !== "unavailable",
+      );
+    const capabilities = new Set<McpInvocationContext.McpCapability>();
+    if (effectiveMcp.preview) capabilities.add("preview");
+    if (sessionKind === "delegated") return capabilities;
+
+    capabilities.add("delegation-router");
+    if (
+      effectiveMcp.codexAgent &&
+      providerAvailable("codex") &&
+      !(
+        parentProviderDriver === ProviderDriverKind.make("codex") &&
+        nativeSubagentTrackingEnabled(ProviderDriverKind.make("codex"))
+      )
+    ) {
+      capabilities.add("codex-agent");
+    }
+    if (
+      effectiveMcp.cursorAgent &&
+      providerAvailable("cursor") &&
+      !(
+        parentProviderDriver === ProviderDriverKind.make("cursor") &&
+        nativeSubagentTrackingEnabled(ProviderDriverKind.make("cursor"))
+      )
+    ) {
+      capabilities.add("cursor-agent");
+    }
+    if (
+      effectiveMcp.claudeAgent &&
+      providerAvailable("claudeAgent") &&
+      !(
+        parentProviderDriver === ProviderDriverKind.make("claudeAgent") &&
+        nativeSubagentTrackingEnabled(ProviderDriverKind.make("claudeAgent"))
+      )
+    ) {
+      capabilities.add("claude-agent");
+    }
+    const engineCapabilities = [
+      ["planning", "engine-planning"],
+      ["consensus", "engine-consensus"],
+      ["enrich", "engine-enrich"],
+      ["implement", "engine-implement"],
+      ["quality", "engine-quality"],
+      ["performance", "engine-performance"],
+      ["typescript", "engine-typescript"],
+    ] as const;
+    for (const [setting, capability] of engineCapabilities) {
+      if (effectiveMcp.engine[setting]) capabilities.add(capability);
+    }
+    if (engineCapabilities.some(([setting]) => effectiveMcp.engine[setting])) {
+      capabilities.add("engine-knowledge");
+    }
+    return capabilities;
+  };
+
   const hashToken = (token: string) =>
     crypto
       .digest("SHA-256", new TextEncoder().encode(token))
@@ -163,8 +234,16 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const issue: McpSessionRegistryShape["issue"] = Effect.fn("McpSessionRegistry.issue")(
     function* (request) {
       const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      const delegatedSession = request.sessionKind === "delegated";
+      if (delegatedSession && request.ownerThreadId === undefined) {
+        return yield* Effect.die(
+          new Error(
+            `Cannot issue an MCP credential for delegated thread '${request.threadId}' without an owning parent thread.`,
+          ),
+        );
+      }
       const lookupThreadId =
-        parentThreadByDelegatedThread.get(request.threadId) ?? request.threadId;
+        delegatedSession && request.ownerThreadId ? request.ownerThreadId : request.threadId;
       const thread = yield* threads.getById({ threadId: lookupThreadId }).pipe(Effect.orDie);
       if (Option.isNone(thread)) {
         return yield* Effect.die(
@@ -195,65 +274,13 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         settings.mcp,
         project.value.mcpOverrides ?? undefined,
       );
-      const providerAvailable = (driver: string) =>
-        providers.some(
-          (provider) =>
-            provider.driver === ProviderDriverKind.make(driver) &&
-            provider.enabled &&
-            provider.installed &&
-            provider.availability !== "unavailable",
-        );
-      const capabilities = new Set<McpInvocationContext.McpCapability>();
-      const delegatedSession = String(request.threadId).startsWith("delegated-");
-      if (effectiveMcp.preview) capabilities.add("preview");
-      if (
-        !delegatedSession &&
-        effectiveMcp.codexAgent &&
-        providerAvailable("codex") &&
-        !(
-          parentProviderDriver === ProviderDriverKind.make("codex") &&
-          nativeSubagentTrackingEnabled(ProviderDriverKind.make("codex"))
-        )
-      ) {
-        capabilities.add("codex-agent");
-      }
-      if (
-        !delegatedSession &&
-        effectiveMcp.cursorAgent &&
-        providerAvailable("cursor") &&
-        !(
-          parentProviderDriver === ProviderDriverKind.make("cursor") &&
-          nativeSubagentTrackingEnabled(ProviderDriverKind.make("cursor"))
-        )
-      ) {
-        capabilities.add("cursor-agent");
-      }
-      if (
-        !delegatedSession &&
-        effectiveMcp.claudeAgent &&
-        providerAvailable("claudeAgent") &&
-        !(
-          parentProviderDriver === ProviderDriverKind.make("claudeAgent") &&
-          nativeSubagentTrackingEnabled(ProviderDriverKind.make("claudeAgent"))
-        )
-      ) {
-        capabilities.add("claude-agent");
-      }
-      const engineCapabilities = [
-        ["planning", "engine-planning"],
-        ["consensus", "engine-consensus"],
-        ["enrich", "engine-enrich"],
-        ["implement", "engine-implement"],
-        ["quality", "engine-quality"],
-        ["performance", "engine-performance"],
-        ["typescript", "engine-typescript"],
-      ] as const;
-      for (const [setting, capability] of engineCapabilities) {
-        if (effectiveMcp.engine[setting]) capabilities.add(capability);
-      }
-      if (engineCapabilities.some(([setting]) => effectiveMcp.engine[setting])) {
-        capabilities.add("engine-knowledge");
-      }
+      const sessionKind = delegatedSession ? "delegated" : "parent";
+      const capabilities = capabilitiesFor(
+        effectiveMcp,
+        providers,
+        parentProviderDriver,
+        sessionKind,
+      );
       const delegatedProviderInstances = providers
         .filter(
           (provider) =>
@@ -281,6 +308,8 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
+        ownerThreadId: request.ownerThreadId ?? ThreadId.make(request.threadId),
+        sessionKind,
         projectId: thread.value.projectId,
         worktreePath: thread.value.worktreePath ?? project.value.workspaceRoot,
         providerSessionId,
@@ -304,7 +333,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providerInstanceId: scope.providerInstanceId,
           ...(parentProviderDriver === undefined ? {} : { providerDriver: parentProviderDriver }),
           ...(parentNativeSubagentTracking ? { nativeSubagentTracking: true } : {}),
+          delegationMode: effectiveMcp.router.mode,
           capabilities: scope.capabilities,
+          protocolProfile: protocolProfileForProvider(parentProviderDriver),
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
         },
@@ -317,13 +348,41 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       if (rawToken.length === 0) return undefined;
       const tokenHash = yield* hashToken(rawToken);
       const timestamp = yield* currentTimeMillis;
-      return yield* SynchronizedRef.modify(state, ({ records }) => {
+      const record = yield* SynchronizedRef.modify(state, ({ records }) => {
         const current = pruneDead(records, timestamp);
         const record = current.get(tokenHash);
         if (!record) return [undefined, { records: current }] as const;
         const next = new Map(current);
         next.set(tokenHash, { ...record, lastAliveAt: timestamp });
-        return [record.scope, { records: next }] as const;
+        return [record, { records: next }] as const;
+      });
+      if (!record) return undefined;
+      const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      const project =
+        record.scope.projectId === undefined
+          ? Option.none()
+          : yield* projects.getById({ projectId: record.scope.projectId }).pipe(Effect.orDie);
+      const providers = yield* providerRegistry.getProviders;
+      const effectiveMcp = resolveEffectiveMcpSettings(
+        settings.mcp,
+        Option.isSome(project) ? (project.value.mcpOverrides ?? undefined) : undefined,
+      );
+      const refreshedScope = {
+        ...record.scope,
+        effectiveMcp,
+        capabilities: capabilitiesFor(
+          effectiveMcp,
+          providers,
+          record.scope.providerDriver,
+          McpInvocationContext.mcpSessionKind(record.scope),
+        ),
+      };
+      return yield* SynchronizedRef.modify(state, ({ records }) => {
+        const current = records.get(tokenHash);
+        if (!current) return [undefined, { records }] as const;
+        const next = new Map(records);
+        next.set(tokenHash, { ...current, scope: refreshedScope, lastAliveAt: timestamp });
+        return [refreshedScope, { records: next }] as const;
       });
     },
   );

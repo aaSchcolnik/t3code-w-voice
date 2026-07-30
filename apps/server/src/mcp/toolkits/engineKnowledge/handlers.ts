@@ -207,6 +207,187 @@ const normalizeProjectDelegation = (
   skillOverrides: delegation?.skillOverrides ?? {},
 });
 
+const COMPACT_KNOWLEDGE_SCOPES = [
+  "rules",
+  "lessons",
+  "architecture",
+  "capabilities",
+  "building-blocks",
+  "contracts",
+  "integrations",
+] as const;
+type CompactKnowledgeScope = (typeof COMPACT_KNOWLEDGE_SCOPES)[number];
+
+const scopeQuery = (
+  scope: CompactKnowledgeScope,
+  input: {
+    readonly projectId: NonNullable<McpInvocationContext.McpInvocationScope["projectId"]>;
+    readonly query: string;
+    readonly scopePath?: string | undefined;
+    readonly limit: number;
+  },
+) => {
+  switch (scope) {
+    case "rules":
+      return searchKnowledge(input.projectId, {
+        table: "rules",
+        query: input.query,
+        limit: input.limit,
+      });
+    case "lessons":
+      return searchKnowledge(input.projectId, {
+        table: "lessons_learned",
+        query: input.query,
+        scopePath: input.scopePath,
+        limit: input.limit,
+      });
+    case "architecture":
+      return searchKnowledge(input.projectId, {
+        table: "knowledge_entities",
+        category: "architecture",
+        query: input.query,
+        limit: input.limit,
+      });
+    case "capabilities":
+      return searchKnowledge(input.projectId, {
+        table: "knowledge_entities",
+        category: "capability",
+        query: input.query,
+        limit: input.limit,
+      });
+    case "building-blocks":
+      return searchKnowledge(input.projectId, {
+        table: "knowledge_entities",
+        category: "building-block",
+        query: input.query,
+        limit: input.limit,
+      });
+    case "contracts":
+      return searchKnowledge(input.projectId, {
+        table: "knowledge_entities",
+        category: "contract",
+        query: input.query,
+        limit: input.limit,
+      });
+    case "integrations":
+      return searchKnowledge(input.projectId, {
+        table: "knowledge_entities",
+        category: "integration",
+        query: input.query,
+        limit: input.limit,
+      });
+  }
+};
+
+const strings = (value: unknown): ReadonlyArray<string> =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : typeof value === "string" && value.length > 0
+      ? [value]
+      : [];
+
+const compactExcerpt = (
+  scope: CompactKnowledgeScope,
+  row: Record<string, unknown>,
+  maxChars: number,
+): string => {
+  const candidates =
+    scope === "rules"
+      ? [row.rule_text, row.concern, row.risk, row.gotchas]
+      : scope === "lessons"
+        ? [row.title, row.body]
+        : [row.name, row.summary, row.reuse_guidance, row.public_api];
+  const text = candidates.flatMap(strings).join(" — ").replace(/\s+/gu, " ").trim();
+  return text.length <= maxChars ? text : `${text.slice(0, Math.max(0, maxChars - 1))}…`;
+};
+
+const evidencePaths = (
+  scope: CompactKnowledgeScope,
+  row: Record<string, unknown>,
+): ReadonlyArray<string> => {
+  const paths = [
+    ...strings(row.locations),
+    ...strings(row.evidence),
+    ...(scope === "rules" ? strings(row.imports) : []),
+    ...(scope === "lessons" ? strings(row.scope_glob) : []),
+  ];
+  return [...new Set(paths)].slice(0, 8).map((path) => path.slice(0, 240));
+};
+
+const compactKnowledgeSearch = Effect.fn("engineKnowledge.compactSearch")(function* (input: {
+  readonly projectId: NonNullable<McpInvocationContext.McpInvocationScope["projectId"]>;
+  readonly query: string;
+  readonly scopes?: ReadonlyArray<CompactKnowledgeScope> | undefined;
+  readonly scopePath?: string | undefined;
+  readonly limit?: number | undefined;
+  readonly excerptChars?: number | undefined;
+  readonly budgetChars?: number | undefined;
+}) {
+  const scopes = input.scopes?.length ? input.scopes : COMPACT_KNOWLEDGE_SCOPES;
+  const limit = Math.max(1, Math.min(input.limit ?? 10, 20));
+  const excerptChars = Math.max(120, Math.min(input.excerptChars ?? 360, 1_000));
+  const budgetChars = Math.max(500, Math.min(input.budgetChars ?? 4_000, 8_000));
+  const rowsByScope = yield* Effect.all(
+    scopes.map((scope) =>
+      scopeQuery(scope, {
+        projectId: input.projectId,
+        query: input.query,
+        scopePath: input.scopePath,
+        limit,
+      }).pipe(Effect.map((rows) => ({ scope, rows }))),
+    ),
+    { concurrency: "unbounded" },
+  );
+
+  const results: Array<{
+    readonly scope: CompactKnowledgeScope;
+    readonly handle: string;
+    readonly excerpt: string;
+    readonly evidencePaths: ReadonlyArray<string>;
+  }> = [];
+  let usedChars = 0;
+  let truncated = false;
+  for (const { scope, rows } of rowsByScope) {
+    for (const row of rows) {
+      if (results.length >= limit) {
+        truncated = true;
+        break;
+      }
+      let excerpt = compactExcerpt(scope, row, excerptChars);
+      if (excerpt.length === 0) continue;
+      const paths = evidencePaths(scope, row);
+      const pathCost = paths.reduce((sum, path) => sum + path.length, 0);
+      const remainingExcerptChars = budgetChars - usedChars - pathCost;
+      if (remainingExcerptChars <= 0) {
+        truncated = true;
+        continue;
+      }
+      if (excerpt.length > remainingExcerptChars) {
+        truncated = true;
+        excerpt =
+          remainingExcerptChars === 1 ? "…" : `${excerpt.slice(0, remainingExcerptChars - 1)}…`;
+      }
+      const cost = excerpt.length + pathCost;
+      const stableId =
+        row.entity_key ?? row.relationship_key ?? row.id ?? `${scope}-${results.length + 1}`;
+      results.push({
+        scope,
+        handle: `knowledge/${scope}/${encodeURIComponent(String(stableId))}`,
+        excerpt,
+        evidencePaths: paths,
+      });
+      usedChars += cost;
+    }
+  }
+  return {
+    query: input.query,
+    scopes,
+    results,
+    resultCount: results.length,
+    budget: { maxChars: budgetChars, usedChars, truncated },
+  };
+});
+
 export const EngineKnowledgeToolkitHandlersLive = EngineKnowledgeToolkit.toLayer({
   engine_knowledge_status: () =>
     Effect.gen(function* () {
@@ -217,6 +398,16 @@ export const EngineKnowledgeToolkitHandlersLive = EngineKnowledgeToolkit.toLayer
     Effect.gen(function* () {
       const scope = yield* requireCapability;
       return { data: yield* searchKnowledge(scope.projectId!, input).pipe(fail("search")) };
+    }),
+  knowledge_search: (input) =>
+    Effect.gen(function* () {
+      const scope = yield* requireCapability;
+      return {
+        data: yield* compactKnowledgeSearch({
+          projectId: scope.projectId!,
+          ...input,
+        }).pipe(fail("compact-search")),
+      };
     }),
   engine_knowledge_get: ({ table, id }) =>
     Effect.gen(function* () {

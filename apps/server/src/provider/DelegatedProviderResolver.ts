@@ -18,6 +18,7 @@ import {
   defaultInstanceIdForDriver,
   ProviderDriverKind,
   type DelegatedProviderInstanceCapability,
+  type DelegationReasonCode,
   type DelegatedRunCapabilities,
   type DelegatedRunProvider,
   type ModelSelection,
@@ -52,8 +53,22 @@ export const instanceUnusableReason = (instance: ServerProvider): string | undef
   return undefined;
 };
 
+export const instanceUnusableReasonCode = (
+  instance: ServerProvider,
+): Extract<
+  DelegationReasonCode,
+  "provider_disabled" | "provider_uninstalled" | "provider_unavailable"
+> => {
+  if (instance.availability === "unavailable") return "provider_unavailable";
+  if (!instance.enabled) return "provider_disabled";
+  return "provider_uninstalled";
+};
+
 const instanceDisplayName = (instance: ServerProvider): string =>
   instance.displayName ?? instance.instanceId;
+
+const compareInstanceIds = (left: ServerProvider, right: ServerProvider): number =>
+  left.instanceId < right.instanceId ? -1 : left.instanceId > right.instanceId ? 1 : 0;
 
 /**
  * The model a delegated run uses when the caller does not request one.
@@ -76,9 +91,16 @@ export interface ResolvedDelegatedProvider {
 
 export type DelegatedProviderResolution =
   | { readonly ok: true; readonly value: ResolvedDelegatedProvider }
-  | { readonly ok: false; readonly message: string };
+  | {
+      readonly ok: false;
+      readonly reasonCode: DelegationReasonCode;
+      readonly message: string;
+    };
 
-const failure = (message: string): DelegatedProviderResolution => ({ ok: false, message });
+const failure = (
+  reasonCode: DelegationReasonCode,
+  message: string,
+): DelegatedProviderResolution => ({ ok: false, reasonCode, message });
 
 export interface ResolveDelegatedProviderInput {
   readonly providers: ReadonlyArray<ServerProvider>;
@@ -158,18 +180,21 @@ export function resolveDelegatedProvider(
     if (!exact) {
       const known = candidates.map((snapshot) => `'${snapshot.instanceId}'`).join(", ");
       return failure(
+        "provider_unavailable",
         `No provider instance '${input.providerInstanceId}' is configured.` +
           (known.length > 0 ? ` Configured ${input.provider} instances: ${known}.` : ""),
       );
     }
     if (exact.driver !== driverKind) {
       return failure(
+        "explicit_constraint_mismatch",
         `Provider instance '${input.providerInstanceId}' is owned by driver '${exact.driver}', not '${input.provider}'.`,
       );
     }
     const reason = instanceUnusableReason(exact);
     if (reason !== undefined) {
       return failure(
+        instanceUnusableReasonCode(exact),
         `Provider instance '${input.providerInstanceId}' cannot run delegated tasks: ${reason}`,
       );
     }
@@ -178,17 +203,27 @@ export function resolveDelegatedProvider(
     const usable = candidates.filter((snapshot) => instanceUnusableReason(snapshot) === undefined);
     if (usable.length === 0) {
       if (candidates.length === 0) {
-        return failure(`No ${input.provider} provider instance is configured.`);
+        return failure(
+          "provider_unavailable",
+          `No ${input.provider} provider instance is configured.`,
+        );
       }
       const reasons = candidates
         .map((snapshot) => `'${snapshot.instanceId}': ${instanceUnusableReason(snapshot)}`)
         .join(" ");
-      return failure(`No ${input.provider} provider instance can run delegated tasks. ${reasons}`);
+      return failure(
+        candidates.some((candidate) => candidate.availability === "unavailable")
+          ? "provider_unavailable"
+          : candidates.some((candidate) => !candidate.enabled)
+            ? "provider_disabled"
+            : "provider_uninstalled",
+        `No ${input.provider} provider instance can run delegated tasks. ${reasons}`,
+      );
     }
     const defaultId = defaultInstanceIdForDriver(driverKind);
     instance =
       usable.find((snapshot) => snapshot.instanceId === defaultId) ??
-      [...usable].sort((a, b) => a.instanceId.localeCompare(b.instanceId))[0]!;
+      [...usable].sort(compareInstanceIds)[0]!;
   }
 
   let requestedModel: string | undefined;
@@ -202,6 +237,7 @@ export function resolveDelegatedProvider(
     if (!match) {
       const supported = instance.models.map((model) => `'${model.slug}'`).join(", ");
       return failure(
+        "model_unavailable",
         `Model '${requested}' is not available on provider instance '${instance.instanceId}'.` +
           (supported.length > 0
             ? ` Supported models: ${supported}.`
@@ -215,6 +251,7 @@ export function resolveDelegatedProvider(
   }
   if (input.options !== undefined && !resolvedModel) {
     return failure(
+      "model_unavailable",
       `Provider instance '${instance.instanceId}' advertises no model whose options can be validated.`,
     );
   }
@@ -225,12 +262,16 @@ export function resolveDelegatedProvider(
       : input.options !== undefined
         ? ({ ok: true, options: input.options } as const)
         : undefined;
-  if (normalizedOptions && !normalizedOptions.ok) return failure(normalizedOptions.message);
+  if (normalizedOptions && !normalizedOptions.ok) {
+    return failure("model_unavailable", normalizedOptions.message);
+  }
   const optionResolution =
     normalizedOptions !== undefined && resolvedModel
       ? validateOptions(input.provider, instance, resolvedModel, normalizedOptions.options)
       : undefined;
-  if (optionResolution && !optionResolution.ok) return failure(optionResolution.message);
+  if (optionResolution && !optionResolution.ok) {
+    return failure("model_unavailable", optionResolution.message);
+  }
   const validatedOptions = optionResolution?.options;
   let resolvedOptions = validatedOptions;
   if (input.provider === "codex" && resolvedModel) {

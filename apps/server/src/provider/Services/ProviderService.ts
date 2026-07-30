@@ -32,6 +32,12 @@ import type * as Stream from "effect/Stream";
 import type { ProviderServiceError } from "../Errors.ts";
 import type { ProviderAdapterCapabilities } from "./ProviderAdapter.ts";
 import type { ProviderInstanceRoutingInfo } from "./ProviderAdapterRegistry.ts";
+import type { ProviderSessionKind } from "./ProviderSessionDirectory.ts";
+
+export interface ProviderSessionOwnership {
+  readonly sessionKind: ProviderSessionKind;
+  readonly ownerThreadId?: ThreadId;
+}
 
 /**
  * ProviderServiceShape - Service API for provider session and turn orchestration.
@@ -43,6 +49,7 @@ export interface ProviderServiceShape {
   readonly startSession: (
     threadId: ThreadId,
     input: ProviderSessionStartInput,
+    ownership?: ProviderSessionOwnership,
   ) => Effect.Effect<ProviderSession, ProviderServiceError>;
 
   /**

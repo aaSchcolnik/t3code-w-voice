@@ -261,6 +261,7 @@ describe("buildTurnStartParams", () => {
         providerSessionId: "provider-session-codex-catalog",
         providerInstanceId: ProviderInstanceId.make("codex"),
         capabilities: new Set(["engine-knowledge"]),
+        protocolProfile: "auto",
         endpoint: "http://127.0.0.1/mcp",
         authorizationHeader: "Bearer test",
       });

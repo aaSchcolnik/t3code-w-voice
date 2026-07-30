@@ -129,7 +129,7 @@ const scannerStartInstruction = (
     ...(target.model === undefined ? {} : { model: target.model }),
     ...(target.options === undefined ? {} : { options: target.options }),
   };
-  return `${index + 1}. Call \`${toolPrefix}_start\` with the scan packet and ${JSON.stringify(parameters)}, then collect it with \`${toolPrefix}_result\`.`;
+  return `${index + 1}. Call \`${toolPrefix}_start\` with the scan packet, a stable idempotency key, and ${JSON.stringify(parameters)}. End the turn after starting every scanner; the server delivers the results automatically.`;
 };
 
 export function renderBootstrapScanWorkflow(

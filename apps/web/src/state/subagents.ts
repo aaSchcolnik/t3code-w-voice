@@ -16,6 +16,7 @@ import {
   createEnvironmentRpcCommand,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "@t3tools/client-runtime/state/runtime";
+import { createSubagentEnvironmentAtoms } from "@t3tools/client-runtime/state/subagents";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
@@ -27,6 +28,21 @@ import { applySubagentTranscriptEvent, type SubagentEntry } from "../session-log
 export interface SubagentRunListState {
   readonly snapshotSequence: number;
   readonly runs: ReadonlyArray<SubagentRun>;
+}
+
+export function subagentControlInput(rootThreadId: ThreadId, run: SubagentRun) {
+  return {
+    rootThreadId,
+    runId: run.id,
+    expectedSequence: run.sequence,
+  };
+}
+
+export function subagentRunDetailsInput(rootThreadId: ThreadId, runId: SubagentRunId) {
+  return {
+    rootThreadId,
+    runId,
+  };
 }
 
 const EMPTY_RUN_LIST_STATE: SubagentRunListState = {
@@ -49,15 +65,14 @@ export function applySubagentRunEvent(
     };
   }
 
-  const existing = state.runs.find((run) => run.id === event.run.id);
-  if (existing && existing.sequence > event.run.sequence) {
+  const existingIndex = state.runs.findIndex((run) => run.id === event.run.id);
+  const existing = state.runs[existingIndex];
+  if (existing && existing.sequence >= event.run.sequence) {
     return { ...state, snapshotSequence: event.snapshotSequence };
   }
   return {
     snapshotSequence: event.snapshotSequence,
-    runs: [...state.runs.filter((run) => run.id !== event.run.id), event.run].toSorted(
-      compareSubagentRuns,
-    ),
+    runs: upsertSubagentRunSorted(state.runs, event.run, existingIndex),
   };
 }
 
@@ -78,6 +93,29 @@ function compareSubagentRuns(left: SubagentRun, right: SubagentRun): number {
   return timestamp === 0 ? left.id.localeCompare(right.id) : timestamp;
 }
 
+/**
+ * Keeps the streamed run list sorted without sorting every row for each delta.
+ * Snapshot events still sort once; incremental updates copy the list once and
+ * use binary insertion for the changed run.
+ */
+export function upsertSubagentRunSorted(
+  runs: ReadonlyArray<SubagentRun>,
+  run: SubagentRun,
+  knownIndex = runs.findIndex((candidate) => candidate.id === run.id),
+): ReadonlyArray<SubagentRun> {
+  const next =
+    knownIndex < 0 ? [...runs] : [...runs.slice(0, knownIndex), ...runs.slice(knownIndex + 1)];
+  let low = 0;
+  let high = next.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (compareSubagentRuns(run, next[middle]!) < 0) high = middle;
+    else low = middle + 1;
+  }
+  next.splice(low, 0, run);
+  return next;
+}
+
 export const subagentRunsAtomFamily = createEnvironmentRpcSubscriptionAtomFamily(
   connectionAtomRuntime,
   {
@@ -90,6 +128,12 @@ export const subagentRunsAtomFamily = createEnvironmentRpcSubscriptionAtomFamily
       ),
   },
 );
+
+const subagentEnvironment = createSubagentEnvironmentAtoms(connectionAtomRuntime);
+
+export const subagentRunDetailsAtomFamily = subagentEnvironment.runDetails;
+
+export const subagentsRespond = subagentEnvironment.respondRun;
 
 export const makeActiveSubagentCountsAtom = (
   runsAtom: Atom.Atom<AsyncResult.AsyncResult<SubagentRunListState, unknown>>,

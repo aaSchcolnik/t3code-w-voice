@@ -6,11 +6,24 @@ import {
   DelegatedRunLookupInput,
   DelegatedRunRespondInput,
   DelegatedRunStartInput,
+  DelegationIdempotencyKey,
 } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
-const dependencies = [McpInvocationContext.McpInvocationContext];
+import { DelegationCoordinator } from "../../../orchestration/DelegationCoordinator.ts";
+import { DelegatedRunService } from "../../../orchestration/DelegatedRunService.ts";
+const dependencies = [
+  McpInvocationContext.McpInvocationContext,
+  DelegationCoordinator,
+  DelegatedRunService,
+];
+
+const CompatibilityDelegatedRunStartInput = Schema.Struct({
+  ...DelegatedRunStartInput.fields,
+  idempotencyKey: Schema.optional(DelegationIdempotencyKey),
+});
 
 // No `parameters` on purpose: Tool.make defaults to Tool.EmptyParams, which
 // emits the `{"type":"object"}` input schema MCP clients require. An explicit
@@ -28,8 +41,8 @@ export const CursorCapabilitiesTool = Tool.make("cursor_capabilities", {
 
 export const CursorStartTool = Tool.make("cursor_start", {
   description:
-    "Start a one-shot Cursor subagent in the parent thread workspace. Always use this tool for Cursor delegation instead of launching cursor-agent through a shell: this creates the tracked run shown in T3 Code's Subagents panel. Returns immediately. Start every needed subagent, then end your turn; the server delivers results and structured questions automatically. Never wait, poll, or create sleep timers/background commands.",
-  parameters: DelegatedRunStartInput,
+    "Start a one-shot Cursor subagent in the parent thread workspace. Provide a stable idempotencyKey for retry-safe calls; omitted keys preserve legacy behavior and have no retry deduplication. Always use this tool instead of launching cursor-agent through a shell. Returns immediately with tracked allocation state; provider acceptance happens later. Start every needed run, then end your turn; the server delivers results and questions automatically.",
+  parameters: CompatibilityDelegatedRunStartInput,
   success: DelegatedRun,
   failure: DelegatedRunError,
   dependencies,

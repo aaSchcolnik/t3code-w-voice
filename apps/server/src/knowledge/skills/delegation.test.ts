@@ -7,7 +7,11 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import type { McpCapability } from "../../mcp/McpInvocationContext.ts";
-import { renderDelegationSection, resolveDelegationChains } from "./delegation.ts";
+import {
+  renderDelegationSection,
+  resolveDelegationChains,
+  resolveDelegationRoutingChain,
+} from "./delegation.ts";
 
 const capabilities = (...values: ReadonlyArray<McpCapability>): ReadonlySet<McpCapability> =>
   new Set(values);
@@ -73,6 +77,62 @@ describe("resolveDelegationChains", () => {
     });
 
     expect(resolved.scout).toBeUndefined();
+  });
+});
+
+describe("resolveDelegationRoutingChain", () => {
+  const availableProviders = new Set(["codex", "cursor", "claudeAgent", "inline"] as const);
+
+  it("reports provider defaults separately from configured role chains", () => {
+    expect(
+      resolveDelegationRoutingChain({
+        settings: defaults,
+        availableProviders,
+        role: "scout",
+      }),
+    ).toMatchObject({ policySource: "role_chain" });
+
+    expect(
+      resolveDelegationRoutingChain({
+        settings: { ...defaults, roles: {} },
+        availableProviders,
+        role: "scout",
+      }),
+    ).toMatchObject({ policySource: "provider_default", chain: SCOUT_DEFAULTS });
+  });
+
+  it("applies trusted skill overrides before workflow overrides", () => {
+    const settings = {
+      ...defaults,
+      skillOverrides: {
+        plan: { scout: [{ provider: "cursor" as const, model: "workflow-model" }] },
+      },
+    };
+    expect(
+      resolveDelegationRoutingChain({
+        settings,
+        availableProviders,
+        role: "scout",
+        workflow: "plan",
+      }),
+    ).toEqual({
+      policySource: "workflow_override",
+      chain: [{ provider: "cursor", model: "workflow-model" }],
+    });
+    expect(
+      resolveDelegationRoutingChain({
+        settings,
+        availableProviders,
+        role: "scout",
+        workflow: "plan",
+        skillOverride: {
+          scout: [{ provider: "codex", model: "skill-model" }],
+        },
+      }),
+    ).toEqual({
+      policySource: "skill_override",
+      chain: [{ provider: "codex", model: "skill-model" }],
+    });
   });
 });
 

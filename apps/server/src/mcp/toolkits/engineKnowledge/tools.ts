@@ -13,6 +13,7 @@ import {
   KnowledgeSaveInput,
   KnowledgeSearchInput,
 } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -49,6 +50,40 @@ export const KnowledgeSearchTool = Tool.make("engine_knowledge_search", {
   dependencies,
 })
   .annotate(Tool.Title, "Search project knowledge")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Idempotent, true);
+export const CompactKnowledgeSearchTool = Tool.make("knowledge_search", {
+  description:
+    "Search bounded evidence across current-project rules, lessons, architecture, capabilities, reusable building blocks, contracts, and integrations. Returns compact excerpts and evidence paths rather than complete database rows.",
+  parameters: Schema.Struct({
+    query: Schema.String,
+    scopes: Schema.optional(
+      Schema.Array(
+        Schema.Literals([
+          "rules",
+          "lessons",
+          "architecture",
+          "capabilities",
+          "building-blocks",
+          "contracts",
+          "integrations",
+        ]),
+      ),
+    ),
+    scopePath: Schema.optional(Schema.String),
+    limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 20 }))),
+    excerptChars: Schema.optional(
+      Schema.Int.check(Schema.isBetween({ minimum: 120, maximum: 1_000 })),
+    ),
+    budgetChars: Schema.optional(
+      Schema.Int.check(Schema.isBetween({ minimum: 500, maximum: 8_000 })),
+    ),
+  }),
+  success: KnowledgeResult,
+  failure: KnowledgeError,
+  dependencies,
+})
+  .annotate(Tool.Title, "Search bounded project evidence")
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Idempotent, true);
 export const KnowledgeGetTool = Tool.make("engine_knowledge_get", {
@@ -144,6 +179,7 @@ export const EngineDelegationSetTool = Tool.make("engine_delegation_set", {
 
 export const EngineKnowledgeToolkit = Toolkit.make(
   KnowledgeStatusTool,
+  CompactKnowledgeSearchTool,
   KnowledgeSearchTool,
   KnowledgeGetTool,
   KnowledgeSaveTool,

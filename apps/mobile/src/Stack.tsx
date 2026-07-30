@@ -47,8 +47,11 @@ import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteSc
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
+import { SettingsRouterRouteScreen } from "./features/settings/SettingsRouterRouteScreen";
 import { SettingsUsageRouteScreen } from "./features/settings/usage/SettingsUsageRouteScreen";
 import { SettingsVoiceRouteScreen } from "./features/settings/SettingsVoiceRouteScreen";
+import { SubagentRunDetailsRouteScreen } from "./features/subagents/SubagentRunDetailsRouteScreen";
+import { SubagentRunsRouteScreen } from "./features/subagents/SubagentRunsRouteScreen";
 import { ShowcaseCaptureCoordinator } from "./features/showcase/ShowcaseCaptureCoordinator";
 import {
   SettingsLegalDocumentCloseHeaderButton,
@@ -195,6 +198,13 @@ const SettingsSheetStack = createNativeStackNavigator({
       linking: "voice",
       options: {
         title: "Voice",
+      },
+    }),
+    SettingsRouter: createNativeStackScreen({
+      screen: SettingsRouterRouteScreen,
+      linking: "delegation-router",
+      options: {
+        title: "Delegation Router",
       },
     }),
     SettingsAuth: createNativeStackScreen({
@@ -416,6 +426,22 @@ export const RootStack = createNativeStackNavigator({
       screen: ReviewSheet,
       linking: `${THREAD_LINKING_PREFIX}/review`,
       options: SOLID_HEADER_OPTIONS,
+    }),
+    SubagentRuns: createNativeStackScreen({
+      screen: SubagentRunsRouteScreen,
+      linking: `${THREAD_LINKING_PREFIX}/subagents`,
+      options: {
+        ...GLASS_HEADER_OPTIONS,
+        title: "Delegated Runs",
+      },
+    }),
+    SubagentRunDetails: createNativeStackScreen({
+      screen: SubagentRunDetailsRouteScreen,
+      linking: `${THREAD_LINKING_PREFIX}/subagents/:runId`,
+      options: {
+        ...GLASS_HEADER_OPTIONS,
+        title: "Run Details",
+      },
     }),
     ThreadReviewComment: createNativeStackScreen({
       screen: ReviewCommentComposerSheet,

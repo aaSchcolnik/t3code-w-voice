@@ -26,11 +26,68 @@ import type * as Stream from "effect/Stream";
 
 export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
 
+export type ProviderInstructionDelivery =
+  | { readonly supported: true; readonly channel: "developer" | "system" }
+  | { readonly supported: false; readonly reason: string };
+
+/**
+ * A negative dispatch acknowledgement that is safe to retry on another
+ * provider. Adapters must not produce this outcome until provider-specific
+ * conformance proves the turn could not have been accepted.
+ */
+export interface ProviderDefinitelyNotAcceptedDispatchOutcome {
+  readonly outcome: "definitely_not_accepted";
+  readonly reason: string;
+}
+
+export type ProviderDefinitelyNotAcceptedDispatchSupport = "supported" | "unsupported";
+export type ProviderDelegationUsageReporting = "correlated" | "unsupported";
+
+/**
+ * Provider-owned facts used by the delegation router.
+ *
+ * These declarations describe tested adapter/runtime behavior. Routing must
+ * never infer them from a provider driver kind or from runtime-mode switches.
+ */
+export interface ProviderDelegationCapabilities {
+  readonly delegatedExecution: boolean;
+  readonly cancellation: boolean;
+  readonly structuredQuestions: boolean;
+  readonly attachments: boolean;
+  readonly enforcedReadOnlyWorkspace: boolean;
+  readonly workspaceWriteSandboxContainment: boolean;
+  readonly instructionDelivery: ProviderInstructionDelivery;
+  readonly providerThreadResume: boolean;
+  readonly definitelyNotAcceptedDispatchOutcome: ProviderDefinitelyNotAcceptedDispatchSupport;
+  readonly usageReporting: ProviderDelegationUsageReporting;
+}
+
+export const UNSUPPORTED_PROVIDER_DELEGATION_CAPABILITIES = {
+  delegatedExecution: false,
+  cancellation: false,
+  structuredQuestions: false,
+  attachments: false,
+  enforcedReadOnlyWorkspace: false,
+  workspaceWriteSandboxContainment: false,
+  instructionDelivery: {
+    supported: false,
+    reason: "This adapter does not expose a legitimate instruction-delivery channel.",
+  },
+  providerThreadResume: false,
+  definitelyNotAcceptedDispatchOutcome: "unsupported",
+  usageReporting: "unsupported",
+} as const satisfies ProviderDelegationCapabilities;
+
 export interface ProviderAdapterCapabilities {
   /**
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  /**
+   * Absent on legacy/test adapters and treated as fully unsupported. Concrete
+   * production adapters declare this field explicitly.
+   */
+  readonly delegation?: ProviderDelegationCapabilities;
 }
 
 export interface ProviderThreadTurnSnapshot {

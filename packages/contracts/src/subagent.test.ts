@@ -1,9 +1,17 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { SubagentRun, SubagentRunStreamEvent, SubagentTranscript } from "./subagent.ts";
+import {
+  SubagentRun,
+  SubagentRunDetails,
+  SubagentRespondInput,
+  SubagentRunStreamEvent,
+  SubagentTranscript,
+} from "./subagent.ts";
 
 const decodeSubagentRun = Schema.decodeUnknownSync(SubagentRun);
+const decodeSubagentRunDetails = Schema.decodeUnknownSync(SubagentRunDetails);
+const decodeSubagentRespondInput = Schema.decodeUnknownSync(SubagentRespondInput);
 const decodeSubagentRunStreamEvent = Schema.decodeUnknownSync(SubagentRunStreamEvent);
 const decodeSubagentTranscript = Schema.decodeUnknownSync(SubagentTranscript);
 
@@ -48,8 +56,12 @@ describe("SubagentRun", () => {
   });
 
   it("decodes runs written before option metadata and preserves enriched details when present", () => {
-    expect(decodeSubagentRun(baseRun).resolvedOptionDetails).toBeUndefined();
-    expect(decodeSubagentRun(baseRun).runKind).toBeUndefined();
+    const legacyRun = decodeSubagentRun(baseRun);
+    expect(legacyRun).toEqual(baseRun);
+    expect(legacyRun.resolvedOptionDetails).toBeUndefined();
+    expect(legacyRun.runKind).toBeUndefined();
+    expect(legacyRun.route).toBeUndefined();
+    expect(legacyRun.resultCompleteness).toBeUndefined();
 
     const run = decodeSubagentRun({
       ...baseRun,
@@ -66,6 +78,35 @@ describe("SubagentRun", () => {
     });
 
     expect(run.resolvedOptionDetails?.[0]?.valueLabel).toBe("Fast");
+  });
+
+  it("decodes compact routed-run metadata without candidate diagnostics", () => {
+    const run = decodeSubagentRun({
+      ...baseRun,
+      source: "delegated",
+      workflowId: "workflow-1",
+      batchId: "batch-1",
+      laneId: "lane-1",
+      route: {
+        decisionId: "decision-1",
+        policyVersion: 1,
+        role: "worker",
+        provider: "codex",
+        providerInstanceId: "codex_work",
+        model: "gpt-5.6-sol",
+        explanation: "Selected the configured worker.",
+      },
+      dispatchState: "turn_accepted",
+      terminalEventSeen: true,
+      assistantMessageCount: 2,
+      finalMessagePresent: true,
+      resultCompleteness: "terminal_message",
+    });
+
+    expect(run.batchId).toBe("batch-1");
+    expect(run.route?.providerInstanceId).toBe("codex_work");
+    expect(run.route).not.toHaveProperty("candidates");
+    expect(run.resultCompleteness).toBe("terminal_message");
   });
 
   it("decodes workflow roots and agents with aggregate and retry metadata", () => {
@@ -104,6 +145,95 @@ describe("SubagentRun", () => {
         capabilities: { ...baseRun.capabilities, transcriptQuality: "full" },
       }),
     ).toThrow();
+  });
+});
+
+describe("SubagentRunDetails", () => {
+  it("decodes empty native details without enriching the streamed run", () => {
+    expect(
+      decodeSubagentRunDetails({
+        runId: "run-1",
+        source: "native",
+        attempts: [],
+      }),
+    ).toEqual({
+      runId: "run-1",
+      source: "native",
+      attempts: [],
+    });
+  });
+
+  it("decodes full durable delegated routing diagnostics", () => {
+    const details = decodeSubagentRunDetails({
+      runId: "run-1",
+      source: "delegated",
+      routeGroupId: "route-group-1",
+      routeDecision: {
+        decisionId: "decision-1",
+        policyVersion: 3,
+        mode: "proactive",
+        taskKind: "implementation",
+        role: "worker",
+        selected: {
+          provider: "codex",
+          providerInstanceId: "codex-primary",
+          model: "gpt-5.6-sol",
+        },
+        candidates: [],
+        fallbackChain: [],
+        explanation: "Selected the first eligible worker.",
+      },
+      attempts: [
+        {
+          attemptId: "attempt-1",
+          target: {
+            provider: "codex",
+            providerInstanceId: "codex-primary",
+            model: "gpt-5.6-sol",
+          },
+          dispatchState: "turn_accepted",
+          allocatedAt: "2026-07-29T00:00:00.000Z",
+        },
+      ],
+      pendingQuestions: [
+        {
+          id: "scope",
+          header: "Scope",
+          question: "Which packages?",
+          options: [{ label: "Server", description: "Inspect the server." }],
+          multiSelect: true,
+        },
+      ],
+    });
+
+    expect(details.routeGroupId).toBe("route-group-1");
+    expect(details.routeDecision?.selected.providerInstanceId).toBe("codex-primary");
+    expect(details.attempts[0]?.dispatchState).toBe("turn_accepted");
+    expect(details.pendingQuestions?.[0]?.multiSelect).toBe(true);
+  });
+});
+
+describe("SubagentRespondInput", () => {
+  it("decodes sequence-checked scalar and multi-select answers", () => {
+    expect(
+      decodeSubagentRespondInput({
+        rootThreadId: "thread-1",
+        runId: "run-1",
+        expectedSequence: 4,
+        answers: {
+          scope: ["Server", "Web"],
+          notes: "Focus on lifecycle.",
+        },
+      }),
+    ).toEqual({
+      rootThreadId: "thread-1",
+      runId: "run-1",
+      expectedSequence: 4,
+      answers: {
+        scope: ["Server", "Web"],
+        notes: "Focus on lifecycle.",
+      },
+    });
   });
 });
 

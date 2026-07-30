@@ -119,16 +119,36 @@ export const EngineReportRenderTool = Tool.make("engine_report_render", {
 });
 
 export const EngineSkillListTool = Tool.make("engine_skill_list", {
-  description: "List enabled built-in and custom skills available in this project.",
+  description:
+    "Compatibility alias that returns bounded metadata for enabled project skills. Prefer engine_skill_search.",
   parameters: Schema.Record(Schema.String, Schema.Unknown),
   success: KnowledgeResult,
   failure: KnowledgeError,
   dependencies,
 }).annotate(Tool.Readonly, true);
 
+export const EngineSkillSearchTool = Tool.make("engine_skill_search", {
+  description:
+    "Search enabled project/global skill metadata by title, description, triggers, tags, source, and scope. Returns compact handles only; use engine_skill_run to load the selected workflow body.",
+  parameters: Schema.Struct({
+    query: Schema.String,
+    limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 20 }))),
+  }),
+  success: KnowledgeResult,
+  failure: KnowledgeError,
+  dependencies,
+})
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Idempotent, true);
+
 export const EngineSkillRunTool = Tool.make("engine_skill_run", {
-  description: "Run an enabled custom T3 Code skill by slug.",
-  parameters: Schema.Struct({ slug: SkillSlug, task: Schema.String }),
+  description:
+    "Load and run the full body of a selected custom T3 Code skill. Pass the handle returned by engine_skill_search; slug remains a compatibility fallback.",
+  parameters: Schema.Struct({
+    handle: Schema.optional(Schema.String),
+    slug: Schema.optional(SkillSlug),
+    task: Schema.String,
+  }),
   success: KnowledgeResult,
   failure: KnowledgeError,
   dependencies,
@@ -162,6 +182,7 @@ export const EngineToolkit = Toolkit.make(
   EngineChunksNextTool,
   EngineChunksUpdateTool,
   EngineReportRenderTool,
+  EngineSkillSearchTool,
   EngineSkillListTool,
   EngineSkillRunTool,
   EngineSkillSaveTool,

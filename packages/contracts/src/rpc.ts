@@ -175,7 +175,10 @@ import { DelegatedRunError } from "./delegatedRun.ts";
 import {
   SubagentControlInput,
   SubagentControlResult,
+  SubagentRespondInput,
   SubagentRunError,
+  SubagentRunDetails,
+  SubagentRunDetailsInput,
   SubagentRunStreamEvent,
   SubagentRunSubscribeInput,
   SubagentTranscriptError,
@@ -364,7 +367,9 @@ export const WS_METHODS = {
   subscribeVoiceModelState: "subscribeVoiceModelState",
   subscribeSubagentRuns: "subagents.subscribeRuns",
   subscribeSubagentTranscript: "subagents.subscribeTranscript",
+  subagentsGetRunDetails: "subagents.getRunDetails",
   subagentsCancelRun: "subagents.cancelRun",
+  subagentsRespond: "subagents.respond",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -1022,6 +1027,18 @@ export const WsSubagentsCancelRunRpc = Rpc.make(WS_METHODS.subagentsCancelRun, {
   error: Schema.Union([SubagentRunError, DelegatedRunError, EnvironmentAuthorizationError]),
 });
 
+export const WsSubagentsRespondRpc = Rpc.make(WS_METHODS.subagentsRespond, {
+  payload: SubagentRespondInput,
+  success: SubagentControlResult,
+  error: Schema.Union([SubagentRunError, DelegatedRunError, EnvironmentAuthorizationError]),
+});
+
+export const WsSubagentsGetRunDetailsRpc = Rpc.make(WS_METHODS.subagentsGetRunDetails, {
+  payload: SubagentRunDetailsInput,
+  success: SubagentRunDetails,
+  error: Schema.Union([SubagentRunError, EnvironmentAuthorizationError]),
+});
+
 export const WsTranscriptionStartRpc = Rpc.make(WS_METHODS.transcriptionStart, {
   payload: TranscriptionStartInput,
   success: TranscriptionUpdate,
@@ -1177,7 +1194,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeVoiceModelStateRpc,
   WsSubscribeSubagentTranscriptRpc,
   WsSubscribeSubagentRunsRpc,
+  WsSubagentsGetRunDetailsRpc,
   WsSubagentsCancelRunRpc,
+  WsSubagentsRespondRpc,
   WsSubscribeTerminalEventsRpc,
   WsSubscribeTerminalMetadataRpc,
   WsPreviewOpenRpc,

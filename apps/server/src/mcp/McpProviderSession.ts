@@ -1,5 +1,6 @@
 import type {
   EnvironmentId,
+  DelegationMode,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -7,6 +8,7 @@ import type {
 } from "@t3tools/contracts";
 
 import type { McpCapability } from "./McpInvocationContext.ts";
+import type { McpProtocolProfile } from "./protocol/McpProtocolProfile.ts";
 
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
@@ -16,7 +18,9 @@ export interface McpProviderSessionConfig {
   readonly providerInstanceId: ProviderInstanceId;
   readonly providerDriver?: ProviderDriverKind;
   readonly nativeSubagentTracking?: boolean;
+  readonly delegationMode?: DelegationMode;
   readonly capabilities: ReadonlySet<McpCapability>;
+  readonly protocolProfile: McpProtocolProfile;
   readonly endpoint: string;
   readonly authorizationHeader: string;
 }

@@ -2,6 +2,14 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
   DelegatedRunId,
+  DelegationAttemptId,
+  DelegationBatchId,
+  DelegationIdempotencyKey,
+  DelegationRequestHash,
+  DelegationRouteDecisionId,
+  DelegationRouteGroupId,
+  DelegationWorkflowId,
+  DelegationLaneId,
   EventId,
   ProjectId,
   ProviderDriverKind,
@@ -13,6 +21,7 @@ import {
   type OrchestrationEvent,
   type ProviderRuntimeEvent,
   type ProviderRespondToRequestInput,
+  type ProviderRespondToUserInputInput,
   type ProviderSendTurnInput,
   type ProviderSessionStartInput,
   type DelegatedRun,
@@ -30,8 +39,13 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
-import { ProviderService } from "../provider/Services/ProviderService.ts";
+import {
+  ProviderService,
+  type ProviderSessionOwnership,
+} from "../provider/Services/ProviderService.ts";
+import { ProviderValidationError } from "../provider/Errors.ts";
 import * as DelegatedRunService from "./DelegatedRunService.ts";
+import * as DelegatedRunRepository from "./DelegatedRunRepository.ts";
 import * as SubagentRunService from "./SubagentRunService.ts";
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
@@ -46,6 +60,10 @@ const now = "2026-07-11T00:00:00.000Z";
 const configLayer = ServerConfig.layerTest("/workspace", {
   prefix: "delegated-run-service-test-",
 }).pipe(Layer.provide(NodeServices.layer));
+const delegatedRunRepositoryLayer = DelegatedRunRepository.layer.pipe(
+  Layer.provideMerge(configLayer),
+  Layer.provideMerge(NodeServices.layer),
+);
 const subagentRunLayer = Layer.succeed(
   SubagentRunService.SubagentRunService,
   SubagentRunService.SubagentRunService.of({
@@ -92,6 +110,7 @@ const providerRegistryStub = (providers: ReadonlyArray<ServerProvider>) =>
     ProviderRegistry,
     ProviderRegistry.of({
       getProviders: Effect.succeed(providers),
+      getDelegatedCandidates: Effect.succeed([]),
       refresh: () => Effect.succeed(providers),
       refreshInstance: () => Effect.succeed(providers),
       getProviderMaintenanceCapabilitiesForInstance: () => Effect.die("unused"),
@@ -104,6 +123,8 @@ const makeStubbedProviderService = (
   streamEvents: Stream.Stream<ProviderRuntimeEvent> = Stream.empty,
   onStopSession: Effect.Effect<void> = Effect.void,
   onRespondToRequest: (input: ProviderRespondToRequestInput) => Effect.Effect<void> = () =>
+    Effect.die("unused"),
+  onRespondToUserInput: (input: ProviderRespondToUserInputInput) => Effect.Effect<void> = () =>
     Effect.die("unused"),
 ) =>
   ProviderService.of({
@@ -125,7 +146,7 @@ const makeStubbedProviderService = (
     getCapabilities: () => Effect.die("unused"),
     getInstanceInfo: () => Effect.die("unused"),
     respondToRequest: onRespondToRequest,
-    respondToUserInput: () => Effect.die("unused"),
+    respondToUserInput: onRespondToUserInput,
     rollbackConversation: () => Effect.die("unused"),
     streamEvents,
   });
@@ -177,12 +198,14 @@ const makeEvent = (
   }) as ProviderRuntimeEvent;
 
 const PersistedRunSequencesJson = Schema.fromJsonString(
-  Schema.Array(
-    Schema.Struct({
-      id: Schema.optional(Schema.String),
-      sequence: Schema.optional(Schema.Number),
-    }),
-  ),
+  Schema.Struct({
+    runs: Schema.Array(
+      Schema.Struct({
+        id: Schema.optional(Schema.String),
+        sequence: Schema.optional(Schema.Number),
+      }),
+    ),
+  }),
 );
 const decodePersistedRunSequences = Schema.decodeUnknownOption(PersistedRunSequencesJson);
 
@@ -193,7 +216,9 @@ const waitForPersistedRun = Effect.fn("waitForPersistedRun")(function* (run: Del
     const contents = yield* fs
       .readFileString(`${config.stateDir}/delegated-runs.json`)
       .pipe(Effect.orElseSucceed(() => "[]"));
-    const persisted = Option.getOrElse(decodePersistedRunSequences(contents), () => []);
+    const persisted = Option.getOrElse(decodePersistedRunSequences(contents), () => ({
+      runs: [],
+    })).runs;
     const matching = persisted.find((candidate) => candidate.id === run.id);
     if (matching && (matching.sequence ?? -1) >= run.sequence) return;
     yield* Effect.yieldNow;
@@ -294,9 +319,11 @@ const waitForFinalMessage = Effect.fn("waitForFinalMessage")(function* (
 const makeStreamingHarness = Effect.gen(function* () {
   const commands: OrchestrationCommand[] = [];
   const approvalResponses: ProviderRespondToRequestInput[] = [];
+  const userInputResponses: ProviderRespondToUserInputInput[] = [];
   const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const domainEvents = yield* PubSub.unbounded<OrchestrationEvent>();
   const stopped = yield* Deferred.make<void>();
+  const repository = yield* DelegatedRunRepository.DelegatedRunRepository;
   const service = yield* DelegatedRunService.__testing.make.pipe(
     Effect.provideService(
       ProviderService,
@@ -306,6 +333,10 @@ const makeStreamingHarness = Effect.gen(function* () {
         (input) =>
           Effect.sync(() => {
             approvalResponses.push(input);
+          }),
+        (input) =>
+          Effect.sync(() => {
+            userInputResponses.push(input);
           }),
       ),
     ),
@@ -322,12 +353,17 @@ const makeStreamingHarness = Effect.gen(function* () {
   const running = yield* waitForStatus(service, queued.id, "running");
   const childThreadId = ThreadId.make(running.providerThreadId!);
   const publish = (event: ProviderRuntimeEvent) =>
-    PubSub.publish(events, event).pipe(Effect.andThen(Effect.yieldNow));
+    PubSub.publish(events, event).pipe(
+      Effect.andThen(Effect.yieldNow),
+      Effect.andThen(repository.drain),
+      Effect.andThen(Effect.yieldNow),
+    );
   const publishDomain = (event: OrchestrationEvent) =>
     PubSub.publish(domainEvents, event).pipe(Effect.andThen(Effect.yieldNow));
   return {
     commands,
     approvalResponses,
+    userInputResponses,
     service,
     queued,
     childThreadId,
@@ -379,9 +415,484 @@ const streamingTestLayer = Layer.mergeAll(
   Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
   providerRegistryStub([codexSnapshot]),
   subagentRunLayer,
+  delegatedRunRepositoryLayer,
   configLayer,
   ServerSettings.layerTest(),
   NodeServices.layer,
+);
+
+const resolvedStartInput = (
+  overrides: Partial<DelegatedRunService.StartResolvedDelegatedRunInput> = {},
+): DelegatedRunService.StartResolvedDelegatedRunInput => ({
+  target: {
+    provider: "codex",
+    providerInstanceId,
+    model: "gpt-5",
+    options: [{ id: "reasoningEffort", value: "high" }],
+  },
+  parentThreadId,
+  task: "Review the dispatch boundary",
+  workspaceRoot: "/workspace",
+  interactionMode: "plan",
+  attachments: [
+    { type: "image", id: "dispatch", name: "dispatch.png", mimeType: "image/png", sizeBytes: 42 },
+  ],
+  executionPolicy: {
+    workspaceAccess: "workspace-write",
+    approvalPolicy: "never",
+    sandboxMode: "workspace-write",
+    runtimeMode: "auto-accept-edits",
+  },
+  ...overrides,
+});
+
+it.effect("persists dispatch_started before exact-target turn acknowledgement", () =>
+  Effect.gen(function* () {
+    const commands: OrchestrationCommand[] = [];
+    const dispatchEntered = yield* Deferred.make<void>();
+    const acknowledgement = yield* Deferred.make<{
+      readonly threadId: ThreadId;
+      readonly turnId: TurnId;
+    }>();
+    let sessionInput: ProviderSessionStartInput | undefined;
+    let sessionOwnership: ProviderSessionOwnership | undefined;
+    let turnInput: ProviderSendTurnInput | undefined;
+    const exactInstanceId = ProviderInstanceId.make("fixed-custom-instance");
+    const provider = {
+      ...makeStubbedProviderService(),
+      startSession: (
+        threadId: ThreadId,
+        input: ProviderSessionStartInput,
+        ownership?: ProviderSessionOwnership,
+      ) => {
+        sessionInput = input;
+        sessionOwnership = ownership;
+        return Effect.succeed({
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: exactInstanceId,
+          status: "ready" as const,
+          runtimeMode: input.runtimeMode,
+          cwd: input.cwd,
+          threadId,
+          createdAt: now,
+          updatedAt: now,
+        });
+      },
+      sendTurn: (input: ProviderSendTurnInput) => {
+        turnInput = input;
+        return Deferred.succeed(dispatchEntered, undefined).pipe(
+          Effect.andThen(Deferred.await(acknowledgement)),
+        );
+      },
+    };
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(ProviderService, provider),
+      Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+    );
+    const allocated = yield* service.startResolved(
+      resolvedStartInput({
+        target: {
+          provider: "codex",
+          providerInstanceId: exactInstanceId,
+          model: "gpt-exact",
+          options: [{ id: "reasoningEffort", value: "high" }],
+        },
+      }),
+    );
+    yield* Deferred.await(dispatchEntered);
+    const dispatching = yield* service.get(allocated.id);
+    expect(dispatching.dispatchState).toBe("dispatch_started");
+    expect(dispatching.providerInstanceId).toBe(exactInstanceId);
+    expect(dispatching.resolvedModel).toBe("gpt-exact");
+    expect(dispatching.attempts?.[0]?.dispatchStartedAt).toBeDefined();
+    expect(sessionOwnership).toEqual({
+      sessionKind: "delegated",
+      ownerThreadId: parentThreadId,
+    });
+    expect(sessionInput).toMatchObject({
+      providerInstanceId: exactInstanceId,
+      approvalPolicy: "never",
+      sandboxMode: "workspace-write",
+      runtimeMode: "auto-accept-edits",
+    });
+    expect(turnInput).toMatchObject({
+      interactionMode: "plan",
+      attachments: [{ id: "dispatch" }],
+      modelSelection: { instanceId: exactInstanceId, model: "gpt-exact" },
+    });
+
+    yield* Deferred.succeed(acknowledgement, {
+      threadId: ThreadId.make(dispatching.providerThreadId!),
+      turnId: TurnId.make("accepted-turn"),
+    });
+    const running = yield* waitForStatus(service, allocated.id, "running");
+    expect(running.dispatchState).toBe("turn_accepted");
+    expect(running.turnAcceptedAt).toBeDefined();
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("launches an already allocated exact route without reserving twice", () =>
+  Effect.gen(function* () {
+    const repository = yield* DelegatedRunRepository.DelegatedRunRepository;
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(ProviderService, makeStubbedProviderService()),
+      Effect.provideService(OrchestrationEngineService, makeStubbedEngine([])),
+    );
+    const runId = DelegatedRunId.make("allocated-exact");
+    const workflowId = DelegationWorkflowId.make("workflow-exact");
+    const batchId = DelegationBatchId.make("batch-exact");
+    const laneId = DelegationLaneId.make("lane-exact");
+    const routeGroupId = DelegationRouteGroupId.make("route-exact");
+    const allocated: DelegatedRun = {
+      id: runId,
+      provider: "codex",
+      providerInstanceId,
+      parentThreadId,
+      workflowId,
+      batchId,
+      laneId,
+      routeGroupId,
+      deliveryMode: "mcp_task",
+      routeDecision: {
+        decisionId: DelegationRouteDecisionId.make("route-exact:v1:lane-exact"),
+        policyVersion: 1,
+        mode: "suggested",
+        taskKind: "general",
+        role: "worker",
+        selected: { provider: "codex", providerInstanceId, model: "gpt-5" },
+        candidates: [],
+        fallbackChain: [],
+        explanation: "Exact routed target.",
+      },
+      providerThreadId: `delegated-${runId}`,
+      title: "Allocated exact run",
+      taskPreview: "Launch exactly once",
+      status: "queued",
+      lastSummary: null,
+      finalMessage: null,
+      error: null,
+      model: "gpt-5",
+      resolvedModel: "gpt-5",
+      interactionMode: "default",
+      approvalPolicy: "never",
+      sandboxMode: "workspace-write",
+      runtimeMode: "auto-accept-edits",
+      attachments: [],
+      workspaceRoot: "/workspace",
+      sequence: 0,
+      dispatchState: "allocated",
+      allocatedAt: now,
+      attempts: [
+        {
+          attemptId: DelegationAttemptId.make(`${runId}:1`),
+          target: { provider: "codex", providerInstanceId, model: "gpt-5" },
+          dispatchState: "allocated",
+          allocatedAt: now,
+        },
+      ],
+      startedAt: null,
+      completedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    yield* repository.reserveBatch({
+      batchId,
+      workflowId,
+      environmentId: "/workspace",
+      parentThreadId,
+      runs: [
+        {
+          run: allocated,
+          canonicalWorkspace: "/workspace",
+          workspaceAccess: "workspace-write",
+        },
+      ],
+      limits: { maxConcurrentPerParent: 4, maxConcurrentEnvironment: 8 },
+      idempotency: {
+        key: DelegationIdempotencyKey.make("allocated-exact-key"),
+        requestHash: DelegationRequestHash.make("allocated-exact-hash"),
+      },
+    });
+    yield* service.startAllocated({
+      run: allocated,
+      task: "Launch exactly once",
+      timeoutMs: 60_000,
+    });
+    yield* waitForStatus(service, runId, "running");
+    expect((yield* repository.list).filter((run) => run.id === runId)).toHaveLength(1);
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("falls back exactly once per exact target only before dispatch", () =>
+  Effect.gen(function* () {
+    const commands: OrchestrationCommand[] = [];
+    const starts: ProviderInstanceId[] = [];
+    const fallbackInstanceId = ProviderInstanceId.make("cursor-fallback");
+    const provider = {
+      ...makeStubbedProviderService(),
+      startSession: (threadId: ThreadId, input: ProviderSessionStartInput) => {
+        starts.push(input.providerInstanceId!);
+        if (input.providerInstanceId === providerInstanceId) {
+          return Effect.fail(
+            new ProviderValidationError({
+              operation: "test.startSession",
+              issue: "primary startup failed",
+            }),
+          );
+        }
+        return Effect.succeed({
+          provider: ProviderDriverKind.make("cursor"),
+          providerInstanceId: fallbackInstanceId,
+          status: "ready" as const,
+          runtimeMode: input.runtimeMode,
+          cwd: input.cwd,
+          threadId,
+          createdAt: now,
+          updatedAt: now,
+        });
+      },
+    };
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(ProviderService, provider),
+      Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+    );
+    const allocated = yield* service.startResolved(
+      resolvedStartInput({
+        fallbackTargets: [
+          {
+            provider: "cursor",
+            providerInstanceId: fallbackInstanceId,
+            model: "cursor-exact",
+          },
+          {
+            provider: "cursor",
+            providerInstanceId: fallbackInstanceId,
+            model: "cursor-exact",
+          },
+        ],
+      }),
+    );
+    const running = yield* waitForStatus(service, allocated.id, "running");
+    expect(starts).toEqual([providerInstanceId, fallbackInstanceId]);
+    expect(running.provider).toBe("cursor");
+    expect(running.providerInstanceId).toBe(fallbackInstanceId);
+    expect(running.resolvedModel).toBe("cursor-exact");
+    expect(running.attempts).toHaveLength(2);
+    expect(running.attempts?.[0]).toMatchObject({
+      dispatchState: "session_starting",
+    });
+    expect(running.attempts?.[0]?.failureReason).toContain("primary startup failed");
+    expect(running.attempts?.[1]).toMatchObject({
+      dispatchState: "turn_accepted",
+      fallbackFrom: { providerInstanceId },
+    });
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("keeps a startup failure inspectable and wakes its parent", () =>
+  Effect.gen(function* () {
+    const commands: OrchestrationCommand[] = [];
+    const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+    const provider = {
+      ...makeStubbedProviderService(Stream.fromPubSub(events)),
+      startSession: () =>
+        Effect.fail(
+          new ProviderValidationError({
+            operation: "test.startSession",
+            issue: "provider process could not start",
+          }),
+        ),
+    };
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(ProviderService, provider),
+      Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+    );
+    const allocated = yield* service.startResolved(resolvedStartInput());
+    const failed = yield* waitForStatus(service, allocated.id, "failed");
+    yield* PubSub.publish(
+      events,
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "completed", usage: null },
+      }),
+    );
+    const wakes = yield* waitForWakeCount(commands, 1);
+    expect(failed.dispatchState).toBe("session_starting");
+    expect(failed.error).toContain("provider process could not start");
+    expect(failed.attempts?.[0]?.terminalAt).toBeDefined();
+    expect(wakes[0]?.threadId).toBe(parentThreadId);
+    expect(wakes[0]?.message.text).toContain(failed.id);
+    expect(wakes[0]?.message.text).toContain("provider process could not start");
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("never falls back after dispatch_started on an ambiguous provider failure", () =>
+  Effect.gen(function* () {
+    const commands: OrchestrationCommand[] = [];
+    const starts: ProviderInstanceId[] = [];
+    let sends = 0;
+    const provider = {
+      ...makeStubbedProviderService(),
+      startSession: (threadId: ThreadId, input: ProviderSessionStartInput) => {
+        starts.push(input.providerInstanceId!);
+        return makeStubbedProviderService().startSession(threadId, input);
+      },
+      sendTurn: () => {
+        sends += 1;
+        return Effect.fail(
+          new ProviderValidationError({
+            operation: "test.sendTurn",
+            issue: "ambiguous transport disconnect",
+          }),
+        );
+      },
+    };
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(ProviderService, provider),
+      Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+    );
+    const allocated = yield* service.startResolved(
+      resolvedStartInput({
+        fallbackTargets: [
+          {
+            provider: "cursor",
+            providerInstanceId: ProviderInstanceId.make("must-not-start"),
+            model: "cursor-exact",
+          },
+        ],
+      }),
+    );
+    const failed = yield* waitForStatus(service, allocated.id, "failed");
+    expect(starts).toEqual([providerInstanceId]);
+    expect(sends).toBe(1);
+    expect(failed.dispatchState).toBe("dispatch_started");
+    expect(failed.error).toContain("ambiguous transport disconnect");
+    expect(failed.attempts).toHaveLength(1);
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("creates a new linked run only for an explicit retry request", () =>
+  Effect.gen(function* () {
+    const commands: OrchestrationCommand[] = [];
+    let sends = 0;
+    const provider = {
+      ...makeStubbedProviderService(),
+      sendTurn: (input: ProviderSendTurnInput) => {
+        sends += 1;
+        return sends === 1
+          ? Effect.fail(
+              new ProviderValidationError({
+                operation: "test.sendTurn",
+                issue: "first attempt outcome is ambiguous",
+              }),
+            )
+          : Effect.succeed({
+              threadId: input.threadId,
+              turnId: TurnId.make("explicit-retry-turn"),
+            });
+      },
+    };
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(ProviderService, provider),
+      Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+    );
+    const first = yield* service.startResolved(resolvedStartInput());
+    const failed = yield* waitForStatus(service, first.id, "failed");
+    expect(sends).toBe(1);
+
+    const retry = yield* service.startResolved(resolvedStartInput({ resumeOfRunId: failed.id }));
+    const running = yield* waitForStatus(service, retry.id, "running");
+    expect(running.id).not.toBe(failed.id);
+    expect(running.resumeOfRunId).toBe(failed.id);
+    expect(sends).toBe(2);
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect(
+  "keeps cancellation terminal when dispatch acknowledgement and provider events arrive late",
+  () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationCommand[] = [];
+      const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+      const dispatchEntered = yield* Deferred.make<void>();
+      const acknowledgement = yield* Deferred.make<{
+        readonly threadId: ThreadId;
+        readonly turnId: TurnId;
+      }>();
+      const provider = {
+        ...makeStubbedProviderService(Stream.fromPubSub(events)),
+        sendTurn: (_input: ProviderSendTurnInput) =>
+          Deferred.succeed(dispatchEntered, undefined).pipe(
+            Effect.andThen(Deferred.await(acknowledgement)),
+          ),
+      };
+      const service = yield* DelegatedRunService.__testing.make.pipe(
+        Effect.provideService(ProviderService, provider),
+        Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+      );
+      const allocated = yield* service.startResolved(resolvedStartInput());
+      yield* Deferred.await(dispatchEntered);
+      expect(yield* service.cancel(allocated.id)).toBe(true);
+      const cancelled = yield* service.get(allocated.id);
+      yield* Deferred.succeed(acknowledgement, {
+        threadId: ThreadId.make(cancelled.providerThreadId!),
+        turnId: TurnId.make("late-ack"),
+      });
+      yield* PubSub.publish(
+        events,
+        makeEvent({
+          type: "turn.completed",
+          threadId: ThreadId.make(cancelled.providerThreadId!),
+          turnId: TurnId.make("late-ack"),
+          payload: { state: "completed", usage: null },
+        }),
+      );
+      yield* Effect.yieldNow;
+      const stillCancelled = yield* service.get(allocated.id);
+      expect(stillCancelled.status).toBe("cancelled");
+      expect(stillCancelled.providerTurnId).toBeUndefined();
+      expect(stillCancelled.completedAt).toBe(cancelled.completedAt);
+    }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("computes the deadline from allocation and never replays an ambiguous timeout", () =>
+  Effect.gen(function* () {
+    const commands: OrchestrationCommand[] = [];
+    const dispatchEntered = yield* Deferred.make<void>();
+    let starts = 0;
+    const provider = {
+      ...makeStubbedProviderService(),
+      startSession: (threadId: ThreadId, input: ProviderSessionStartInput) => {
+        starts += 1;
+        return makeStubbedProviderService().startSession(threadId, input);
+      },
+      sendTurn: () =>
+        Deferred.succeed(dispatchEntered, undefined).pipe(Effect.andThen(Effect.never)),
+    };
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(ProviderService, provider),
+      Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+    );
+    const allocated = yield* service.startResolved(
+      resolvedStartInput({
+        timeoutMs: 1_000,
+        fallbackTargets: [
+          {
+            provider: "cursor",
+            providerInstanceId: ProviderInstanceId.make("timeout-fallback"),
+          },
+        ],
+      }),
+    );
+    yield* Deferred.await(dispatchEntered);
+    yield* TestClock.adjust("1 second");
+    const failed = yield* waitForStatus(service, allocated.id, "failed");
+    expect(failed.error).toBe("Delegated run deadline exceeded.");
+    expect(failed.attempts?.[0]?.failureReasonCode).toBe("deadline_exceeded");
+    expect(starts).toBe(1);
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
 );
 
 it.effect("resolves the delegated instance and model, and reports capabilities", () => {
@@ -416,6 +927,7 @@ it.effect("resolves the delegated instance and model, and reports capabilities",
     expect(run.providerInstanceId).toBe("codex");
     expect(run.resolvedModel).toBe("gpt-5");
     expect(run.requestedModel).toBeUndefined();
+    yield* waitForStatus(service, run.id, "running");
 
     const cursorCapabilities = yield* service.capabilities("cursor");
     expect(cursorCapabilities.available).toBe(false);
@@ -433,6 +945,7 @@ it.effect("resolves the delegated instance and model, and reports capabilities",
         Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
         providerRegistryStub([codexSnapshot]),
         subagentRunLayer,
+        delegatedRunRepositoryLayer,
         configLayer,
         ServerSettings.layerTest(),
         NodeServices.layer,
@@ -441,6 +954,77 @@ it.effect("resolves the delegated instance and model, and reports capabilities",
     Effect.scoped,
   );
 });
+
+it.effect("does not launch when durable allocation fails", () =>
+  Effect.gen(function* () {
+    let starts = 0;
+    const commands: OrchestrationCommand[] = [];
+    const repository = yield* DelegatedRunRepository.__testing.make({
+      faults: {
+        beforeWrite: Effect.fail(
+          new DelegatedRunRepository.DelegatedRunRepositoryFault({
+            point: "beforeWrite",
+          }),
+        ),
+      },
+    });
+    const provider = {
+      ...makeStubbedProviderService(),
+      startSession: (threadId: ThreadId, input: ProviderSessionStartInput) => {
+        starts += 1;
+        return makeStubbedProviderService().startSession(threadId, input);
+      },
+    };
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(DelegatedRunRepository.DelegatedRunRepository, repository),
+      Effect.provideService(ProviderService, provider),
+      Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+    );
+    const error = yield* service
+      .start({
+        provider: "codex",
+        parentThreadId,
+        task: "Must not launch",
+      })
+      .pipe(Effect.flip);
+    expect(error.message).toContain("Could not durably persist");
+    expect(starts).toBe(0);
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+it.effect("deduplicates keyed starts and rejects a changed canonical request", () =>
+  Effect.gen(function* () {
+    let starts = 0;
+    const commands: OrchestrationCommand[] = [];
+    const provider = {
+      ...makeStubbedProviderService(),
+      startSession: (threadId: ThreadId, input: ProviderSessionStartInput) => {
+        starts += 1;
+        return makeStubbedProviderService().startSession(threadId, input);
+      },
+    };
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(ProviderService, provider),
+      Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+    );
+    const input = {
+      provider: "codex" as const,
+      parentThreadId,
+      task: "Review idempotency",
+      idempotencyKey: DelegationIdempotencyKey.make("service-retry-key"),
+    };
+    const first = yield* service.start(input);
+    const replay = yield* service.start(input);
+    expect(replay.id).toBe(first.id);
+    yield* Effect.yieldNow;
+    expect(starts).toBe(1);
+
+    const conflict = yield* service.start({ ...input, task: "Changed task" }).pipe(Effect.flip);
+    expect(conflict.message).toContain("different request");
+    expect(starts).toBe(1);
+    yield* waitForStatus(service, first.id, "running");
+  }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
 
 it.effect("starts, projects, and cancels a delegated run", () => {
   const commands: OrchestrationCommand[] = [];
@@ -569,6 +1153,7 @@ it.effect("starts, projects, and cancels a delegated run", () => {
         Layer.succeed(ProjectionSnapshotQuery, query),
         providerRegistryStub([codexSnapshot]),
         capturingSubagentRunLayer,
+        delegatedRunRepositoryLayer,
         configLayer,
         ServerSettings.layerTest(),
         NodeServices.layer,
@@ -652,6 +1237,7 @@ it.effect("propagates and records validated options at both execution boundaries
         Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
         providerRegistryStub([codexSnapshot]),
         subagentRunLayer,
+        delegatedRunRepositoryLayer,
         configLayer,
         ServerSettings.layerTest(),
         NodeServices.layer,
@@ -669,6 +1255,7 @@ it.effect("resolves named profiles live and rejects ambiguous or unsafe configur
     Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
     providerRegistryStub([codexSnapshot]),
     subagentRunLayer,
+    delegatedRunRepositoryLayer,
     configLayer,
     ServerSettings.layerTest({
       delegationProfiles: [
@@ -710,6 +1297,7 @@ it.effect("resolves named profiles live and rejects ambiguous or unsafe configur
       sandboxMode: "workspace-write",
       runtimeMode: "auto-accept-edits",
     });
+    yield* waitForStatus(service, run.id, "running");
 
     const conflict = yield* service
       .start({
@@ -918,6 +1506,97 @@ it.effect("emits waiting-for-input and final-message updates without delay", () 
   }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
 );
 
+it.effect(
+  "persists pending questions and clears them on response, resolution, and completion",
+  () =>
+    Effect.gen(function* () {
+      const harness = yield* makeStreamingHarness;
+      const questions = [
+        {
+          id: "scope",
+          header: "Scope",
+          question: "Which packages should I inspect?",
+          options: [
+            { label: "Server", description: "Inspect server orchestration." },
+            { label: "Web", description: "Inspect the web client." },
+          ],
+          multiSelect: true,
+        },
+      ];
+
+      yield* harness.publish(
+        makeEvent({
+          type: "user-input.requested",
+          threadId: harness.childThreadId,
+          turnId: TurnId.make("child-turn"),
+          requestId: "request-respond",
+          payload: { questions },
+        } as never),
+      );
+      const waiting = yield* waitForStatus(harness.service, harness.queued.id, "waiting_for_input");
+      expect(waiting.pendingQuestions).toEqual(questions);
+
+      const responded = yield* harness.service.respond(harness.queued.id, {
+        scope: ["Server", "Web"],
+      });
+      expect(harness.userInputResponses).toEqual([
+        {
+          threadId: harness.childThreadId,
+          requestId: "request-respond",
+          answers: { scope: ["Server", "Web"] },
+        },
+      ]);
+      expect(responded.status).toBe("running");
+      expect(responded.pendingQuestions).toBeUndefined();
+      expect(responded.providerRequestId).toBeUndefined();
+
+      yield* harness.publish(
+        makeEvent({
+          type: "user-input.requested",
+          threadId: harness.childThreadId,
+          turnId: TurnId.make("child-turn"),
+          requestId: "request-resolved",
+          payload: { questions },
+        } as never),
+      );
+      yield* waitForStatus(harness.service, harness.queued.id, "waiting_for_input");
+      yield* harness.publish(
+        makeEvent({
+          type: "user-input.resolved",
+          threadId: harness.childThreadId,
+          turnId: TurnId.make("child-turn"),
+          requestId: "request-resolved",
+          payload: { answers: { scope: ["Server"] } },
+        } as never),
+      );
+      const resolved = yield* waitForStatus(harness.service, harness.queued.id, "running");
+      expect(resolved.pendingQuestions).toBeUndefined();
+      expect(resolved.providerRequestId).toBeUndefined();
+
+      yield* harness.publish(
+        makeEvent({
+          type: "user-input.requested",
+          threadId: harness.childThreadId,
+          turnId: TurnId.make("child-turn"),
+          requestId: "request-terminal",
+          payload: { questions },
+        } as never),
+      );
+      yield* waitForStatus(harness.service, harness.queued.id, "waiting_for_input");
+      yield* harness.publish(
+        makeEvent({
+          type: "turn.completed",
+          threadId: harness.childThreadId,
+          turnId: TurnId.make("child-turn"),
+          payload: { state: "completed" },
+        } as never),
+      );
+      const completed = yield* waitForStatus(harness.service, harness.queued.id, "completed");
+      expect(completed.pendingQuestions).toBeUndefined();
+      expect(completed.providerRequestId).toBeUndefined();
+    }).pipe(Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
 it.effect("cancels a pending flush before the terminal activity", () =>
   Effect.gen(function* () {
     const harness = yield* makeStreamingHarness;
@@ -976,6 +1655,7 @@ it.effect("wakes once with mixed results after every run and the parent turn set
       parentThreadId,
       task: "Inspect the web state",
       title: "Web state review",
+      workspaceRoot: "/workspace/web-state-review",
     });
     const secondRunning = yield* waitForStatus(harness.service, second.id, "running");
     const secondChildThreadId = ThreadId.make(secondRunning.providerThreadId!);
@@ -1040,6 +1720,7 @@ it.effect("wakes for structured input without waiting for sibling runs", () =>
       provider: "codex",
       parentThreadId,
       task: "Keep working in parallel",
+      workspaceRoot: "/workspace/parallel-review",
     });
     yield* harness.publish(
       makeEvent({
@@ -1561,7 +2242,10 @@ it.effect("fails and wakes persisted non-terminal runs after restart", () => {
       `[{"id":"orphan-run","provider":"codex","providerInstanceId":"codex","parentThreadId":"parent-thread","providerThreadId":"delegated-orphan-run","title":"Interrupted review","taskPreview":"Review persistence","status":"running","lastSummary":"Partially inspected","finalMessage":null,"error":null,"workspaceRoot":"/workspace","sequence":2,"startedAt":"${now}","completedAt":null,"createdAt":"${now}","updatedAt":"${now}"}]`,
     );
 
-    const service = yield* DelegatedRunService.__testing.make;
+    const repository = yield* DelegatedRunRepository.__testing.make();
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(DelegatedRunRepository.DelegatedRunRepository, repository),
+    );
     const recovered = yield* service.get(DelegatedRunId.make("orphan-run"));
     expect(recovered).toMatchObject({
       status: "failed",

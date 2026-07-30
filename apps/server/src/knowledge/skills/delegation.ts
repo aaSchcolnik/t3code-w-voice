@@ -2,6 +2,8 @@ import type {
   EngineDelegationSettings,
   EngineDelegationSkillOverride,
   EngineDelegationTarget,
+  DelegationPolicySource,
+  DelegationRole,
   EngineWorkflowName,
 } from "@t3tools/contracts";
 import { NATIVE_SUBAGENT_MODEL_BY_DRIVER, resolveDelegationRoles } from "@t3tools/contracts";
@@ -15,6 +17,11 @@ export interface ResolvedDelegationChains {
   readonly consensusPanel: ReadonlyArray<EngineDelegationTarget>;
   /** Every configured available scanner runs; inline is the Judge lane. */
   readonly scannerPanel: ReadonlyArray<EngineDelegationTarget>;
+}
+
+export interface ResolvedDelegationRoutingChain {
+  readonly chain: ReadonlyArray<EngineDelegationTarget>;
+  readonly policySource: DelegationPolicySource;
 }
 
 const providerCapability = {
@@ -34,24 +41,58 @@ const firstAvailable = (
 ): EngineDelegationTarget | undefined =>
   chain.find((target) => targetAvailable(target, capabilities));
 
+export function resolveDelegationRoutingChain(input: {
+  readonly settings: EngineDelegationSettings;
+  readonly availableProviders: ReadonlySet<EngineDelegationTarget["provider"]>;
+  readonly role: DelegationRole;
+  readonly workflow?: EngineWorkflowName | undefined;
+  readonly skillOverride?: EngineDelegationSkillOverride | null | undefined;
+}): ResolvedDelegationRoutingChain {
+  const skillChain = input.skillOverride?.[input.role];
+  if (skillChain !== undefined) {
+    return { chain: skillChain, policySource: "skill_override" };
+  }
+
+  const workflowChain =
+    input.workflow === undefined
+      ? undefined
+      : input.settings.skillOverrides[input.workflow]?.[input.role];
+  if (workflowChain !== undefined) {
+    return { chain: workflowChain, policySource: "workflow_override" };
+  }
+
+  const roles = resolveDelegationRoles(input.settings, input.availableProviders);
+  return input.settings.roles[input.role] === undefined
+    ? { chain: roles[input.role], policySource: "provider_default" }
+    : { chain: roles[input.role], policySource: "role_chain" };
+}
+
 export function resolveDelegationChains(input: {
   readonly settings: EngineDelegationSettings;
   readonly capabilities: ReadonlySet<McpCapability>;
   readonly workflow?: EngineWorkflowName | undefined;
   readonly skillOverride?: EngineDelegationSkillOverride | null | undefined;
 }): ResolvedDelegationChains {
-  const override =
-    input.skillOverride ??
-    (input.workflow === undefined ? undefined : input.settings.skillOverrides[input.workflow]);
   const availableProviders = new Set<EngineDelegationTarget["provider"]>();
   if (input.capabilities.has("codex-agent")) availableProviders.add("codex");
   if (input.capabilities.has("cursor-agent")) availableProviders.add("cursor");
   if (input.capabilities.has("claude-agent")) availableProviders.add("claudeAgent");
   availableProviders.add("inline");
+  const routingChain = (role: DelegationRole) =>
+    resolveDelegationRoutingChain({
+      settings: input.settings,
+      availableProviders,
+      role,
+      workflow: input.workflow,
+      skillOverride: input.skillOverride,
+    });
   const roles = resolveDelegationRoles(input.settings, availableProviders);
+  const override =
+    input.skillOverride ??
+    (input.workflow === undefined ? undefined : input.settings.skillOverrides[input.workflow]);
   return {
-    scout: firstAvailable(override?.scout ?? roles.scout, input.capabilities),
-    worker: firstAvailable(override?.worker ?? roles.worker, input.capabilities),
+    scout: firstAvailable(routingChain("scout").chain, input.capabilities),
+    worker: firstAvailable(routingChain("worker").chain, input.capabilities),
     consensusPanel: (override?.consensus ?? roles.consensus).filter((target) =>
       targetAvailable(target, input.capabilities),
     ),
@@ -145,7 +186,7 @@ const renderTarget = (role: string, target: EngineDelegationTarget): string => {
     const focus = target.focus === undefined ? "" : ` Focus lens: ${target.focus}.`;
     return `- **${role}:** run this lane inline on the main thread${model}.${focus}`;
   }
-  const tool = `${target.provider}_start`;
+  const tool = `${target.provider === "claudeAgent" ? "claude" : target.provider}_start`;
   const parameters = {
     ...(target.providerInstanceId === undefined
       ? {}
@@ -156,7 +197,7 @@ const renderTarget = (role: string, target: EngineDelegationTarget): string => {
   const renderedParameters =
     Object.keys(parameters).length === 0 ? "" : ` with ${JSON.stringify(parameters)}`;
   const focus = target.focus === undefined ? "" : ` Focus lens: ${target.focus}.`;
-  return `- **${role}:** call \`${tool}\`${renderedParameters}.${focus}`;
+  return `- **${role}:** call \`${tool}\`${renderedParameters} and a stable idempotency key.${focus}`;
 };
 
 export const renderConsensusPanelTargets = (panel: ReadonlyArray<EngineDelegationTarget>): string =>
@@ -270,7 +311,7 @@ ${targets.join("\n")}
 ${roleSteps.join("\n")}
 
 ### Guardrails
-- Use only the tracked \`cursor_start\`/\`codex_start\` tools. Start every selected target, then end the main-thread turn; results arrive automatically in one server wake-up after all runs finish.
+- Prefer provider-neutral \`delegate_start\` when it is available; submit independent lanes together and use a stable idempotency key. Compatibility \`cursor_start\`/\`codex_start\`/\`claude_start\` calls also require stable keys for retry safety. Start every selected target, then end the main-thread turn; results arrive automatically in one server wake-up after all runs finish.
 - Never wait, poll, sleep, or create background polling commands while delegated runs are active.
 - Subagents report findings or diffs to the Judge. They never mark chunks complete, write engine artifacts, or adjudicate findings.
 - Parallelize only Scouts with disjoint scopes and Workers with disjoint files. Consensus panelists always run in parallel over the identical subject.

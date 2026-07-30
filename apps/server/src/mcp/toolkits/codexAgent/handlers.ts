@@ -9,6 +9,7 @@ import {
   startActiveDelegatedRun,
 } from "../../../orchestration/DelegatedRunService.ts";
 import { CodexAgentToolkit } from "./tools.ts";
+import { startCompatibilityDelegation } from "../delegationRouter/handlers.ts";
 
 const requireCapability = McpInvocationContext.requireMcpCapability("codex-agent").pipe(
   Effect.mapError(
@@ -23,7 +24,10 @@ const requireCapability = McpInvocationContext.requireMcpCapability("codex-agent
 const ownedRun = Effect.fn("CodexAgentToolkit.ownedRun")(function* (runId: DelegatedRunId) {
   const scope = yield* requireCapability;
   const run = yield* getActiveDelegatedRun(runId);
-  if (run.parentThreadId !== scope.threadId || run.provider !== "codex") {
+  if (
+    run.parentThreadId !== McpInvocationContext.mcpOwnerThreadId(scope) ||
+    run.provider !== "codex"
+  ) {
     return yield* new DelegatedRunError({
       operation: "status",
       message: "Delegated run not found for this parent thread.",
@@ -39,10 +43,31 @@ export const CodexAgentToolkitHandlersLive = CodexAgentToolkit.toLayer({
   codex_start: (input) =>
     Effect.gen(function* () {
       const scope = yield* requireCapability;
+      if (scope.effectiveMcp?.router.mode === "off") {
+        return yield* new DelegatedRunError({
+          operation: "start",
+          message: "Delegation is disabled by the current project settings.",
+        });
+      }
+      if (input.profile === undefined) {
+        return yield* startCompatibilityDelegation(scope, "codex", {
+          ...input,
+        }).pipe(
+          Effect.mapError(
+            (error) =>
+              new DelegatedRunError({
+                operation: "start",
+                message: error.message,
+              }),
+          ),
+        );
+      }
+      const { idempotencyKey, ...legacyInput } = input;
       return yield* startActiveDelegatedRun({
-        ...input,
+        ...legacyInput,
+        ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
         provider: "codex",
-        parentThreadId: scope.threadId,
+        parentThreadId: McpInvocationContext.mcpOwnerThreadId(scope),
       });
     }),
   codex_cancel: ({ runId }) =>

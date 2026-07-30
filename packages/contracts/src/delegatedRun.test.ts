@@ -46,7 +46,7 @@ describe("DelegatedRunStartInput", () => {
 
 describe("DelegatedRun", () => {
   it("decodes records persisted before option metadata existed", () => {
-    const run = decodeDelegatedRun({
+    const legacyRun = {
       id: "run-1",
       provider: "codex",
       providerInstanceId: "codex",
@@ -63,9 +63,91 @@ describe("DelegatedRun", () => {
       completedAt: null,
       createdAt: "2026-07-12T00:00:00.000Z",
       updatedAt: "2026-07-12T00:00:00.000Z",
-    });
+    } as const;
+    const run = decodeDelegatedRun(legacyRun);
+    expect(run).toEqual(legacyRun);
     expect(run.requestedOptions).toBeUndefined();
     expect(run.resolvedOptions).toBeUndefined();
     expect(run.resolvedOptionDetails).toBeUndefined();
+    expect(run.workflowId).toBeUndefined();
+    expect(run.routeDecision).toBeUndefined();
+    expect(run.attempts).toBeUndefined();
+    expect(run.resultCompleteness).toBeUndefined();
+    expect(run.pendingQuestions).toBeUndefined();
+  });
+
+  it("decodes routed workflow, attempt, dispatch, and completeness metadata", () => {
+    const run = decodeDelegatedRun({
+      id: "run-2",
+      provider: "codex",
+      providerInstanceId: "codex",
+      parentThreadId: "parent-1",
+      workflowId: "workflow-1",
+      batchId: "batch-1",
+      laneId: "lane-1",
+      routeGroupId: "route-group-1",
+      idempotencyKey: "request-1",
+      requestHash: "sha256:request",
+      deliveryMode: "parent_wake",
+      routeDecision: {
+        decisionId: "decision-1",
+        policyVersion: 1,
+        mode: "suggested",
+        taskKind: "implementation",
+        role: "worker",
+        selected: { provider: "codex", providerInstanceId: "codex" },
+        candidates: [
+          {
+            candidate: { provider: "codex", providerInstanceId: "codex" },
+            eligible: true,
+            reasonCodes: [],
+          },
+        ],
+        fallbackChain: [],
+        explanation: "Selected the configured worker.",
+      },
+      attempts: [
+        {
+          attemptId: "attempt-1",
+          target: { provider: "codex", providerInstanceId: "codex" },
+          dispatchState: "turn_accepted",
+          allocatedAt: "2026-07-29T00:00:00.000Z",
+          turnAcceptedAt: "2026-07-29T00:00:01.000Z",
+        },
+      ],
+      dispatchState: "turn_accepted",
+      title: "Implement",
+      taskPreview: "Implement routing",
+      status: "completed",
+      lastSummary: null,
+      finalMessage: "Done",
+      error: null,
+      workspaceRoot: "/workspace",
+      sequence: 3,
+      allocatedAt: "2026-07-29T00:00:00.000Z",
+      turnAcceptedAt: "2026-07-29T00:00:01.000Z",
+      terminalEventSeen: true,
+      assistantMessageCount: 1,
+      finalMessagePresent: true,
+      resultCompleteness: "terminal_message",
+      pendingQuestions: [
+        {
+          id: "scope",
+          header: "Scope",
+          question: "Which package?",
+          options: [{ label: "Server", description: "Inspect the server." }],
+          multiSelect: false,
+        },
+      ],
+      startedAt: "2026-07-29T00:00:00.000Z",
+      completedAt: "2026-07-29T00:00:02.000Z",
+      createdAt: "2026-07-29T00:00:00.000Z",
+      updatedAt: "2026-07-29T00:00:02.000Z",
+    });
+
+    expect(run.routeDecision?.selected.provider).toBe("codex");
+    expect(run.attempts?.[0]?.dispatchState).toBe("turn_accepted");
+    expect(run.resultCompleteness).toBe("terminal_message");
+    expect(run.pendingQuestions?.[0]?.id).toBe("scope");
   });
 });

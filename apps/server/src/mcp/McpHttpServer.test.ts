@@ -29,6 +29,7 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { ProjectKnowledgeStore } from "../knowledge/ProjectKnowledgeStore.ts";
+import { saveKnowledge } from "../knowledge/KnowledgeRepository.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import {
   ProjectionProjectRepository,
@@ -40,11 +41,11 @@ import { SkillRepositoryLive } from "../persistence/Layers/Skills.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { SkillDefaultsSeederLive } from "../knowledge/skills/seed.ts";
 import { DEFAULT_SKILLS } from "../knowledge/skills/defaults.ts";
+import { isSkillAvailable, searchSkillCatalog } from "./skillCatalog.ts";
 import {
-  builtinSkillToolName,
-  isSkillAvailable,
-  renderSkillCatalogSection,
-} from "./skillCatalog.ts";
+  MCP_2026_PROTOCOL_VERSION,
+  MCP_MAX_REQUEST_BODY_BYTES,
+} from "./protocol/Mcp2026TransportAdapter.ts";
 
 const SkillRepositoryTestLive = SkillRepositoryLive.pipe(
   Layer.provideMerge(SqlitePersistenceMemory),
@@ -59,6 +60,7 @@ const decodeListedSkills = Schema.decodeUnknownEffect(
       data: Schema.Struct({
         skills: Schema.Array(
           Schema.Struct({
+            handle: Schema.String,
             slug: Schema.String,
             source: Schema.String,
             tool: Schema.String,
@@ -76,11 +78,13 @@ const alternateTabId = PreviewTabId.make("tab-mcp-alternate");
 const invocation = {
   environmentId,
   threadId,
+  ownerThreadId: threadId,
+  sessionKind: "parent" as const,
   projectId: ProjectId.make("project-mcp-test"),
   worktreePath: "/tmp/project-mcp-test",
   providerSessionId: "provider-session-mcp-test",
   providerInstanceId: ProviderInstanceId.make("codex"),
-  capabilities: new Set(["preview"] as const),
+  capabilities: new Set(["preview", "delegation-router"] as const),
   issuedAt: 1,
 };
 const client = McpSchema.McpServerClient.of({
@@ -167,6 +171,7 @@ it.effect("registers the built-in delegation toolkits", () =>
         "claude_start",
         "claude_cancel",
         "engine_knowledge_status",
+        "knowledge_search",
         "engine_knowledge_search",
         "engine_knowledge_get",
         "engine_knowledge_save",
@@ -191,6 +196,7 @@ it.effect("registers the built-in delegation toolkits", () =>
         "engine_chunks_update",
         "engine_report_render",
         "engine_skill_list",
+        "engine_skill_search",
         "engine_skill_run",
         "engine_skill_save",
       ]),
@@ -264,6 +270,46 @@ it.effect("serves hydrated engine workflows when the capability is granted", () 
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
 
+it.effect("returns scoped knowledge excerpts under the requested budget", () =>
+  Effect.gen(function* () {
+    yield* saveKnowledge(invocation.projectId, "knowledge_entities", [
+      {
+        entity_key: "websocket-reconnect",
+        category: "architecture",
+        kind: "service",
+        name: "Reconnect coordinator",
+        summary: "Owns bounded websocket reconnect attempts and terminal failure reporting.",
+        locations: ["apps/server/src/reconnect/Coordinator.ts"],
+        evidence: ["apps/server/src/reconnect/Coordinator.ts:42"],
+      },
+    ]);
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({
+        name: "knowledge_search",
+        arguments: {
+          query: "websocket reconnect",
+          scopes: ["architecture"],
+          limit: 3,
+          budgetChars: 800,
+        },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...invocation,
+          capabilities: new Set(["engine-knowledge"] as const),
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+    expect(result.isError).toBe(false);
+    expect(text).toContain("Reconnect coordinator");
+    expect(text).toContain("apps/server/src/reconnect/Coordinator.ts");
+    expect(text).not.toContain("content_fingerprint");
+    expect(text.length).toBeLessThan(1_500);
+  }).pipe(Effect.provide(AllToolkitTestLayer)),
+);
+
 it.effect("hydrates engine workflows with session-available tracked delegation", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
@@ -319,12 +365,18 @@ it.effect("creates, lists, and runs a versioned custom skill", () =>
     });
     expect(saved.isError).toBe(false);
 
-    const listed = yield* call("engine_skill_list", {});
+    const listed = yield* call("engine_skill_search", {
+      query: "release readiness",
+      limit: 4,
+    });
     const listText = listed.content[0]?.type === "text" ? listed.content[0].text : "";
     expect(listText).toContain("release-readiness");
+    const selected = yield* decodeListedSkills(listText);
+    const handle = selected.data.skills.find(({ slug }) => slug === "release-readiness")?.handle;
+    expect(handle).toBeDefined();
 
     const run = yield* call("engine_skill_run", {
-      slug: "release-readiness",
+      handle,
       task: "ship version 1.0",
     });
     const runText = run.content[0]?.type === "text" ? run.content[0].text : "";
@@ -333,6 +385,20 @@ it.effect("creates, lists, and runs a versioned custom skill", () =>
     expect(runText).toContain("ship version 1.0");
     expect(runText).toContain("## Subagent delegation");
     expect(runText).toContain("reusableComponents");
+
+    yield* call("engine_skill_save", {
+      slug: "release-readiness",
+      title: "Release readiness",
+      content: "# Release readiness v2\n\nReview {{TASK}}.",
+    });
+    const staleRun = yield* call("engine_skill_run", {
+      handle,
+      task: "ship version 1.0",
+    });
+    expect(staleRun.isError).toBe(true);
+    expect(staleRun.content[0]?.type === "text" ? staleRun.content[0].text : "").toContain(
+      "changed after search",
+    );
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
 
@@ -411,7 +477,7 @@ it.effect("lists eligible built-in skills with their dedicated tools", () =>
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
 
-it.effect("keeps engine_skill_list in parity with the injected catalog", () =>
+it.effect("keeps engine_skill_list in parity with metadata search availability", () =>
   Effect.gen(function* () {
     const capabilities = new Set(["engine-knowledge", "engine-planning"] as const);
     const server = yield* McpServer.McpServer;
@@ -426,24 +492,24 @@ it.effect("keeps engine_skill_list in parity with the injected catalog", () =>
     );
     const text = result.content[0]?.type === "text" ? result.content[0].text : "{}";
     const listed = yield* decodeListedSkills(text);
-    const catalog = renderSkillCatalogSection({
+    const searched = searchSkillCatalog({
       skills: records,
       projectSkillOverrides: undefined,
       capabilities,
+      query: "",
+      limit: 20,
     });
 
-    expect(catalog).toBeDefined();
-    for (const entry of listed.data.skills) {
-      expect(catalog).toContain(
-        entry.source === "builtin" ? builtinSkillToolName(entry.slug) : `\`${entry.slug}\``,
-      );
-    }
-    expect(listed.data.skills.map(({ slug }) => slug)).toEqual(
+    expect(listed.data.skills).toEqual(
+      searched.map(({ handle, slug, source, tool }) => ({ handle, slug, source, tool })),
+    );
+    expect(listed.data.skills.map(({ slug }) => slug).sort()).toEqual(
       records
         .filter((skill) =>
           isSkillAvailable(skill, { projectSkillOverrides: undefined, capabilities }),
         )
-        .map(({ slug }) => slug),
+        .map(({ slug }) => slug)
+        .sort(),
     );
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
@@ -799,12 +865,48 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
 );
 
 const validToken = "valid-mcp-token";
+const delegatedToken = "delegated-mcp-token";
+const delegatedInvocation: McpInvocationContext.McpInvocationScope = {
+  ...invocation,
+  threadId: ThreadId.make("delegated-child"),
+  ownerThreadId: invocation.threadId,
+  sessionKind: "delegated",
+};
+
+const modernRequestBody = (method: string, params: Record<string, unknown> = {}) =>
+  HttpBody.text(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: `modern-${method}`,
+      method,
+      params: {
+        ...params,
+        _meta: {
+          "io.modelcontextprotocol/protocolVersion": MCP_2026_PROTOCOL_VERSION,
+          "io.modelcontextprotocol/clientInfo": {
+            name: "t3-modern-http-test",
+            version: "1.0.0",
+          },
+          "io.modelcontextprotocol/clientCapabilities": {},
+        },
+      },
+    }),
+    "application/json",
+  );
+const encodeUnknownJson = Schema.encodeSync(Schema.UnknownFromJsonString);
 
 const RegistryStubLive = Layer.succeed(
   McpSessionRegistry.McpSessionRegistry,
   McpSessionRegistry.McpSessionRegistry.of({
     issue: () => Effect.die("issue is unused in transport tests"),
-    resolve: (token) => Effect.succeed(token === validToken ? invocation : undefined),
+    resolve: (token) =>
+      Effect.succeed(
+        token === validToken
+          ? invocation
+          : token === delegatedToken
+            ? delegatedInvocation
+            : undefined,
+      ),
     touch: () => Effect.void,
     revokeProviderSession: () => Effect.void,
     revokeThread: () => Effect.void,
@@ -872,6 +974,219 @@ it.effect("serves /mcp deliberately and never redirects it to the dev server", (
         body: initializeBody,
       });
       expect(initializeResponse.status).toBe(200);
+      expect(initializeResponse.headers["mcp-session-id"]).toBeDefined();
+      const legacySessionId = initializeResponse.headers["mcp-session-id"]!;
+      const legacyListResponse = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${validToken}`,
+          "mcp-session-id": legacySessionId,
+        },
+        body: HttpBody.text(
+          encodeUnknownJson({
+            jsonrpc: "2.0",
+            id: "legacy-tools-list",
+            method: "tools/list",
+            params: {},
+          }),
+          "application/json",
+        ),
+      });
+      const legacyListed = (yield* legacyListResponse.json) as {
+        readonly result: { readonly tools: ReadonlyArray<{ readonly name: string }> };
+      };
+      const legacyToolNames = legacyListed.result.tools.map(({ name }) => name);
+      expect(legacyToolNames).toEqual(
+        expect.arrayContaining(["preview_status", "delegate_start", "delegate_cancel"]),
+      );
+      expect(legacyToolNames).not.toContain("engine_plan");
+
+      const unauthenticatedDiscover = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          "mcp-protocol-version": MCP_2026_PROTOCOL_VERSION,
+          "mcp-method": "server/discover",
+        },
+        body: modernRequestBody("server/discover"),
+      });
+      expect(unauthenticatedDiscover.status).toBe(401);
+
+      const discoverResponse = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${validToken}`,
+          "mcp-protocol-version": MCP_2026_PROTOCOL_VERSION,
+          "mcp-method": "server/discover",
+        },
+        body: modernRequestBody("server/discover"),
+      });
+      expect(discoverResponse.status).toBe(200);
+      expect(discoverResponse.headers["mcp-session-id"]).toBeUndefined();
+      expect(yield* discoverResponse.json).toMatchObject({
+        result: {
+          supportedVersions: expect.arrayContaining([MCP_2026_PROTOCOL_VERSION]),
+          ttlMs: 0,
+          cacheScope: "private",
+        },
+      });
+
+      const listResponse = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${validToken}`,
+          "mcp-protocol-version": MCP_2026_PROTOCOL_VERSION,
+          "mcp-method": "tools/list",
+        },
+        body: modernRequestBody("tools/list"),
+      });
+      expect(listResponse.status).toBe(200);
+      const listed = (yield* listResponse.json) as {
+        result: {
+          ttlMs: number;
+          cacheScope: string;
+          tools: Array<{ name: string; _meta?: Record<string, unknown> }>;
+        };
+      };
+      expect(listed.result).toMatchObject({ ttlMs: 0, cacheScope: "private" });
+      expect(listed.result.tools.map((tool: { name: string }) => tool.name)).toEqual(
+        expect.arrayContaining([
+          "preview_status",
+          "preview_snapshot",
+          "delegate_start",
+          "delegate_cancel",
+          "delegate_respond",
+        ]),
+      );
+      expect(
+        listed.result.tools.every(
+          (tool: { _meta?: Record<string, unknown> }) =>
+            typeof tool._meta?.["codes.t3/catalogRevision"] === "string",
+        ),
+      ).toBe(true);
+
+      const advertisedCallResponse = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${validToken}`,
+          "mcp-protocol-version": MCP_2026_PROTOCOL_VERSION,
+          "mcp-method": "tools/call",
+          "mcp-name": "preview_status",
+        },
+        body: modernRequestBody("tools/call", { name: "preview_status", arguments: {} }),
+      });
+      expect(advertisedCallResponse.status).toBe(200);
+      expect(yield* advertisedCallResponse.json).toMatchObject({
+        result: { isError: true },
+      });
+
+      const hiddenCallResponse = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${validToken}`,
+          "mcp-protocol-version": MCP_2026_PROTOCOL_VERSION,
+          "mcp-method": "tools/call",
+          "mcp-name": "engine_plan",
+        },
+        body: modernRequestBody("tools/call", { name: "engine_plan", arguments: {} }),
+      });
+      expect(yield* hiddenCallResponse.json).toMatchObject({ error: { code: -32602 } });
+
+      const delegatedModernStart = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${delegatedToken}`,
+          "mcp-protocol-version": MCP_2026_PROTOCOL_VERSION,
+          "mcp-method": "tools/call",
+          "mcp-name": "delegate_start",
+        },
+        body: modernRequestBody("tools/call", {
+          name: "delegate_start",
+          arguments: {
+            idempotencyKey: "child-modern",
+            tasks: [
+              {
+                laneId: "lane",
+                title: "Lane",
+                task: "Re-delegate",
+                workspaceAccess: "workspace-write",
+              },
+            ],
+          },
+        }),
+      });
+      expect(yield* delegatedModernStart.json).toMatchObject({
+        result: { isError: true },
+      });
+
+      const delegatedInitialize = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${delegatedToken}`,
+        },
+        body: initializeBody,
+      });
+      const delegatedSessionId = delegatedInitialize.headers["mcp-session-id"];
+      expect(delegatedSessionId).toBeDefined();
+      const delegatedLegacyStart = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: `Bearer ${delegatedToken}`,
+          "mcp-session-id": delegatedSessionId!,
+        },
+        body: HttpBody.text(
+          encodeUnknownJson({
+            jsonrpc: "2.0",
+            id: "legacy-delegated-start",
+            method: "tools/call",
+            params: {
+              name: "delegate_start",
+              arguments: {
+                idempotencyKey: "child-legacy",
+                tasks: [
+                  {
+                    laneId: "lane",
+                    title: "Lane",
+                    task: "Re-delegate",
+                    workspaceAccess: "workspace-write",
+                  },
+                ],
+              },
+            },
+          }),
+          "application/json",
+        ),
+      });
+      expect(yield* delegatedLegacyStart.json).toMatchObject({
+        result: { isError: true },
+      });
+
+      const oversizedBody = HttpBody.text(
+        "x".repeat(MCP_MAX_REQUEST_BODY_BYTES + 1),
+        "application/json",
+      );
+      const unauthenticatedOversized = yield* httpClient.post("/mcp", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          "mcp-protocol-version": MCP_2026_PROTOCOL_VERSION,
+          "mcp-method": "tools/list",
+        },
+        body: oversizedBody,
+      });
+      expect(unauthenticatedOversized.status).toBe(401);
+      for (const headers of [
+        { authorization: `Bearer ${validToken}` },
+        {
+          authorization: `Bearer ${validToken}`,
+          "mcp-protocol-version": MCP_2026_PROTOCOL_VERSION,
+          "mcp-method": "tools/list",
+        },
+      ]) {
+        const oversized = yield* httpClient.post("/mcp", {
+          headers: { accept: "application/json, text/event-stream", ...headers },
+          body: oversizedBody,
+        });
+        expect(oversized.status).toBe(413);
+      }
 
       const authenticatedGet = yield* httpClient.get("/mcp", {
         headers: {

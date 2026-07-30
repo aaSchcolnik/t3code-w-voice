@@ -1,0 +1,184 @@
+{
+  "fixtureVersion": 1,
+  "protocolVersion": "2026-07-28",
+  "tasksExtension": "io.modelcontextprotocol/tasks",
+  "cases": [
+    {
+      "name": "legacy initialize",
+      "expectedEra": "legacy",
+      "request": {
+        "headers": {
+          "content-type": "application/json",
+          "accept": "application/json, text/event-stream"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+            "protocolVersion": "2025-06-18",
+            "clientInfo": {
+              "name": "conformance-legacy",
+              "version": "1.0.0"
+            },
+            "capabilities": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "legacy session tools list",
+      "expectedEra": "legacy",
+      "request": {
+        "headers": {
+          "content-type": "application/json",
+          "accept": "application/json, text/event-stream",
+          "mcp-protocol-version": "2025-06-18",
+          "mcp-session-id": "fixture-session"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "tools/list",
+          "params": {}
+        }
+      }
+    },
+    {
+      "name": "modern server discovery",
+      "expectedEra": "2026",
+      "request": {
+        "headers": {
+          "content-type": "application/json",
+          "accept": "application/json, text/event-stream",
+          "mcp-protocol-version": "2026-07-28",
+          "mcp-method": "server/discover"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": "discover-1",
+          "method": "server/discover",
+          "params": {
+            "_meta": {
+              "clientInfo": {
+                "name": "conformance-modern",
+                "version": "1.0.0"
+              },
+              "capabilities": {},
+              "extensions": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "modern stateless tools list",
+      "expectedEra": "2026",
+      "request": {
+        "headers": {
+          "content-type": "application/json",
+          "accept": "application/json, text/event-stream",
+          "mcp-protocol-version": "2026-07-28",
+          "mcp-method": "tools/list"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": "tools-list-1",
+          "method": "tools/list",
+          "params": {
+            "_meta": {
+              "clientInfo": {
+                "name": "conformance-modern",
+                "version": "1.0.0"
+              },
+              "capabilities": {},
+              "extensions": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "modern stateless tools call",
+      "expectedEra": "2026",
+      "request": {
+        "headers": {
+          "content-type": "application/json",
+          "accept": "application/json, text/event-stream",
+          "mcp-protocol-version": "2026-07-28",
+          "mcp-method": "tools/call",
+          "mcp-name": "fixture_echo"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": "tools-call-1",
+          "method": "tools/call",
+          "params": {
+            "name": "fixture_echo",
+            "arguments": {
+              "value": "hello"
+            },
+            "_meta": {
+              "clientInfo": {
+                "name": "conformance-modern",
+                "version": "1.0.0"
+              },
+              "capabilities": {},
+              "extensions": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "modern tasks extension negotiation",
+      "expectedEra": "2026",
+      "request": {
+        "headers": {
+          "content-type": "application/json",
+          "accept": "application/json, text/event-stream",
+          "mcp-protocol-version": "2026-07-28",
+          "mcp-method": "server/discover"
+        },
+        "body": {
+          "jsonrpc": "2.0",
+          "id": "discover-tasks-1",
+          "method": "server/discover",
+          "params": {
+            "_meta": {
+              "clientInfo": {
+                "name": "conformance-modern-tasks",
+                "version": "1.0.0"
+              },
+              "capabilities": {},
+              "extensions": ["io.modelcontextprotocol/tasks"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "multiRoundTripInput": {
+    "extensionIndependent": true,
+    "sequence": [
+      {
+        "direction": "client-to-server",
+        "method": "tools/call"
+      },
+      {
+        "direction": "server-to-client",
+        "method": "elicitation/create"
+      },
+      {
+        "direction": "client-to-server",
+        "method": "elicitation/create",
+        "result": "accept"
+      },
+      {
+        "direction": "server-to-client",
+        "method": "tools/call",
+        "result": "complete"
+      }
+    ]
+  }
+}

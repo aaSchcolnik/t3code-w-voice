@@ -415,6 +415,7 @@ function SkillCard({
                 <FieldGroup className="pt-4">
                   <p className="text-xs text-muted-foreground">
                     These provider, model, and reasoning choices are saved with the skill version.
+                    The server validates candidate availability and exclusions when the skill runs.
                   </p>
                   {delegatedRoles.map((role) => (
                     <Field key={role}>
@@ -437,6 +438,7 @@ function SkillCard({
                         role={role}
                         chain={delegation[role] ?? inheritedRoles[role]}
                         providerEntries={providerEntries}
+                        showAvailability={false}
                         onChange={(chain) => updateDelegationRole(role, chain)}
                       />
                     </Field>

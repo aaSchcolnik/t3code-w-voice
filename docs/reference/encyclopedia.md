@@ -8,6 +8,7 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 - [Thread timeline](#thread-timeline)
 - [Orchestration](#orchestration)
 - [Provider runtime](#provider-runtime)
+- [Delegation](#delegation)
 - [Checkpointing](#checkpointing)
 
 ## Concepts
@@ -115,6 +116,66 @@ Controls how assistant text reaches the thread timeline. In [the contracts][1], 
 
 A point-in-time view of state. The word is used in multiple layers, including orchestration, provider, and checkpointing. See [ProjectionSnapshotQuery.ts][10], [ProviderAdapter.ts][15], and [CheckpointStore.ts][19].
 
+### Delegation
+
+Delegation is tracked child work routed by the server while the parent agent retains decomposition,
+synthesis, and final responsibility. See [subagents-and-routing.md][25] and
+[delegation-router.md][26].
+
+#### Lane
+
+One independently executable task within a delegation batch. One to four lanes are routed and
+reserved together.
+
+#### Route decision
+
+The immutable record of the selected candidate, rejected candidates and reason codes, policy
+source/version, diversity outcome, and pre-dispatch fallback chain.
+
+#### Allocation and acceptance
+
+Allocation is the atomic repository reservation of a routed run. Acceptance is a later provider
+milestone after session startup and turn dispatch. An `allocated` result MUST NOT be presented as
+provider acceptance.
+
+#### Admission
+
+The server-side checks that bound batch size, per-parent/environment concurrency, workspace
+ownership, attachment ownership, recursion, provider availability, and declared capabilities
+before allocation.
+
+#### Idempotency key
+
+A parent-scoped key for retrying an identical `delegate_start`. The same key and request returns the
+existing batch; the same key with a different request is an `idempotency_conflict`.
+
+#### Fallback
+
+A pre-dispatch retry against the next persisted eligible candidate after session startup fails.
+Fallback stops once a provider accepts the turn.
+
+#### Parent wake
+
+Durable delivery of input-required or terminal child state back to the parent. Workflow siblings
+are grouped, unacknowledged wakes retry up to a cap, and clients should not poll.
+
+#### Knowledge plane
+
+The separation of mandatory project instructions, discoverable/run-on-demand skills, and scoped
+knowledge retrieval. Knowledge may inform a trusted policy override but does not bypass routing or
+admission.
+
+#### MCP dual-era gateway
+
+The single `/mcp` endpoint boundary that sends classified legacy traffic to the sessionful Effect
+handler and modern 2026 traffic to the strict official-SDK adapter. See
+[mcp-protocol-compatibility.md][27].
+
+#### Tasks maturity gate
+
+The blocked release gate for MCP Tasks. Tasks remain disabled until protocol maturity, provider
+negotiation, lifecycle conformance, and typed inbound dispatch requirements pass.
+
 ### Checkpointing
 
 Checkpointing captures workspace state over time so the app can diff turns and restore earlier points. The main pieces are [CheckpointStore.ts][19], [CheckpointDiffQuery.ts][20], and [CheckpointReactor.ts][6].
@@ -153,6 +214,9 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 - [provider-architecture.md][16]
 - [runtime-modes.md][18]
 - [workspace-layout.md][2]
+- [subagents-and-routing.md][25]
+- [delegation-router.md][26]
+- [mcp-protocol-compatibility.md][27]
 
 [1]: ../packages/contracts/src/orchestration.ts
 [2]: ./workspace-layout.md
@@ -178,3 +242,6 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../apps/server/src/checkpointing/Utils.ts
 [23]: ../apps/server/src/checkpointing/Diffs.ts
 [24]: ./architecture.md
+[25]: ../user/subagents-and-routing.md
+[26]: ../architecture/delegation-router.md
+[27]: ../architecture/mcp-protocol-compatibility.md

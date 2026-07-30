@@ -1160,6 +1160,59 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  it.effect("never auto-recovers a delegated session and clears ownership on explicit stop", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const ownerThreadId = asThreadId("parent-owner");
+      const delegatedThreadId = asThreadId("delegated-owned-session");
+
+      yield* provider.startSession(
+        delegatedThreadId,
+        {
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: codexInstanceId,
+          threadId: delegatedThreadId,
+          cwd: "/tmp/delegated-owned-session",
+          runtimeMode: "auto-accept-edits",
+        },
+        {
+          sessionKind: "delegated",
+          ownerThreadId,
+        },
+      );
+      const delegatedBinding = yield* directory.getBinding(delegatedThreadId);
+      assert.equal(Option.isSome(delegatedBinding), true);
+      if (Option.isSome(delegatedBinding)) {
+        assert.equal(delegatedBinding.value.sessionKind, "delegated");
+        assert.equal(delegatedBinding.value.ownerThreadId, ownerThreadId);
+      }
+
+      yield* routing.codex.stopAll();
+      routing.codex.startSession.mockClear();
+      routing.codex.sendTurn.mockClear();
+      const recoveryError = yield* provider
+        .sendTurn({
+          threadId: delegatedThreadId,
+          input: "must not replay",
+          attachments: [],
+        })
+        .pipe(Effect.flip);
+      assert.equal(recoveryError._tag, "ProviderValidationError");
+      assert.match(recoveryError.message, /cannot be resumed automatically/i);
+      assert.equal(routing.codex.startSession.mock.calls.length, 0);
+      assert.equal(routing.codex.sendTurn.mock.calls.length, 0);
+
+      yield* provider.stopSession({ threadId: delegatedThreadId });
+      const stoppedBinding = yield* directory.getBinding(delegatedThreadId);
+      assert.equal(Option.isSome(stoppedBinding), true);
+      if (Option.isSome(stoppedBinding)) {
+        assert.equal(stoppedBinding.value.sessionKind, "standard");
+        assert.equal(stoppedBinding.value.ownerThreadId, undefined);
+      }
+    }),
+  );
+
   it.effect("recovers stale claudeAgent sessions for sendTurn using persisted cwd", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

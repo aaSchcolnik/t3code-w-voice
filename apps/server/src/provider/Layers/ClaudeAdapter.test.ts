@@ -310,6 +310,7 @@ describe("ClaudeAdapterLive", () => {
       providerSessionId: "provider-session-claude-catalog",
       providerInstanceId: ProviderInstanceId.make("claudeAgent"),
       capabilities: new Set(["engine-knowledge"]),
+      protocolProfile: "legacy",
       endpoint: "http://127.0.0.1/mcp",
       authorizationHeader: "Bearer test",
     });

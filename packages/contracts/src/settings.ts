@@ -3,6 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
+import { DelegationRouterSettings, DelegationRouterSettingsOverride } from "./delegationRouter.ts";
 import { DEFAULT_TEXT_GENERATION_MODEL, ProviderOptionSelections } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
@@ -280,6 +281,7 @@ export const McpSettings = Schema.Struct({
   codexAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   cursorAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   claudeAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  router: DelegationRouterSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   engine: McpEngineSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type McpSettings = typeof McpSettings.Type;
@@ -354,6 +356,18 @@ export function resolveEffectiveMcpSettings(
     codexAgent: overrides.codexAgent ?? global.codexAgent,
     cursorAgent: overrides.cursorAgent ?? global.cursorAgent,
     claudeAgent: overrides.claudeAgent ?? global.claudeAgent,
+    router: {
+      mode: overrides.router?.mode ?? global.router.mode,
+      maxBatchSize: overrides.router?.maxBatchSize ?? global.router.maxBatchSize,
+      maxConcurrentPerParent:
+        overrides.router?.maxConcurrentPerParent ?? global.router.maxConcurrentPerParent,
+      maxConcurrentEnvironment:
+        overrides.router?.maxConcurrentEnvironment ?? global.router.maxConcurrentEnvironment,
+      defaultTimeoutMs: overrides.router?.defaultTimeoutMs ?? global.router.defaultTimeoutMs,
+      diversity: overrides.router?.diversity ?? global.router.diversity,
+      fallback: overrides.router?.fallback ?? global.router.fallback,
+      explanation: overrides.router?.explanation ?? global.router.explanation,
+    },
     engine: {
       planning: engineOverrides?.planning ?? global.engine.planning,
       consensus: engineOverrides?.consensus ?? global.engine.consensus,
@@ -1127,6 +1141,7 @@ export const ServerSettingsPatch = Schema.Struct({
       codexAgent: Schema.optionalKey(Schema.Boolean),
       cursorAgent: Schema.optionalKey(Schema.Boolean),
       claudeAgent: Schema.optionalKey(Schema.Boolean),
+      router: Schema.optionalKey(DelegationRouterSettingsOverride),
       engine: Schema.optionalKey(
         Schema.Struct({
           planning: Schema.optionalKey(Schema.Boolean),

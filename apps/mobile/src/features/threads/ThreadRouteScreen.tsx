@@ -339,6 +339,13 @@ function ThreadRouteContent(
     setInspectorSelection({ routeThreadIdentity, mode: "git" });
     showAuxiliaryPane("inspector");
   }, [fileInspector.supported, navigation, routeThreadIdentity, selectedThread, showAuxiliaryPane]);
+  const handleOpenSubagentRuns = useCallback(() => {
+    if (selectedThread === null) return;
+    navigation.navigate("SubagentRuns", {
+      environmentId: String(selectedThread.environmentId),
+      threadId: String(selectedThread.id),
+    });
+  }, [navigation, selectedThread]);
   const handleOpenFilesInspector = useCallback(() => {
     if (selectedThread === null || selectedThreadCwd === null) {
       return;
@@ -619,6 +626,17 @@ function ThreadRouteContent(
   };
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(threadGitControlProps);
   const compactRightHeaderItems = useThreadGitRightHeaderItems(threadGitControlProps);
+  const subagentHeaderItem = useMemo(
+    () =>
+      withNativeGlassHeaderItem({
+        accessibilityLabel: "Open delegated runs",
+        icon: { name: "person.2", type: "sfSymbol" as const },
+        identifier: "thread-right-subagents",
+        onPress: handleOpenSubagentRuns,
+        type: "button" as const,
+      }),
+    [handleOpenSubagentRuns],
+  );
   const splitLeftHeaderItems = useMemo<NativeHeaderItems>(
     () => [
       {
@@ -686,6 +704,11 @@ function ThreadRouteContent(
       });
     }
     actions.push({
+      accessibilityLabel: "Open delegated runs",
+      icon: "person.2",
+      onPress: handleOpenSubagentRuns,
+    });
+    actions.push({
       accessibilityLabel: "Open git controls",
       icon: "point.topleft.down.curvedto.point.bottomright.up",
       onPress: handleOpenGitInspector,
@@ -703,6 +726,7 @@ function ThreadRouteContent(
     handleOpenFilesInspector,
     handleOpenTerminal,
     handleOpenGitInspector,
+    handleOpenSubagentRuns,
     handleToggleInspector,
     props.onReturnToThread,
     selectedThreadCwd,
@@ -827,7 +851,10 @@ function ThreadRouteContent(
           // reserved for future breadcrumbs/status).
           unstable_headerRightItems:
             Platform.OS === "ios"
-              ? () => (layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems)
+              ? () => [
+                  ...(layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems),
+                  subagentHeaderItem,
+                ]
               : undefined,
           unstable_headerSubtitle: usesNativeHeaderGlass ? headerSubtitle : undefined,
         }}

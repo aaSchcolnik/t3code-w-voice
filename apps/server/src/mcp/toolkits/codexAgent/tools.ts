@@ -5,11 +5,24 @@ import {
   DelegatedRunError,
   DelegatedRunLookupInput,
   DelegatedRunStartInput,
+  DelegationIdempotencyKey,
 } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
-const dependencies = [McpInvocationContext.McpInvocationContext];
+import { DelegationCoordinator } from "../../../orchestration/DelegationCoordinator.ts";
+import { DelegatedRunService } from "../../../orchestration/DelegatedRunService.ts";
+const dependencies = [
+  McpInvocationContext.McpInvocationContext,
+  DelegationCoordinator,
+  DelegatedRunService,
+];
+
+const CompatibilityDelegatedRunStartInput = Schema.Struct({
+  ...DelegatedRunStartInput.fields,
+  idempotencyKey: Schema.optional(DelegationIdempotencyKey),
+});
 
 export const CodexCapabilitiesTool = Tool.make("codex_capabilities", {
   description: "Report the capabilities of the built-in Codex delegated-run backend.",
@@ -23,8 +36,8 @@ export const CodexCapabilitiesTool = Tool.make("codex_capabilities", {
 
 export const CodexStartTool = Tool.make("codex_start", {
   description:
-    "Start a one-shot Codex subagent in the parent thread workspace. Always use this tool for Codex delegation instead of launching codex exec through a shell: this creates the tracked run shown in T3 Code's Subagents panel. Returns immediately. Start every needed subagent, then end your turn; the server delivers the results automatically when all runs finish. Never wait, poll, or create sleep timers/background commands.",
-  parameters: DelegatedRunStartInput,
+    "Start a one-shot Codex subagent in the parent thread workspace. Provide a stable idempotencyKey for retry-safe calls; omitted keys preserve legacy behavior and have no retry deduplication. Always use this tool instead of launching codex exec through a shell. Returns immediately with tracked allocation state; provider acceptance happens later. Start every needed run, then end your turn; the server delivers results automatically.",
+  parameters: CompatibilityDelegatedRunStartInput,
   success: DelegatedRun,
   failure: DelegatedRunError,
   dependencies,

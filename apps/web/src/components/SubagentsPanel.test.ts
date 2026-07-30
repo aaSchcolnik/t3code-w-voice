@@ -5,6 +5,7 @@ import {
   SubagentRunId,
   ThreadId,
   type SubagentRun,
+  type SubagentRunDetails,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { BrainIcon, SearchIcon, ShieldCheckIcon, WorkflowIcon, WrenchIcon } from "lucide-react";
@@ -25,9 +26,16 @@ import {
   hasDetailedSubagentTranscript,
   isActiveSubagentStatus,
   resolveSubagentMetadata,
+  resolveSubagentRouteDiagnostics,
+  resolveSubagentRouteMetadata,
+  subagentPhaseLabel,
   subagentSummaryResult,
   subagentStatusLabel,
 } from "./subagents/subagentRunPresentation";
+import {
+  SubagentInputResponseForm,
+  SubagentRouteDetails,
+} from "./subagents/SubagentTranscriptPanel";
 
 const run = (id: string, overrides: Partial<SubagentRun> = {}): SubagentRun => ({
   id: SubagentRunId.make(id),
@@ -57,6 +65,24 @@ const run = (id: string, overrides: Partial<SubagentRun> = {}): SubagentRun => (
   sequence: 0,
   ...overrides,
 });
+
+const routedRun = (overrides: Partial<SubagentRun> = {}): SubagentRun =>
+  run("routed", {
+    source: "delegated",
+    provider: ProviderDriverKind.make("codex"),
+    providerInstanceId: ProviderInstanceId.make("codex-primary"),
+    route: {
+      decisionId: "decision-1",
+      policyVersion: 3,
+      role: "worker",
+      provider: "codex",
+      providerInstanceId: ProviderInstanceId.make("codex-primary"),
+      model: "gpt-5.6-sol",
+      explanation: "Selected the first eligible worker target.",
+    } as NonNullable<SubagentRun["route"]>,
+    dispatchState: "allocated",
+    ...overrides,
+  });
 
 describe("flattenSubagentRunTree", () => {
   it("keeps children grouped beneath parents within a section", () => {
@@ -397,6 +423,43 @@ describe("subagent status presentation", () => {
     );
     expect(findNewActiveSubagentRun([existing], new Set(["existing"]))).toBeUndefined();
   });
+
+  it("reports routed dispatch phases without claiming allocation is running", () => {
+    expect(subagentPhaseLabel(routedRun({ dispatchState: "allocated" }))).toBe("Allocated");
+    expect(subagentPhaseLabel(routedRun({ dispatchState: "session_starting" }))).toBe(
+      "Session starting",
+    );
+    expect(subagentPhaseLabel(routedRun({ dispatchState: "session_started" }))).toBe(
+      "Session started",
+    );
+    expect(subagentPhaseLabel(routedRun({ dispatchState: "dispatch_started" }))).toBe(
+      "Dispatch started",
+    );
+    expect(subagentPhaseLabel(routedRun({ dispatchState: "turn_accepted" }))).toBe("Turn accepted");
+    expect(
+      subagentPhaseLabel(
+        routedRun({ dispatchState: "turn_accepted", status: "waiting_for_input" }),
+      ),
+    ).toBe("Waiting for input");
+  });
+
+  it("renders a compact selected route and truthful allocation phase in the live list", () => {
+    const html = renderToStaticMarkup(
+      createElement(SubagentsPanel, {
+        runs: [routedRun()],
+        provider: undefined,
+        providers: [],
+        fallbackDriverKind: ProviderDriverKind.make("codex"),
+        environmentId: EnvironmentId.make("environment-1"),
+        threadId: ThreadId.make("thread-1"),
+      }),
+    );
+
+    expect(html).toContain("Worker route");
+    expect(html).toContain("codex-primary / gpt-5.6-sol");
+    expect(html).toContain("Allocated");
+    expect(html).not.toContain(">Running<");
+  });
 });
 
 describe("subagent metadata presentation", () => {
@@ -447,6 +510,246 @@ describe("subagent metadata presentation", () => {
     };
 
     expect(resolveSubagentMetadata(metadataRun, provider)).toEqual(["GPT 5.6 Sol"]);
+  });
+
+  it("presents only server-selected route metadata", () => {
+    expect(resolveSubagentRouteMetadata(routedRun())).toEqual([
+      "Worker route",
+      "codex-primary / gpt-5.6-sol",
+    ]);
+  });
+});
+
+describe("subagent route diagnostics", () => {
+  it("presents server candidate exclusions, fallback history, grouping, and completeness", () => {
+    const routed = routedRun({
+      workflowId: "workflow-1" as NonNullable<SubagentRun["workflowId"]>,
+      batchId: "batch-1" as NonNullable<SubagentRun["batchId"]>,
+      laneId: "lane-2" as NonNullable<SubagentRun["laneId"]>,
+      workflow: { runId: "workflow-1", phaseIndex: 2, phaseTitle: "Verify" },
+      terminalEventSeen: true,
+      assistantMessageCount: 2,
+      finalMessagePresent: true,
+      resultCompleteness: "terminal_message",
+    });
+    const details = {
+      runId: routed.id,
+      source: "delegated",
+      routeGroupId: "route-group-1",
+      routeDecision: {
+        decisionId: "decision-1",
+        policyVersion: 3,
+        mode: "proactive",
+        taskKind: "implementation",
+        role: "worker",
+        selected: {
+          provider: "codex",
+          providerInstanceId: "codex-primary",
+          model: "gpt-5.6-sol",
+        },
+        explanation: "The server selected the first eligible worker target.",
+        candidates: [
+          {
+            candidate: {
+              provider: "cursor",
+              providerInstanceId: "cursor",
+              model: "composer-2.5",
+            },
+            eligible: false,
+            reasonCodes: ["provider_unavailable"],
+          },
+          {
+            candidate: {
+              provider: "codex",
+              providerInstanceId: "codex-primary",
+              model: "gpt-5.6-sol",
+            },
+            eligible: true,
+            reasonCodes: [],
+          },
+        ],
+        fallbackChain: [
+          {
+            provider: "cursor",
+            providerInstanceId: "cursor",
+            model: "composer-2.5",
+          },
+        ],
+      },
+      attempts: [
+        {
+          attemptId: "attempt-1",
+          target: {
+            provider: "cursor",
+            providerInstanceId: "cursor",
+            model: "composer-2.5",
+          },
+          dispatchState: "session_starting",
+          allocatedAt: "2026-07-29T00:00:00.000Z",
+          failureReason: "Provider process was unavailable.",
+        },
+        {
+          attemptId: "attempt-2",
+          target: {
+            provider: "codex",
+            providerInstanceId: "codex-primary",
+            model: "gpt-5.6-sol",
+          },
+          fallbackFrom: {
+            provider: "cursor",
+            providerInstanceId: "cursor",
+            model: "composer-2.5",
+          },
+          dispatchState: "turn_accepted",
+          allocatedAt: "2026-07-29T00:00:01.000Z",
+        },
+      ],
+    } as unknown as SubagentRunDetails;
+
+    const diagnostics = resolveSubagentRouteDiagnostics(routed, details);
+    expect(diagnostics).toMatchObject({
+      policyVersion: 3,
+      explanation: "The server selected the first eligible worker target.",
+      candidates: [
+        {
+          target: "cursor / composer-2.5",
+          eligible: false,
+          reasons: ["Provider unavailable"],
+        },
+        {
+          target: "codex-primary / gpt-5.6-sol",
+          eligible: true,
+          reasons: [],
+        },
+      ],
+      fallbackChain: ["cursor / composer-2.5"],
+      attempts: [
+        {
+          target: "cursor / composer-2.5",
+          phase: "Session starting",
+          fallbackFrom: null,
+          failure: "Provider process was unavailable.",
+        },
+        {
+          target: "codex-primary / gpt-5.6-sol",
+          phase: "Turn accepted",
+          fallbackFrom: "cursor / composer-2.5",
+          failure: null,
+        },
+      ],
+    });
+    expect(diagnostics?.grouping).toEqual([
+      { label: "Workflow", value: "workflow-1" },
+      { label: "Batch", value: "batch-1" },
+      { label: "Lane", value: "lane-2" },
+      { label: "Route group", value: "route-group-1" },
+      { label: "Phase", value: "Verify" },
+    ]);
+    expect(diagnostics?.completeness).toContainEqual({
+      label: "Result completeness",
+      value: "Terminal message",
+    });
+
+    const html = renderToStaticMarkup(
+      createElement(SubagentRouteDetails, { run: routed, details }),
+    );
+    expect(html).toContain("Candidate diagnostics");
+    expect(html).toContain("Provider unavailable");
+    expect(html).toContain("Attempt history");
+    expect(html).toContain("fallback from cursor / composer-2.5");
+    expect(html).toContain("Policy v3");
+  });
+
+  it("does not probe rich diagnostics from the compact streamed run", () => {
+    const routed = Object.assign(routedRun(), {
+      routeDecision: {
+        policyVersion: 99,
+        candidates: [],
+        fallbackChain: [],
+      },
+      attempts: [{ dispatchState: "turn_accepted" }],
+      routeGroupId: "must-not-be-read",
+    });
+
+    expect(resolveSubagentRouteDiagnostics(routed)).toMatchObject({
+      policyVersion: 3,
+      explanation: "Selected the first eligible worker target.",
+      candidates: [],
+      attempts: [],
+      grouping: [],
+    });
+  });
+});
+
+describe("subagent input response", () => {
+  it("renders server-authored options, custom answers, and the supported response action", () => {
+    const waiting = routedRun({
+      status: "waiting_for_input",
+      capabilities: {
+        canCancel: true,
+        canSteer: false,
+        canRespond: true,
+        canResume: false,
+        transcriptQuality: "live",
+      },
+      sequence: 7,
+    });
+    const details = {
+      runId: waiting.id,
+      source: "delegated",
+      attempts: [],
+      pendingQuestions: [
+        {
+          id: "scope",
+          header: "Scope",
+          question: "Which packages should I inspect?",
+          options: [
+            { label: "Server", description: "Inspect server orchestration." },
+            { label: "Web", description: "Inspect the web client." },
+          ],
+          multiSelect: true,
+        },
+      ],
+    } satisfies SubagentRunDetails;
+
+    const html = renderToStaticMarkup(
+      createElement(SubagentInputResponseForm, {
+        run: waiting,
+        details,
+        onSubmit: () => Promise.resolve(),
+      }),
+    );
+
+    expect(html).toContain("Input required");
+    expect(html).toContain("Which packages should I inspect?");
+    expect(html).toContain("Server");
+    expect(html).toContain("Or type a custom answer");
+    expect(html).toContain("Submit answers");
+  });
+
+  it("does not expose an action without server-authored response capability", () => {
+    const html = renderToStaticMarkup(
+      createElement(SubagentInputResponseForm, {
+        run: routedRun({ status: "waiting_for_input" }),
+        details: {
+          runId: SubagentRunId.make("routed"),
+          source: "delegated",
+          attempts: [],
+          pendingQuestions: [
+            {
+              id: "scope",
+              header: "Scope",
+              question: "Which package?",
+              options: [{ label: "Server", description: "Inspect the server." }],
+              multiSelect: false,
+            },
+          ],
+        },
+        onSubmit: () => Promise.resolve(),
+      }),
+    );
+
+    expect(html).toBe("");
   });
 });
 

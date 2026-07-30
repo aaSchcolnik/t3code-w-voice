@@ -101,11 +101,18 @@ export function ChainEditor({
   providerEntries,
   onChange,
   role,
+  showAvailability = true,
 }: {
   chain: ReadonlyArray<EngineDelegationTarget>;
   providerEntries: ReadonlyArray<ProviderInstanceEntry>;
   onChange: (chain: ReadonlyArray<EngineDelegationTarget>) => void;
   role: EngineDelegationRole;
+  /**
+   * Router eligibility is evaluated by the server from adapter capabilities.
+   * Its settings editor therefore shows configured priority without deriving
+   * candidate availability from the client-side provider catalog.
+   */
+  showAvailability?: boolean;
 }) {
   const providerItems = [
     ...(role === "scanner" ? [] : [{ value: "inline" as const, label: "Inline" }]),
@@ -116,7 +123,9 @@ export function ChainEditor({
   return (
     <FieldGroup className="w-full gap-3">
       {chain.map((target, index) => {
-        const availability = targetAvailability(target, providerEntries);
+        const availability = showAvailability
+          ? targetAvailability(target, providerEntries)
+          : { available: true, reason: undefined };
         const matchingEntries = providerEntries.filter(
           (entry) => entry.driverKind === target.provider,
         );
@@ -164,11 +173,17 @@ export function ChainEditor({
           >
             <div className="flex w-full items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
-                <Badge variant={availability.available ? "success" : "secondary"}>
+                <Badge
+                  variant={showAvailability && availability.available ? "success" : "secondary"}
+                >
                   {index + 1}
                 </Badge>
                 <span className="truncate text-xs text-muted-foreground">
-                  {availability.available ? "Available" : availability.reason}
+                  {showAvailability
+                    ? availability.available
+                      ? "Available"
+                      : availability.reason
+                    : "Routing priority"}
                 </span>
               </div>
               <div className="flex items-center gap-1">

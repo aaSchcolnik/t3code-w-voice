@@ -1,0 +1,655 @@
+{
+  "defaults": {
+    "providers": [
+      {
+        "id": "codex",
+        "driver": "codex",
+        "models": ["codex-general", "codex-special"],
+        "capabilities": "full"
+      },
+      {
+        "id": "cursor",
+        "driver": "cursor",
+        "models": ["cursor-general"],
+        "capabilities": "interactive"
+      },
+      {
+        "id": "claudeAgent",
+        "driver": "claudeAgent",
+        "models": ["claude-general"],
+        "capabilities": "interactive"
+      }
+    ],
+    "roles": {
+      "scout": [
+        { "provider": "cursor", "model": "cursor-general" },
+        { "provider": "codex", "model": "codex-general" }
+      ],
+      "worker": [
+        { "provider": "codex", "model": "codex-general" },
+        { "provider": "cursor", "model": "cursor-general" }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "name": "research uses hard read-only filtering",
+      "tasks": [
+        {
+          "laneId": "research",
+          "title": "Research",
+          "task": "Inspect the subsystem",
+          "kind": "research",
+          "role": "scout",
+          "workspaceAccess": "read-only"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "research", "provider": "codex", "model": "codex-general" }],
+        "policySource": "role_chain",
+        "rejected": { "cursor": ["read_only_unenforced"] },
+        "explanationIncludes": "role_chain"
+      }
+    },
+    {
+      "name": "planning kind is telemetry only",
+      "tasks": [
+        {
+          "laneId": "planning",
+          "title": "Plan",
+          "task": "Draft a plan",
+          "kind": "planning",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "planning", "provider": "codex", "model": "codex-general" }],
+        "policySource": "role_chain",
+        "taskKind": "planning",
+        "explanationIncludes": "chain position 0"
+      }
+    },
+    {
+      "name": "implementation",
+      "tasks": [
+        {
+          "laneId": "implementation",
+          "title": "Implement",
+          "task": "Make the change",
+          "kind": "implementation",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "implementation", "provider": "codex" }],
+        "policySource": "role_chain",
+        "explanationIncludes": "Selected codex/codex"
+      }
+    },
+    {
+      "name": "debugging",
+      "tasks": [
+        {
+          "laneId": "debugging",
+          "title": "Debug",
+          "task": "Find the defect",
+          "kind": "debugging",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "debugging", "provider": "codex" }],
+        "policySource": "role_chain",
+        "explanationIncludes": "debugging"
+      }
+    },
+    {
+      "name": "testing",
+      "tasks": [
+        {
+          "laneId": "testing",
+          "title": "Test",
+          "task": "Add focused tests",
+          "kind": "testing",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "testing", "provider": "codex" }],
+        "policySource": "role_chain",
+        "explanationIncludes": "testing"
+      }
+    },
+    {
+      "name": "review",
+      "tasks": [
+        {
+          "laneId": "review",
+          "title": "Review",
+          "task": "Review the diff",
+          "kind": "review",
+          "role": "worker",
+          "workspaceAccess": "read-only"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "review", "provider": "codex" }],
+        "policySource": "role_chain",
+        "explanationIncludes": "review"
+      }
+    },
+    {
+      "name": "documentation",
+      "tasks": [
+        {
+          "laneId": "documentation",
+          "title": "Document",
+          "task": "Update the guide",
+          "kind": "documentation",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "documentation", "provider": "codex" }],
+        "policySource": "role_chain",
+        "explanationIncludes": "documentation"
+      }
+    },
+    {
+      "name": "knowledge scan",
+      "tasks": [
+        {
+          "laneId": "knowledge",
+          "title": "Knowledge",
+          "task": "Scan knowledge",
+          "kind": "knowledge-scan",
+          "role": "scout",
+          "workspaceAccess": "read-only"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "knowledge", "provider": "codex" }],
+        "policySource": "role_chain",
+        "taskKind": "knowledge-scan",
+        "explanationIncludes": "knowledge"
+      }
+    },
+    {
+      "name": "ambiguous defaults to general worker without scoring",
+      "tasks": [
+        {
+          "laneId": "ambiguous",
+          "title": "Help",
+          "task": "Handle this",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "ambiguous", "provider": "codex" }],
+        "policySource": "role_chain",
+        "taskKind": "general",
+        "explanationIncludes": "worker"
+      }
+    },
+    {
+      "name": "attachments are a hard capability",
+      "providers": [
+        {
+          "id": "cursor",
+          "driver": "cursor",
+          "models": ["cursor-general"],
+          "capabilities": "questions-only"
+        },
+        {
+          "id": "codex",
+          "driver": "codex",
+          "models": ["codex-general"],
+          "capabilities": "full"
+        }
+      ],
+      "roles": {
+        "worker": [
+          { "provider": "cursor", "model": "cursor-general" },
+          { "provider": "codex", "model": "codex-general" }
+        ]
+      },
+      "tasks": [
+        {
+          "laneId": "attachment",
+          "title": "Inspect image",
+          "task": "Inspect the attached screenshot",
+          "kind": "review",
+          "role": "worker",
+          "workspaceAccess": "workspace-write",
+          "attachments": [
+            {
+              "type": "image",
+              "id": "image-1",
+              "name": "screen.png",
+              "mimeType": "image/png",
+              "sizeBytes": 100
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "attachment", "provider": "codex" }],
+        "policySource": "role_chain",
+        "rejected": { "cursor": ["missing_attachments", "explicit_constraint_mismatch"] },
+        "explanationIncludes": "attachment"
+      }
+    },
+    {
+      "name": "structured questions are a hard capability",
+      "providers": [
+        {
+          "id": "cursor",
+          "driver": "cursor",
+          "models": ["cursor-general"],
+          "capabilities": "attachments-only"
+        },
+        {
+          "id": "codex",
+          "driver": "codex",
+          "models": ["codex-general"],
+          "capabilities": "full"
+        }
+      ],
+      "roles": {
+        "worker": [
+          { "provider": "cursor", "model": "cursor-general" },
+          { "provider": "codex", "model": "codex-general" }
+        ]
+      },
+      "tasks": [
+        {
+          "laneId": "questions",
+          "title": "Interactive",
+          "task": "Ask a structured question if blocked",
+          "kind": "planning",
+          "role": "worker",
+          "workspaceAccess": "workspace-write",
+          "interactionMode": "plan",
+          "requiredCapabilities": { "structuredQuestions": true }
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "questions", "provider": "codex" }],
+        "policySource": "role_chain",
+        "rejected": { "cursor": ["missing_questions", "explicit_constraint_mismatch"] },
+        "explanationIncludes": "questions"
+      }
+    },
+    {
+      "name": "read-only enforcement failure",
+      "providers": [
+        {
+          "id": "cursor",
+          "driver": "cursor",
+          "models": ["cursor-general"],
+          "capabilities": "interactive"
+        }
+      ],
+      "roles": { "scout": [{ "provider": "cursor", "model": "cursor-general" }] },
+      "tasks": [
+        {
+          "laneId": "read-only",
+          "title": "Read",
+          "task": "Read only",
+          "kind": "research",
+          "role": "scout",
+          "workspaceAccess": "read-only"
+        }
+      ],
+      "expected": {
+        "failure": "read_only_unenforced",
+        "policySource": "role_chain",
+        "rejected": { "cursor": ["read_only_unenforced"] },
+        "explanationIncludes": "read_only_unenforced"
+      }
+    },
+    {
+      "name": "one provider environment",
+      "providers": [
+        {
+          "id": "codex",
+          "driver": "codex",
+          "models": ["codex-general"],
+          "capabilities": "full"
+        }
+      ],
+      "roles": { "worker": [{ "provider": "codex", "model": "codex-general" }] },
+      "tasks": [
+        {
+          "laneId": "single",
+          "title": "Single",
+          "task": "Use the only provider",
+          "kind": "implementation",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "single", "provider": "codex" }],
+        "policySource": "role_chain",
+        "explanationIncludes": "chain position 0"
+      }
+    },
+    {
+      "name": "multiple instances use stable resolver tie break",
+      "providers": [
+        {
+          "id": "codex_zeta",
+          "driver": "codex",
+          "models": ["codex-general"],
+          "capabilities": "full"
+        },
+        {
+          "id": "codex_alpha",
+          "driver": "codex",
+          "models": ["codex-general"],
+          "capabilities": "full"
+        }
+      ],
+      "roles": { "worker": [{ "provider": "codex", "model": "codex-general" }] },
+      "tasks": [
+        {
+          "laneId": "instances",
+          "title": "Instances",
+          "task": "Choose deterministically",
+          "kind": "implementation",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [
+          {
+            "laneId": "instances",
+            "provider": "codex",
+            "providerInstanceId": "codex_alpha"
+          }
+        ],
+        "policySource": "role_chain",
+        "explanationIncludes": "codex_alpha"
+      }
+    },
+    {
+      "name": "explicit provider model and options",
+      "tasks": [
+        {
+          "laneId": "explicit",
+          "title": "Explicit",
+          "task": "Honor the explicit target",
+          "kind": "implementation",
+          "role": "worker",
+          "workspaceAccess": "workspace-write",
+          "providerConstraint": {
+            "provider": "codex",
+            "model": "codex-special",
+            "options": [{ "id": "reasoningEffort", "value": "high" }]
+          }
+        }
+      ],
+      "expected": {
+        "selected": [
+          {
+            "laneId": "explicit",
+            "provider": "codex",
+            "model": "codex-special",
+            "options": [{ "id": "reasoningEffort", "value": "high" }]
+          }
+        ],
+        "policySource": "explicit_constraint",
+        "explanationIncludes": "explicit_constraint"
+      }
+    },
+    {
+      "name": "disabled explicit provider",
+      "providers": [
+        {
+          "id": "codex",
+          "driver": "codex",
+          "models": ["codex-general"],
+          "capabilities": "full",
+          "enabled": false
+        }
+      ],
+      "tasks": [
+        {
+          "laneId": "disabled",
+          "title": "Disabled",
+          "task": "Cannot run",
+          "role": "worker",
+          "workspaceAccess": "workspace-write",
+          "providerConstraint": { "provider": "codex" }
+        }
+      ],
+      "expected": {
+        "failure": "provider_disabled",
+        "policySource": "explicit_constraint",
+        "rejected": { "codex": ["provider_disabled"] },
+        "explanationIncludes": "provider_disabled"
+      }
+    },
+    {
+      "name": "uninstalled explicit provider",
+      "providers": [
+        {
+          "id": "codex",
+          "driver": "codex",
+          "models": ["codex-general"],
+          "capabilities": "full",
+          "installed": false
+        }
+      ],
+      "tasks": [
+        {
+          "laneId": "uninstalled",
+          "title": "Uninstalled",
+          "task": "Cannot run",
+          "role": "worker",
+          "workspaceAccess": "workspace-write",
+          "providerConstraint": { "provider": "codex" }
+        }
+      ],
+      "expected": {
+        "failure": "provider_uninstalled",
+        "policySource": "explicit_constraint",
+        "rejected": { "codex": ["provider_uninstalled"] },
+        "explanationIncludes": "provider_uninstalled"
+      }
+    },
+    {
+      "name": "unavailable explicit provider",
+      "providers": [
+        {
+          "id": "codex",
+          "driver": "codex",
+          "models": ["codex-general"],
+          "capabilities": "full",
+          "availability": "unavailable"
+        }
+      ],
+      "tasks": [
+        {
+          "laneId": "unavailable",
+          "title": "Unavailable",
+          "task": "Cannot run",
+          "role": "worker",
+          "workspaceAccess": "workspace-write",
+          "providerConstraint": { "provider": "codex" }
+        }
+      ],
+      "expected": {
+        "failure": "provider_unavailable",
+        "policySource": "explicit_constraint",
+        "rejected": { "codex": ["provider_unavailable"] },
+        "explanationIncludes": "provider_unavailable"
+      }
+    },
+    {
+      "name": "unknown explicit model",
+      "tasks": [
+        {
+          "laneId": "model",
+          "title": "Unknown model",
+          "task": "Cannot run",
+          "role": "worker",
+          "workspaceAccess": "workspace-write",
+          "providerConstraint": { "provider": "codex", "model": "missing-model" }
+        }
+      ],
+      "expected": {
+        "failure": "model_unavailable",
+        "policySource": "explicit_constraint",
+        "rejected": { "codex": ["model_unavailable"] },
+        "explanationIncludes": "model_unavailable"
+      }
+    },
+    {
+      "name": "unknown explicit model option",
+      "tasks": [
+        {
+          "laneId": "option",
+          "title": "Unknown option",
+          "task": "Cannot run",
+          "role": "worker",
+          "workspaceAccess": "workspace-write",
+          "providerConstraint": {
+            "provider": "codex",
+            "model": "codex-general",
+            "options": [{ "id": "missingOption", "value": true }]
+          }
+        }
+      ],
+      "expected": {
+        "failure": "model_unavailable",
+        "policySource": "explicit_constraint",
+        "rejected": { "codex": ["model_unavailable"] },
+        "explanationIncludes": "model_unavailable"
+      }
+    },
+    {
+      "name": "delegated child recursion is denied",
+      "invokedByDelegatedChild": true,
+      "tasks": [
+        {
+          "laneId": "recursive",
+          "title": "Recursive",
+          "task": "Do not recurse",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "failure": "recursion_forbidden",
+        "policySource": "role_chain",
+        "rejected": {
+          "codex": ["recursion_forbidden"],
+          "cursor": ["recursion_forbidden", "explicit_constraint_mismatch"]
+        },
+        "explanationIncludes": "recursion_forbidden"
+      }
+    },
+    {
+      "name": "trusted workflow override",
+      "trustedContext": { "workflow": "plan" },
+      "workflowOverrides": {
+        "plan": { "worker": [{ "provider": "codex", "model": "codex-special" }] }
+      },
+      "tasks": [
+        {
+          "laneId": "workflow",
+          "title": "Workflow",
+          "task": "Use workflow policy",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "workflow", "provider": "codex", "model": "codex-special" }],
+        "policySource": "workflow_override",
+        "explanationIncludes": "workflow_override"
+      }
+    },
+    {
+      "name": "trusted skill override outranks workflow",
+      "trustedContext": {
+        "workflow": "plan",
+        "skillOverride": {
+          "worker": [{ "provider": "codex", "model": "codex-general" }]
+        }
+      },
+      "workflowOverrides": {
+        "plan": { "worker": [{ "provider": "codex", "model": "codex-special" }] }
+      },
+      "tasks": [
+        {
+          "laneId": "skill",
+          "title": "Skill",
+          "task": "Use skill policy",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [{ "laneId": "skill", "provider": "codex", "model": "codex-general" }],
+        "policySource": "skill_override",
+        "explanationIncludes": "skill_override"
+      }
+    },
+    {
+      "name": "batch diversity is deterministic in stable lane order",
+      "providers": [
+        {
+          "id": "codex",
+          "driver": "codex",
+          "models": ["codex-general"],
+          "capabilities": "full"
+        },
+        {
+          "id": "cursor",
+          "driver": "cursor",
+          "models": ["cursor-general"],
+          "capabilities": "full"
+        }
+      ],
+      "roles": {
+        "worker": [
+          { "provider": "codex", "model": "codex-general" },
+          { "provider": "cursor", "model": "cursor-general" }
+        ]
+      },
+      "tasks": [
+        {
+          "laneId": "lane-b",
+          "title": "Second",
+          "task": "Second input lane",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        },
+        {
+          "laneId": "lane-a",
+          "title": "First",
+          "task": "First stable lane",
+          "role": "worker",
+          "workspaceAccess": "workspace-write"
+        }
+      ],
+      "expected": {
+        "selected": [
+          { "laneId": "lane-a", "provider": "codex" },
+          { "laneId": "lane-b", "provider": "cursor" }
+        ],
+        "policySource": "role_chain",
+        "explanationIncludes": "Selected"
+      }
+    }
+  ]
+}

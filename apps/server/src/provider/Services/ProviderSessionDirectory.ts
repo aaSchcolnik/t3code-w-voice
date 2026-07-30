@@ -14,6 +14,8 @@ import type {
   ProviderValidationError,
 } from "../Errors.ts";
 
+export type ProviderSessionKind = "standard" | "delegated";
+
 export interface ProviderRuntimeBinding {
   readonly threadId: ThreadId;
   readonly provider: ProviderDriverKind;
@@ -28,6 +30,16 @@ export interface ProviderRuntimeBinding {
   readonly resumeCursor?: unknown | null;
   readonly runtimePayload?: unknown | null;
   readonly runtimeMode?: RuntimeMode;
+  /**
+   * Explicit ownership classification for provider sessions. Delegated
+   * sessions are never inferred from a synthetic thread id.
+   */
+  readonly sessionKind?: ProviderSessionKind;
+  /**
+   * Durable owner used to resolve the delegated session's project after a
+   * restart. Present only when `sessionKind` is `delegated`.
+   */
+  readonly ownerThreadId?: ThreadId;
 }
 
 export interface ProviderRuntimeBindingWithMetadata extends ProviderRuntimeBinding {

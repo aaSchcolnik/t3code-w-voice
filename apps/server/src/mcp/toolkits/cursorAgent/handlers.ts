@@ -10,6 +10,7 @@ import {
   startActiveDelegatedRun,
 } from "../../../orchestration/DelegatedRunService.ts";
 import { CursorAgentToolkit } from "./tools.ts";
+import { startCompatibilityDelegation } from "../delegationRouter/handlers.ts";
 
 const requireCapability = McpInvocationContext.requireMcpCapability("cursor-agent").pipe(
   Effect.mapError(
@@ -24,7 +25,10 @@ const requireCapability = McpInvocationContext.requireMcpCapability("cursor-agen
 const ownedRun = Effect.fn("CursorAgentToolkit.ownedRun")(function* (runId: DelegatedRunId) {
   const scope = yield* requireCapability;
   const run = yield* getActiveDelegatedRun(runId);
-  if (run.parentThreadId !== scope.threadId || run.provider !== "cursor") {
+  if (
+    run.parentThreadId !== McpInvocationContext.mcpOwnerThreadId(scope) ||
+    run.provider !== "cursor"
+  ) {
     return yield* new DelegatedRunError({
       operation: "status",
       message: "Delegated run not found for this parent thread.",
@@ -40,10 +44,31 @@ export const CursorAgentToolkitHandlersLive = CursorAgentToolkit.toLayer({
   cursor_start: (input) =>
     Effect.gen(function* () {
       const scope = yield* requireCapability;
+      if (scope.effectiveMcp?.router.mode === "off") {
+        return yield* new DelegatedRunError({
+          operation: "start",
+          message: "Delegation is disabled by the current project settings.",
+        });
+      }
+      if (input.profile === undefined) {
+        return yield* startCompatibilityDelegation(scope, "cursor", {
+          ...input,
+        }).pipe(
+          Effect.mapError(
+            (error) =>
+              new DelegatedRunError({
+                operation: "start",
+                message: error.message,
+              }),
+          ),
+        );
+      }
+      const { idempotencyKey, ...legacyInput } = input;
       return yield* startActiveDelegatedRun({
-        ...input,
+        ...legacyInput,
+        ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
         provider: "cursor",
-        parentThreadId: scope.threadId,
+        parentThreadId: McpInvocationContext.mcpOwnerThreadId(scope),
       });
     }),
   cursor_cancel: ({ runId }) =>

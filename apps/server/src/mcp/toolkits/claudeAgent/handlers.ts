@@ -9,6 +9,7 @@ import {
   startActiveDelegatedRun,
 } from "../../../orchestration/DelegatedRunService.ts";
 import { ClaudeAgentToolkit } from "./tools.ts";
+import { startCompatibilityDelegation } from "../delegationRouter/handlers.ts";
 
 const requireCapability = McpInvocationContext.requireMcpCapability("claude-agent").pipe(
   Effect.mapError(
@@ -23,7 +24,10 @@ const requireCapability = McpInvocationContext.requireMcpCapability("claude-agen
 const ownedRun = Effect.fn("ClaudeAgentToolkit.ownedRun")(function* (runId: DelegatedRunId) {
   const scope = yield* requireCapability;
   const run = yield* getActiveDelegatedRun(runId);
-  if (run.parentThreadId !== scope.threadId || run.provider !== "claudeAgent") {
+  if (
+    run.parentThreadId !== McpInvocationContext.mcpOwnerThreadId(scope) ||
+    run.provider !== "claudeAgent"
+  ) {
     return yield* new DelegatedRunError({
       operation: "status",
       message: "Delegated run not found for this parent thread.",
@@ -39,10 +43,31 @@ export const ClaudeAgentToolkitHandlersLive = ClaudeAgentToolkit.toLayer({
   claude_start: (input) =>
     Effect.gen(function* () {
       const scope = yield* requireCapability;
+      if (scope.effectiveMcp?.router.mode === "off") {
+        return yield* new DelegatedRunError({
+          operation: "start",
+          message: "Delegation is disabled by the current project settings.",
+        });
+      }
+      if (input.profile === undefined) {
+        return yield* startCompatibilityDelegation(scope, "claudeAgent", {
+          ...input,
+        }).pipe(
+          Effect.mapError(
+            (error) =>
+              new DelegatedRunError({
+                operation: "start",
+                message: error.message,
+              }),
+          ),
+        );
+      }
+      const { idempotencyKey, ...legacyInput } = input;
       return yield* startActiveDelegatedRun({
-        ...input,
+        ...legacyInput,
+        ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
         provider: "claudeAgent",
-        parentThreadId: scope.threadId,
+        parentThreadId: McpInvocationContext.mcpOwnerThreadId(scope),
       });
     }),
   claude_cancel: ({ runId }) =>

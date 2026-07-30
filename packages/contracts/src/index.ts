@@ -32,6 +32,7 @@ export * from "./resourceTelemetry.ts";
 export * from "./transcription.ts";
 export * from "./voice-local.ts";
 export * from "./voice-models.ts";
+export * from "./delegationRouter.ts";
 export * from "./delegatedRun.ts";
 export * from "./subagent.ts";
 export * from "./knowledge.ts";

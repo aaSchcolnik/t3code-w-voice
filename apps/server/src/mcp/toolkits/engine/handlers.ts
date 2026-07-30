@@ -3,6 +3,8 @@ import {
   ENGINE_WORKFLOW_NAMES,
   KnowledgeError,
   resolveEffectiveMcpSettings,
+  type SkillDetail,
+  SkillId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -28,7 +30,12 @@ import { EngineToolkit } from "./tools.ts";
 import { ServerSettingsService } from "../../../serverSettings.ts";
 import { ProjectionProjectRepository } from "../../../persistence/Services/ProjectionProjects.ts";
 import { SkillRepository } from "../../../persistence/Services/Skills.ts";
-import { builtinSkillToolName, isSkillAvailable } from "../../skillCatalog.ts";
+import {
+  parseSkillSearchHandle,
+  isSkillAvailable,
+  searchSkillCatalog,
+  skillCatalogRevision,
+} from "../../skillCatalog.ts";
 
 const Chunk = Schema.Struct({
   id: Schema.String,
@@ -89,6 +96,41 @@ const trimFastConsensusPanel = (panel: ReadonlyArray<EngineDelegationTarget>) =>
   return crossProvider === undefined ? panel.slice(0, 2) : [first, crossProvider];
 };
 
+const compactWorkflowKnowledge = (rows: ReadonlyArray<Record<string, unknown>>, limit: number) =>
+  rows.slice(0, limit).map((row) => {
+    const text = [
+      row.name,
+      row.title,
+      row.concern,
+      row.summary,
+      row.rule_text,
+      row.body,
+      row.reuse_guidance,
+      row.framework,
+      row.language,
+      row.package_manager,
+      row.test_runner,
+    ]
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+      .join(" — ")
+      .replace(/\s+/gu, " ")
+      .trim();
+    const paths = [row.locations, row.evidence, row.scope_glob]
+      .flatMap((value) =>
+        Array.isArray(value)
+          ? value.filter((item): item is string => typeof item === "string")
+          : typeof value === "string"
+            ? [value]
+            : [],
+      )
+      .slice(0, 8);
+    return {
+      id: row.entity_key ?? row.id ?? null,
+      excerpt: text.length <= 480 ? text : `${text.slice(0, 479)}…`,
+      evidencePaths: [...new Set(paths)],
+    };
+  });
+
 const workflow = (
   name: string,
   input: {
@@ -101,6 +143,7 @@ const workflow = (
     subjectArtifact?: { kind: string; seq?: number | undefined } | undefined;
   },
   requiredCapability?: McpInvocationContext.McpCapability,
+  selectedSkill?: SkillDetail,
 ) =>
   Effect.gen(function* () {
     const invokedAsCustomSkill = requiredCapability !== undefined;
@@ -118,9 +161,12 @@ const workflow = (
     }
     const scope = yield* requireCapability(capability);
     const skills = yield* SkillRepository;
-    const storedSkill = yield* skills
-      .getBySlug(name, invokedAsCustomSkill ? { projectId: scope.projectId! } : undefined)
-      .pipe(mapFailure("workflow-skill"));
+    const storedSkill =
+      selectedSkill === undefined
+        ? yield* skills
+            .getBySlug(name, invokedAsCustomSkill ? { projectId: scope.projectId! } : undefined)
+            .pipe(mapFailure("workflow-skill"))
+        : Option.some(selectedSkill);
     if (Option.isNone(storedSkill)) {
       return yield* new KnowledgeError({
         operation: "workflow-skill",
@@ -164,40 +210,40 @@ const workflow = (
     }
     const [rules, capabilities, lessons, buildingBlocks, knowledgeEntities] = yield* Effect.all(
       [
-        searchKnowledge(scope.projectId!, { table: "rules", query: input.task, limit: 8 }),
+        searchKnowledge(scope.projectId!, { table: "rules", query: input.task, limit: 5 }),
         searchKnowledge(scope.projectId!, {
           table: "knowledge_entities",
           category: "capability",
           query: input.task,
-          limit: 6,
+          limit: 4,
         }),
         searchKnowledge(scope.projectId!, {
           table: "lessons_learned",
           query: input.task,
           scopePath: input.scopePath,
-          limit: 8,
+          limit: 5,
         }),
         searchKnowledge(scope.projectId!, {
           table: "knowledge_entities",
           category: "building-block",
           query: input.task,
-          limit: 6,
+          limit: 4,
         }),
         searchKnowledge(scope.projectId!, {
           table: "knowledge_entities",
           query: input.task,
-          limit: 10,
+          limit: 5,
         }),
       ],
       { concurrency: "unbounded" },
     ).pipe(mapFailure("workflow-search"));
     const context = {
-      profile: status.profile,
-      rules,
-      features: capabilities,
-      lessons,
-      reusableComponents: buildingBlocks,
-      knowledgeEntities,
+      profile: status.profile ? compactWorkflowKnowledge([status.profile], 1)[0] : null,
+      rules: compactWorkflowKnowledge(rules, 5),
+      features: compactWorkflowKnowledge(capabilities, 4),
+      lessons: compactWorkflowKnowledge(lessons, 5),
+      reusableComponents: compactWorkflowKnowledge(buildingBlocks, 4),
+      knowledgeEntities: compactWorkflowKnowledge(knowledgeEntities, 5),
     };
     const resolvedDelegation = resolveDelegationChains({
       settings: effectiveMcp.engine.delegation,
@@ -262,6 +308,33 @@ const loadChunkState = (
     return { artifact, state };
   });
 
+const searchSkills = Effect.fn("engine.searchSkills")(function* (input: {
+  readonly query: string;
+  readonly limit?: number | undefined;
+}) {
+  const scope = yield* requireCapability("engine-knowledge");
+  const skills = yield* SkillRepository;
+  const projects = yield* ProjectionProjectRepository;
+  const project = yield* projects
+    .getById({ projectId: scope.projectId! })
+    .pipe(mapFailure("skill-search"));
+  const projectSkillOverrides = Option.isSome(project)
+    ? project.value.mcpOverrides?.skills
+    : undefined;
+  const records = yield* skills
+    .list({ projectId: scope.projectId! })
+    .pipe(mapFailure("skill-search"));
+  const availability = {
+    skills: records,
+    projectSkillOverrides,
+    capabilities: scope.capabilities,
+  };
+  return {
+    skills: searchSkillCatalog({ ...availability, ...input }),
+    revision: skillCatalogRevision(availability),
+  };
+});
+
 export const EngineToolkitHandlersLive = EngineToolkit.toLayer({
   engine_plan_brief: (input) => workflow("plan-brief", input),
   engine_plan: (input) => workflow("plan", input),
@@ -273,55 +346,84 @@ export const EngineToolkitHandlersLive = EngineToolkit.toLayer({
   engine_quality_pr: (input) => workflow("quality-pr", input),
   engine_hot_loops: (input) => workflow("hot-loops", input),
   engine_typescript: (input) => workflow("typescript", input),
+  engine_skill_search: (input) => searchSkills(input).pipe(Effect.map((data) => ({ data }))),
   engine_skill_list: () =>
+    searchSkills({ query: "", limit: 20 }).pipe(Effect.map((data) => ({ data }))),
+  engine_skill_run: ({ handle, slug, task }) =>
     Effect.gen(function* () {
       const scope = yield* requireCapability("engine-knowledge");
       const skills = yield* SkillRepository;
-      const projects = yield* ProjectionProjectRepository;
-      const project = yield* projects
-        .getById({ projectId: scope.projectId! })
-        .pipe(mapFailure("skill-list"));
-      const skillOverrides = Option.isSome(project)
-        ? project.value.mcpOverrides?.skills
-        : undefined;
-      const records = yield* skills
-        .list({ projectId: scope.projectId! })
-        .pipe(mapFailure("skill-list"));
-      return {
-        data: {
-          skills: records
-            .filter((skill) =>
-              isSkillAvailable(skill, {
-                projectSkillOverrides: skillOverrides,
-                capabilities: scope.capabilities,
-              }),
-            )
-            .map((skill) => ({
-              slug: skill.slug,
-              title: skill.title,
-              description: skill.description,
-              source: skill.source,
-              activeVersion: skill.activeVersion,
-              tool:
-                skill.source === "builtin" ? builtinSkillToolName(skill.slug) : "engine_skill_run",
-            })),
-        },
-      };
-    }),
-  engine_skill_run: ({ slug, task }) =>
-    Effect.gen(function* () {
-      const scope = yield* requireCapability("engine-knowledge");
-      const skills = yield* SkillRepository;
-      const skill = yield* skills
-        .getBySlug(slug, { projectId: scope.projectId! })
-        .pipe(mapFailure("skill-run"));
+      if (handle === undefined && slug === undefined) {
+        return yield* new KnowledgeError({
+          operation: "skill-run",
+          message: "Pass a skill handle from engine_skill_search or a compatibility slug.",
+        });
+      }
+      const parsedHandle = handle === undefined ? undefined : parseSkillSearchHandle(handle);
+      if (handle !== undefined && parsedHandle === undefined) {
+        return yield* new KnowledgeError({
+          operation: "skill-run",
+          message: "The skill handle is invalid. Run engine_skill_search again.",
+        });
+      }
+      const skill =
+        parsedHandle === undefined
+          ? yield* skills
+              .getBySlug(slug!, { projectId: scope.projectId! })
+              .pipe(mapFailure("skill-run"))
+          : yield* skills.get(SkillId.make(parsedHandle.skillId)).pipe(mapFailure("skill-run"));
+      if (
+        Option.isSome(skill) &&
+        parsedHandle !== undefined &&
+        skill.value.skill.activeVersion !== parsedHandle.version
+      ) {
+        return yield* new KnowledgeError({
+          operation: "skill-run",
+          message: "The selected skill changed after search. Run engine_skill_search again.",
+        });
+      }
       if (Option.isSome(skill) && skill.value.skill.source === "builtin") {
         return yield* new KnowledgeError({
           operation: "skill-run",
-          message: `Built-in skill '${slug}' has a dedicated engine tool.`,
+          message: `Built-in skill '${skill.value.skill.slug}' has a dedicated engine tool.`,
         });
       }
-      return yield* workflow(slug, { task }, "engine-knowledge");
+      if (Option.isNone(skill)) {
+        return yield* new KnowledgeError({
+          operation: "skill-run",
+          message: "The selected skill no longer exists. Run engine_skill_search again.",
+        });
+      }
+      const projects = yield* ProjectionProjectRepository;
+      const project = yield* projects
+        .getById({ projectId: scope.projectId! })
+        .pipe(mapFailure("skill-run"));
+      const projectSkillOverrides = Option.isSome(project)
+        ? project.value.mcpOverrides?.skills
+        : undefined;
+      if (
+        skill.value.skill.projectId === null &&
+        projectSkillOverrides?.[skill.value.skill.skillId] === false
+      ) {
+        return yield* new KnowledgeError({
+          operation: "skill-run",
+          message: `Skill '${skill.value.skill.slug}' is disabled for this project in Settings → Skills.`,
+        });
+      }
+      if (
+        (skill.value.skill.projectId !== null && skill.value.skill.projectId !== scope.projectId) ||
+        !isSkillAvailable(skill.value.skill, {
+          projectSkillOverrides,
+          capabilities: scope.capabilities,
+        })
+      ) {
+        return yield* new KnowledgeError({
+          operation: "skill-run",
+          message:
+            "The selected skill is unavailable in this project. Run engine_skill_search again.",
+        });
+      }
+      return yield* workflow(skill.value.skill.slug, { task }, "engine-knowledge", skill.value);
     }),
   engine_skill_save: ({ slug, title, description, content, delegation }) =>
     Effect.gen(function* () {

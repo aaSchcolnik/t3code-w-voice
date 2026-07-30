@@ -568,6 +568,23 @@ describe("serverSettings helpers", () => {
     ).toEqual({ worker: [{ provider: "codex", model: "custom-worker" }] });
   });
 
+  it("deep-merges partial delegation router settings", () => {
+    const next = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      mcp: {
+        router: {
+          mode: "proactive",
+          maxConcurrentEnvironment: 3,
+        },
+      },
+    });
+
+    expect(next.mcp.router).toEqual({
+      ...DEFAULT_SERVER_SETTINGS.mcp.router,
+      mode: "proactive",
+      maxConcurrentEnvironment: 3,
+    });
+  });
+
   it("deep-merges skill toggles while replacing disabled skill arrays", () => {
     const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       skills: {

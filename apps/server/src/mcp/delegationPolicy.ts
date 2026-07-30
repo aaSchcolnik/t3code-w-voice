@@ -1,13 +1,16 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import type { ProviderDriverKind } from "@t3tools/contracts";
+import type { DelegationMode, ProjectId, ProviderDriverKind } from "@t3tools/contracts";
 
+import { searchKnowledge } from "../knowledge/KnowledgeRepository.ts";
+import { buildProjectInstructionCapsule } from "../knowledge/ProjectInstructionCapsuleService.ts";
+import { ProjectKnowledgeStore } from "../knowledge/ProjectKnowledgeStore.ts";
 import { ProjectionProjectRepository } from "../persistence/Services/ProjectionProjects.ts";
 import { SkillRepository } from "../persistence/Services/Skills.ts";
 import type { McpCapability } from "./McpInvocationContext.ts";
 import type { McpProviderSessionConfig } from "./McpProviderSession.ts";
-import { renderSkillCatalogSection } from "./skillCatalog.ts";
+import { skillCatalogRevision } from "./skillCatalog.ts";
 
 const TRACKED_PROVIDER_TOOLS = {
   "codex-agent": {
@@ -43,36 +46,42 @@ export function trackedDelegationInstructions(
   capabilities: ReadonlySet<McpCapability>,
   providerDriver?: ProviderDriverKind,
   nativeSubagentTracking = false,
+  delegationMode: DelegationMode = "proactive",
 ): string | undefined {
-  const callable = Object.entries(TRACKED_PROVIDER_TOOLS).flatMap(([capability, tool]) =>
-    capabilities.has(capability as McpCapability) ? [tool] : [],
-  );
+  const callable =
+    delegationMode === "proactive"
+      ? Object.entries(TRACKED_PROVIDER_TOOLS).flatMap(([capability, tool]) =>
+          capabilities.has(capability as McpCapability) ? [tool] : [],
+        )
+      : [];
   const nativeInstruction = nativeSubagentTracking
     ? sameProviderNativeInstruction(providerDriver)
     : undefined;
-  if (callable.length === 0 && nativeInstruction === undefined) return undefined;
+  const neutralInstruction =
+    delegationMode === "proactive" && capabilities.has("delegation-router")
+      ? "For independent bounded work, prefer `delegate_start`: submit one to four neutral task lanes together and provide a stable idempotency key. Reuse that key only when retrying the identical request. The returned `allocated` state does not mean a provider accepted the turn."
+      : undefined;
+  if (
+    callable.length === 0 &&
+    nativeInstruction === undefined &&
+    neutralInstruction === undefined
+  ) {
+    return undefined;
+  }
 
-  const toolLines = callable.map(
-    (tool) => `- Use \`mcp__t3-code__${tool.start}\` (\`${tool.start}\`) for ${tool.label}.`,
-  );
+  const toolNames = callable.map((tool) => `\`${tool.start}\` (${tool.label})`).join(", ");
   return [
     "## T3 Code tracked subagents",
     nativeInstruction,
+    neutralInstruction,
     callable.length > 0
-      ? "When delegating to another provider, you MUST use only the callable T3 Code tools listed here:"
-      : undefined,
-    ...toolLines,
-    callable.length > 0
-      ? "The list order is not a provider preference. For a provider-neutral request, choose whichever available tracked mechanism best fits the task and current context. Honor an explicit provider requested by the user or active skill."
-      : undefined,
-    callable.length > 0
-      ? "Call `*_start` for each subagent you need, then end your turn. Results are delivered automatically as one new server message when all runs finish. NEVER wait, poll, sleep, or create background polling commands."
+      ? `Compatibility tools remain available for explicit provider requests: ${toolNames}. Pass a stable idempotency key for retry-safe starts; an omitted key has no retry deduplication. Start all needed runs, then end the turn. Results and questions arrive automatically—never wait, poll, sleep, or create background polling commands.`
       : undefined,
     capabilities.has("cursor-agent")
-      ? "If Cursor needs structured input, the server wakes you with the question. Call `cursor_respond`, then end your turn; the final result is delivered automatically."
+      ? "Answer a tracked Cursor question with `cursor_respond`, then end the turn."
       : undefined,
-    callable.length > 0
-      ? "Tracked subagents use a server-locked workspace-write sandbox, automatic approval handling, and a Git read-only policy. They may edit project files, but must not access paths outside the workspace or run Git commands that change local or remote state. Permission requests are handled by the server and never require user action; structured questions are delivered by a server wake-up."
+    callable.length > 0 || neutralInstruction !== undefined
+      ? "Tracked subagents stay inside the workspace and use Git read-only; the server handles permission requests."
       : undefined,
   ]
     .filter((line): line is string => line !== undefined)
@@ -81,7 +90,7 @@ export function trackedDelegationInstructions(
 
 const IMPLEMENTATION_ENGINE_INSTRUCTIONS = `## T3 Code Implementation Engine
 
-Implementation Engine tools are available for project-aware planning, consensus analysis, implementation, audits, performance analysis, and TypeScript work. Before coding tasks, call \`engine_knowledge_status\`. Use \`engine_plan\`, \`engine_consensus\`, \`engine_enrich\`, \`engine_implement\`, and the matching quality/performance tools when their structured workflow fits the task. \`engine_consensus\` can analyze any subject with a multi-agent panel. Store workflow output with the engine case/artifact tools; do not create engine temp directories in the repository. Custom skills are listed in the "T3 Code skills" section; run one with \`engine_skill_run({ slug, task })\`. Call \`engine_skill_list\` only if you need to re-check the catalog. When the user asks to create or modify a T3 Code skill, use \`engine_skill_save\`; skills are stored and versioned in T3 Code's database, and an existing current-project variant takes precedence over its global fallback. Delegation defaults are configurable per project: call \`engine_delegation_get\` to inspect global, project, effective, and resolved chains. \`engine_delegation_set\` changes the current project by default; pass scope=\`global\` only when the user explicitly asks to change every inheriting project. Consensus members, models, reasoning options, and focus lenses can be changed through role \`consensus\` and take effect on the next hydration.`;
+Use the matching engine workflow for project-aware planning, implementation, audits, performance, or TypeScript work. Inspect project knowledge first. Discover reusable workflows with \`engine_skill_search\`; run a selected handle with \`engine_skill_run\`. Search bounded evidence with \`knowledge_search\`.`;
 
 export function implementationEngineInstructions(
   capabilities: ReadonlySet<McpCapability>,
@@ -93,51 +102,85 @@ export function mcpSessionInstructions(
   capabilities: ReadonlySet<McpCapability>,
   providerDriver?: ProviderDriverKind,
   nativeSubagentTracking = false,
+  delegationMode: DelegationMode = "proactive",
 ): string | undefined {
-  const sections = [
-    trackedDelegationInstructions(capabilities, providerDriver, nativeSubagentTracking),
-    implementationEngineInstructions(capabilities),
-  ].filter((section): section is string => section !== undefined);
-  return sections.length > 0 ? sections.join("\n\n") : undefined;
+  if (capabilities.size === 0) return undefined;
+  const capsule = buildProjectInstructionCapsule({
+    capabilities,
+    providerDriver,
+    nativeSubagentTracking,
+  }).text;
+  const delegation = trackedDelegationInstructions(
+    capabilities,
+    providerDriver,
+    nativeSubagentTracking,
+    delegationMode,
+  );
+  return delegation === undefined ? capsule : `${capsule}\n\n${delegation}`;
 }
 
-const appendInstructionSection = (
-  base: string | undefined,
-  section: string | undefined,
-): string | undefined => {
-  const sections = [base, section].filter((value): value is string => value !== undefined);
-  return sections.length > 0 ? sections.join("\n\n") : undefined;
+type ProjectStandardsLoader = (projectId: ProjectId) => Effect.Effect<ReadonlyArray<string>>;
+
+const standardsFromRows = (rows: ReadonlyArray<Record<string, unknown>>): ReadonlyArray<string> => {
+  const riskOrder = { high: 0, medium: 1, low: 2 } as const;
+  return [...rows]
+    .sort((left, right) => {
+      const leftRisk =
+        typeof left.risk === "string" && left.risk in riskOrder
+          ? riskOrder[left.risk as keyof typeof riskOrder]
+          : 3;
+      const rightRisk =
+        typeof right.risk === "string" && right.risk in riskOrder
+          ? riskOrder[right.risk as keyof typeof riskOrder]
+          : 3;
+      return leftRisk - rightRisk;
+    })
+    .flatMap((row) => (typeof row.rule_text === "string" ? [row.rule_text] : []))
+    .slice(0, 4);
 };
 
 export const buildMcpSessionInstructions = Effect.fn("buildMcpSessionInstructions")(function* (
   session: McpProviderSessionConfig,
+  loadStandards: ProjectStandardsLoader = () => Effect.succeed([]),
 ): Effect.fn.Return<string | undefined, never, SkillRepository | ProjectionProjectRepository> {
   const fallback = mcpSessionInstructions(
     session.capabilities,
     session.providerDriver,
     session.nativeSubagentTracking,
+    session.delegationMode,
   );
   const loadCatalog = Effect.gen(function* () {
     const skills = yield* SkillRepository;
     const projects = yield* ProjectionProjectRepository;
-    const [records, project] = yield* Effect.all(
+    const [records, project, standards] = yield* Effect.all(
       [
         skills.list({ projectId: session.projectId }),
         projects.getById({ projectId: session.projectId }),
+        loadStandards(session.projectId),
       ],
       { concurrency: "unbounded" },
     );
     const projectSkillOverrides = Option.isSome(project)
       ? project.value.mcpOverrides?.skills
       : undefined;
-    return appendInstructionSection(
-      fallback,
-      renderSkillCatalogSection({
+    const capsule = buildProjectInstructionCapsule({
+      capabilities: session.capabilities,
+      providerDriver: session.providerDriver,
+      nativeSubagentTracking: session.nativeSubagentTracking,
+      skillRevision: skillCatalogRevision({
         skills: records,
         projectSkillOverrides,
         capabilities: session.capabilities,
       }),
+      standards,
+    }).text;
+    const delegation = trackedDelegationInstructions(
+      session.capabilities,
+      session.providerDriver,
+      session.nativeSubagentTracking,
+      session.delegationMode,
     );
+    return delegation === undefined ? capsule : `${capsule}\n\n${delegation}`;
   });
 
   return yield* loadCatalog.pipe(
@@ -164,6 +207,7 @@ export class McpSessionInstructionBuilderService extends Context.Reference<McpSe
           session.capabilities,
           session.providerDriver,
           session.nativeSubagentTracking,
+          session.delegationMode,
         ),
       ),
   },
@@ -173,12 +217,24 @@ export const makeMcpSessionInstructionBuilder = Effect.fn("makeMcpSessionInstruc
   function* (): Effect.fn.Return<
     McpSessionInstructionBuilder,
     never,
-    SkillRepository | ProjectionProjectRepository
+    SkillRepository | ProjectionProjectRepository | ProjectKnowledgeStore
   > {
     const skills = yield* SkillRepository;
     const projects = yield* ProjectionProjectRepository;
+    const knowledgeStore = yield* ProjectKnowledgeStore;
+    const loadStandards: ProjectStandardsLoader = (projectId) =>
+      searchKnowledge(projectId, { table: "rules", query: "", limit: 12 }).pipe(
+        Effect.map(standardsFromRows),
+        Effect.catch((cause) =>
+          Effect.logWarning("Failed to load project standards for the MCP instruction capsule", {
+            cause: String(cause),
+            projectId,
+          }).pipe(Effect.as([])),
+        ),
+        Effect.provideService(ProjectKnowledgeStore, knowledgeStore),
+      );
     return (session) =>
-      buildMcpSessionInstructions(session).pipe(
+      buildMcpSessionInstructions(session, loadStandards).pipe(
         Effect.provideService(SkillRepository, skills),
         Effect.provideService(ProjectionProjectRepository, projects),
       );

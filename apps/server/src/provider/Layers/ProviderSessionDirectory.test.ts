@@ -122,6 +122,38 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
       }
     }));
 
+  it("persists explicit delegated ownership and clears it without deleting the binding", () =>
+    Effect.gen(function* () {
+      const directory = yield* ProviderSessionDirectory;
+      const threadId = ThreadId.make("delegated-owned-thread");
+      const ownerThreadId = ThreadId.make("parent-owned-thread");
+
+      yield* directory.upsert({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        sessionKind: "delegated",
+        ownerThreadId,
+      });
+      const delegated = yield* directory.getBinding(threadId);
+      assert.equal(Option.isSome(delegated), true);
+      if (Option.isSome(delegated)) {
+        assert.equal(delegated.value.sessionKind, "delegated");
+        assert.equal(delegated.value.ownerThreadId, ownerThreadId);
+      }
+
+      yield* directory.upsert({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        sessionKind: "standard",
+      });
+      const standard = yield* directory.getBinding(threadId);
+      assert.equal(Option.isSome(standard), true);
+      if (Option.isSome(standard)) {
+        assert.equal(standard.value.sessionKind, "standard");
+        assert.equal(standard.value.ownerThreadId, undefined);
+      }
+    }));
+
   it("lists persisted bindings with metadata in oldest-first order", () =>
     Effect.gen(function* () {
       const directory = yield* ProviderSessionDirectory;

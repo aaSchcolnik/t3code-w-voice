@@ -2,6 +2,19 @@ import * as Schema from "effect/Schema";
 
 import { IsoDateTime, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
+  DelegationAttempt,
+  DelegationBatchId,
+  DelegationDeliveryMode,
+  DelegationDispatchState,
+  DelegationIdempotencyKey,
+  DelegationLaneId,
+  DelegationRequestHash,
+  DelegationResultCompleteness,
+  DelegationRouteDecision,
+  DelegationRouteGroupId,
+  DelegationWorkflowId,
+} from "./delegationRouter.ts";
+import {
   ChatAttachment,
   ProviderApprovalPolicy,
   ProviderInteractionMode,
@@ -15,6 +28,7 @@ import {
   ProviderOptionSelections,
   ResolvedProviderOption,
 } from "./model.ts";
+import { UserInputQuestion } from "./userInput.ts";
 
 export const DelegatedRunId = TrimmedNonEmptyString.pipe(Schema.brand("DelegatedRunId"));
 export type DelegatedRunId = typeof DelegatedRunId.Type;
@@ -41,10 +55,22 @@ export const DelegatedRun = Schema.Struct({
   parentTurnId: Schema.optional(TrimmedNonEmptyString),
   parentToolCallId: Schema.optional(TrimmedNonEmptyString),
   parentRunId: Schema.optional(DelegatedRunId),
+  workflowId: Schema.optional(DelegationWorkflowId),
+  batchId: Schema.optional(DelegationBatchId),
+  laneId: Schema.optional(DelegationLaneId),
+  routeGroupId: Schema.optional(DelegationRouteGroupId),
+  idempotencyKey: Schema.optional(DelegationIdempotencyKey),
+  requestHash: Schema.optional(DelegationRequestHash),
+  deliveryMode: Schema.optional(DelegationDeliveryMode),
+  routeDecision: Schema.optional(DelegationRouteDecision),
+  attempts: Schema.optional(Schema.Array(DelegationAttempt)),
+  dispatchState: Schema.optional(DelegationDispatchState),
+  resumeOfRunId: Schema.optional(DelegatedRunId),
   providerSessionId: Schema.optional(TrimmedNonEmptyString),
   providerThreadId: Schema.optional(TrimmedNonEmptyString),
   providerTurnId: Schema.optional(TrimmedNonEmptyString),
   providerRequestId: Schema.optional(TrimmedNonEmptyString),
+  pendingQuestions: Schema.optional(Schema.Array(UserInputQuestion)),
   title: TrimmedNonEmptyString,
   taskPreview: TrimmedNonEmptyString,
   status: DelegatedRunStatus,
@@ -71,6 +97,15 @@ export const DelegatedRun = Schema.Struct({
   profile: Schema.optional(TrimmedNonEmptyString),
   workspaceRoot: TrimmedNonEmptyString,
   sequence: NonNegativeInt,
+  allocatedAt: Schema.optional(IsoDateTime),
+  sessionStartedAt: Schema.optional(IsoDateTime),
+  dispatchStartedAt: Schema.optional(IsoDateTime),
+  turnAcceptedAt: Schema.optional(IsoDateTime),
+  firstRuntimeEventAt: Schema.optional(IsoDateTime),
+  terminalEventSeen: Schema.optional(Schema.Boolean),
+  assistantMessageCount: Schema.optional(NonNegativeInt),
+  finalMessagePresent: Schema.optional(Schema.Boolean),
+  resultCompleteness: Schema.optional(DelegationResultCompleteness),
   startedAt: Schema.NullOr(IsoDateTime),
   completedAt: Schema.NullOr(IsoDateTime),
   createdAt: IsoDateTime,

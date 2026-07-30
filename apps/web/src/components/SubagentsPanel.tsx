@@ -3,7 +3,7 @@ import {
   BrainIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  LoaderCircleIcon,
+  CircleDashedIcon,
   SearchIcon,
   ShieldCheckIcon,
   WorkflowIcon,
@@ -21,7 +21,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
 import { SubagentTranscriptPanel } from "./subagents/SubagentTranscriptPanel";
-import { isActiveSubagentStatus, subagentStatusLabel } from "./subagents/subagentRunPresentation";
+import { isActiveSubagentStatus, subagentPhaseLabel } from "./subagents/subagentRunPresentation";
 import { SubagentMetadataLine } from "./subagents/SubagentMetadataLine";
 import {
   consumePendingSubagentNotificationActivation,
@@ -246,10 +246,10 @@ function SubagentRow({
       <button
         type="button"
         onClick={() => onOpen(run)}
-        aria-label={`${run.runKind === "workflow" ? "Dynamic workflow" : `${providerLabel} subagent`} “${run.title}” — ${subagentStatusLabel(run.status)}. Open details.`}
+        aria-label={`${run.runKind === "workflow" ? "Dynamic workflow" : `${providerLabel} subagent`} “${run.title}” — ${subagentPhaseLabel(run)}. Open details.`}
         aria-current={selected || undefined}
         className={cn(
-          "group flex min-w-0 flex-1 gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
+          "group flex min-w-0 flex-1 gap-3 rounded-xl px-3 py-2.5 text-left",
           "hover:bg-accent/45 focus-visible:outline-2 focus-visible:outline-ring active:bg-accent/60",
           selected && "bg-accent/45",
         )}
@@ -270,7 +270,7 @@ function SubagentRow({
             />
           )}
           {active ? (
-            <LoaderCircleIcon className="absolute -right-1 -bottom-1 size-3.5 animate-spin rounded-full bg-background p-0.5 text-primary" />
+            <CircleDashedIcon className="absolute -right-1 -bottom-1 size-3.5 rounded-full bg-background p-0.5 text-primary" />
           ) : run.status === "failed" ? (
             <span className="absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-destructive ring-2 ring-background" />
           ) : null}
@@ -290,7 +290,7 @@ function SubagentRow({
           {run.runKind === "workflow" ? (
             <div className="mt-1 flex items-center gap-2">
               <Badge size="sm" variant={workflowStatusVariant(run.status)}>
-                {subagentStatusLabel(run.status)}
+                {subagentPhaseLabel(run)}
               </Badge>
               {workflowStats ? (
                 <span className="ml-auto truncate text-[10px] tabular-nums text-muted-foreground/75">
@@ -304,7 +304,7 @@ function SubagentRow({
                 <SubagentMetadataLine run={run} provider={rowProvider} />
               </div>
               <p className="mt-1 text-[10px] font-medium text-muted-foreground">
-                {subagentStatusLabel(run.status)}
+                {subagentPhaseLabel(run)}
               </p>
             </>
           )}
@@ -319,7 +319,7 @@ function SubagentRow({
           )}
         </div>
         {!hasChildren ? (
-          <ChevronRightIcon className="mt-2 size-3.5 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
+          <ChevronRightIcon className="mt-2 size-3.5 shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground" />
         ) : null}
       </button>
       {hasChildren ? (

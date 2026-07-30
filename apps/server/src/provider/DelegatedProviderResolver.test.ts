@@ -136,12 +136,14 @@ describe("resolveDelegatedProvider", () => {
     });
     expect(disabled.ok).toBe(false);
     expect(!disabled.ok && disabled.message).toContain("disabled");
+    expect(!disabled.ok && disabled.reasonCode).toBe("provider_disabled");
 
     const uninstalled = resolveDelegatedProvider({
       providers: [makeSnapshot({ instanceId: "cursor", installed: false })],
       provider: "cursor",
     });
     expect(!uninstalled.ok && uninstalled.message).toContain("not installed");
+    expect(!uninstalled.ok && uninstalled.reasonCode).toBe("provider_uninstalled");
 
     const unavailable = resolveDelegatedProvider({
       providers: [
@@ -156,9 +158,11 @@ describe("resolveDelegatedProvider", () => {
       provider: "cursor",
     });
     expect(!unavailable.ok && unavailable.message).toContain("not registered in this build");
+    expect(!unavailable.ok && unavailable.reasonCode).toBe("provider_unavailable");
 
     const missing = resolveDelegatedProvider({ providers: [], provider: "cursor" });
     expect(!missing.ok && missing.message).toContain("No cursor provider instance is configured");
+    expect(!missing.ok && missing.reasonCode).toBe("provider_unavailable");
   });
 
   it("rejects instances owned by a different driver", () => {
@@ -169,6 +173,7 @@ describe("resolveDelegatedProvider", () => {
     });
     expect(result.ok).toBe(false);
     expect(!result.ok && result.message).toContain("owned by driver 'codex'");
+    expect(!result.ok && result.reasonCode).toBe("explicit_constraint_mismatch");
   });
 
   it("resolves composer 2.5 by slug and by display name", () => {
@@ -196,6 +201,7 @@ describe("resolveDelegatedProvider", () => {
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
+    expect(result.reasonCode).toBe("model_unavailable");
     expect(result.message).toContain("composer-9000");
     expect(result.message).toContain("'composer-2.5'");
     expect(result.message).toContain("'gpt-5.2'");

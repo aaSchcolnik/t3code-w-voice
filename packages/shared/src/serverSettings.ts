@@ -126,13 +126,17 @@ export function applyServerSettingsPatch(
   patch: ServerSettingsPatch,
 ): ServerSettings {
   const selectionPatch = patch.textGenerationModelSelection;
-  const delegationPatch = patch.mcp?.engine?.delegation;
+  const mcpPatch = patch.mcp;
+  const routerPatch = mcpPatch?.router;
+  const enginePatch = mcpPatch?.engine;
+  const delegationPatch = enginePatch?.delegation;
   const skillProviderPatches = patch.skills?.providers;
   const {
     automaticGitFetchInterval,
     providerHealthRefreshInterval,
     backgroundActivityProfile,
     backgroundActivity,
+    mcp: _mcp,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -201,6 +205,39 @@ export function applyServerSettingsPatch(
   const resolvedBackgroundActivity = resolveBackgroundActivitySettings(
     normalizedBackgroundActivity,
   );
+  const mergedMcp: ServerSettings["mcp"] = {
+    preview: mcpPatch?.preview ?? current.mcp.preview,
+    codexAgent: mcpPatch?.codexAgent ?? current.mcp.codexAgent,
+    cursorAgent: mcpPatch?.cursorAgent ?? current.mcp.cursorAgent,
+    claudeAgent: mcpPatch?.claudeAgent ?? current.mcp.claudeAgent,
+    router: {
+      mode: routerPatch?.mode ?? current.mcp.router.mode,
+      maxBatchSize: routerPatch?.maxBatchSize ?? current.mcp.router.maxBatchSize,
+      maxConcurrentPerParent:
+        routerPatch?.maxConcurrentPerParent ?? current.mcp.router.maxConcurrentPerParent,
+      maxConcurrentEnvironment:
+        routerPatch?.maxConcurrentEnvironment ?? current.mcp.router.maxConcurrentEnvironment,
+      defaultTimeoutMs: routerPatch?.defaultTimeoutMs ?? current.mcp.router.defaultTimeoutMs,
+      diversity: routerPatch?.diversity ?? current.mcp.router.diversity,
+      fallback: routerPatch?.fallback ?? current.mcp.router.fallback,
+      explanation: routerPatch?.explanation ?? current.mcp.router.explanation,
+    },
+    engine: {
+      planning: enginePatch?.planning ?? current.mcp.engine.planning,
+      consensus: enginePatch?.consensus ?? current.mcp.engine.consensus,
+      enrich: enginePatch?.enrich ?? current.mcp.engine.enrich,
+      implement: enginePatch?.implement ?? current.mcp.engine.implement,
+      quality: enginePatch?.quality ?? current.mcp.engine.quality,
+      performance: enginePatch?.performance ?? current.mcp.engine.performance,
+      typescript: enginePatch?.typescript ?? current.mcp.engine.typescript,
+      knowledgeScan: current.mcp.engine.knowledgeScan,
+      delegation: {
+        roles: delegationPatch?.roles ?? current.mcp.engine.delegation.roles,
+        skillOverrides:
+          delegationPatch?.skillOverrides ?? current.mcp.engine.delegation.skillOverrides,
+      },
+    },
+  };
   const nextWithReplacements = {
     ...nextWithReplacementsBase,
     backgroundActivity: normalizedBackgroundActivity,
@@ -226,23 +263,7 @@ export function applyServerSettingsPatch(
             ) as ServerSettings["skills"]["providers"],
           },
         }),
-    ...(delegationPatch?.roles !== undefined || delegationPatch?.skillOverrides !== undefined
-      ? {
-          mcp: {
-            ...next.mcp,
-            engine: {
-              ...next.mcp.engine,
-              delegation: {
-                ...next.mcp.engine.delegation,
-                ...(delegationPatch.roles === undefined ? {} : { roles: delegationPatch.roles }),
-                ...(delegationPatch.skillOverrides === undefined
-                  ? {}
-                  : { skillOverrides: delegationPatch.skillOverrides }),
-              },
-            },
-          },
-        }
-      : {}),
+    mcp: mergedMcp,
   };
   if (!selectionPatch) {
     return nextWithReplacements;

@@ -1,9 +1,21 @@
 import * as Schema from "effect/Schema";
 
 import { IsoDateTime, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  DelegationAttempt,
+  DelegationBatchId,
+  DelegationDispatchState,
+  DelegationLaneId,
+  DelegationResultCompleteness,
+  DelegationRouteDecision,
+  DelegationRouteGroupId,
+  DelegationRouteSummary,
+  DelegationWorkflowId,
+} from "./delegationRouter.ts";
 import { ProviderOptionSelections, ResolvedProviderOption } from "./model.ts";
 import { OrchestrationMessage, OrchestrationThreadActivity } from "./orchestration.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import { UserInputQuestion } from "./userInput.ts";
 
 export const SubagentRunId = TrimmedNonEmptyString.pipe(Schema.brand("SubagentRunId"));
 export type SubagentRunId = typeof SubagentRunId.Type;
@@ -89,6 +101,15 @@ export const SubagentRun = Schema.Struct({
   capabilities: SubagentCapabilities,
   runKind: Schema.optional(Schema.Literals(["agent", "workflow"])),
   workflow: Schema.optional(SubagentWorkflowInfo),
+  workflowId: Schema.optional(DelegationWorkflowId),
+  batchId: Schema.optional(DelegationBatchId),
+  laneId: Schema.optional(DelegationLaneId),
+  route: Schema.optional(DelegationRouteSummary),
+  dispatchState: Schema.optional(DelegationDispatchState),
+  terminalEventSeen: Schema.optional(Schema.Boolean),
+  assistantMessageCount: Schema.optional(NonNegativeInt),
+  finalMessagePresent: Schema.optional(Schema.Boolean),
+  resultCompleteness: Schema.optional(DelegationResultCompleteness),
   stats: Schema.optional(SubagentStats),
   resumeOfRunId: Schema.optional(SubagentRunId),
   createdAt: IsoDateTime,
@@ -98,6 +119,22 @@ export const SubagentRun = Schema.Struct({
   sequence: NonNegativeInt,
 });
 export type SubagentRun = typeof SubagentRun.Type;
+
+export const SubagentRunDetailsInput = Schema.Struct({
+  rootThreadId: ThreadId,
+  runId: SubagentRunId,
+});
+export type SubagentRunDetailsInput = typeof SubagentRunDetailsInput.Type;
+
+export const SubagentRunDetails = Schema.Struct({
+  runId: SubagentRunId,
+  source: SubagentSource,
+  routeGroupId: Schema.optional(DelegationRouteGroupId),
+  routeDecision: Schema.optional(DelegationRouteDecision),
+  attempts: Schema.Array(DelegationAttempt),
+  pendingQuestions: Schema.optional(Schema.Array(UserInputQuestion)),
+});
+export type SubagentRunDetails = typeof SubagentRunDetails.Type;
 
 export const SubagentRunSubscribeInput = Schema.Struct({
   /** When omitted, subscribe to all subagent runs in the environment. */
@@ -126,6 +163,18 @@ export const SubagentControlInput = Schema.Struct({
   expectedSequence: NonNegativeInt,
 });
 export type SubagentControlInput = typeof SubagentControlInput.Type;
+
+export const SubagentUserInputAnswers = Schema.Record(
+  Schema.String,
+  Schema.Union([Schema.String, Schema.Array(Schema.String)]),
+);
+export type SubagentUserInputAnswers = typeof SubagentUserInputAnswers.Type;
+
+export const SubagentRespondInput = Schema.Struct({
+  ...SubagentControlInput.fields,
+  answers: SubagentUserInputAnswers,
+});
+export type SubagentRespondInput = typeof SubagentRespondInput.Type;
 
 export const SubagentControlResult = Schema.Struct({
   runId: SubagentRunId,

@@ -15,6 +15,9 @@ import {
   makeActiveSubagentCountsAtom,
   mergeSubagentRunsWithLegacyFallback,
   shouldUseLegacySubagentFallback,
+  subagentControlInput,
+  subagentRunDetailsInput,
+  upsertSubagentRunSorted,
 } from "./subagents";
 
 const run = (overrides: Partial<SubagentRun> = {}): SubagentRun => ({
@@ -131,6 +134,72 @@ describe("applySubagentRunEvent", () => {
         run: run({ status: "failed", sequence: 4 }),
       }),
     ).toBe(state);
+  });
+
+  it("preserves the run-list reference for an equal-sequence remote replay", () => {
+    const runs = [run({ sequence: 4 })];
+    const state = { snapshotSequence: 8, runs };
+    const next = applySubagentRunEvent(state, {
+      type: "run.upserted",
+      snapshotSequence: 9,
+      run: run({ status: "waiting_for_input", sequence: 4 }),
+    });
+
+    expect(next.runs).toBe(runs);
+    expect(next.snapshotSequence).toBe(9);
+  });
+
+  it("applies routed streamed updates without recomputing unrelated run objects", () => {
+    const unrelated = run({
+      id: SubagentRunId.make("unrelated"),
+      createdAt: "2026-07-15T00:00:00.000Z",
+    });
+    const routed = run({
+      id: SubagentRunId.make("routed"),
+      source: "delegated",
+      dispatchState: "allocated",
+      sequence: 1,
+    });
+    const state = { snapshotSequence: 1, runs: upsertSubagentRunSorted([unrelated], routed) };
+    const accepted = applySubagentRunEvent(state, {
+      type: "run.upserted",
+      snapshotSequence: 2,
+      run: {
+        ...routed,
+        dispatchState: "turn_accepted",
+        status: "running",
+        sequence: 2,
+      },
+    });
+
+    expect(accepted.runs.find(({ id }) => id === unrelated.id)).toBe(unrelated);
+    expect(accepted.runs.find(({ id }) => id === routed.id)?.dispatchState).toBe("turn_accepted");
+  });
+
+  it("keeps cancel inputs sequence-checked and structured-input capability server-authored", () => {
+    const waiting = run({
+      id: SubagentRunId.make("routed-waiting"),
+      status: "waiting_for_input",
+      sequence: 7,
+      capabilities: {
+        canCancel: true,
+        canSteer: false,
+        canRespond: true,
+        canResume: false,
+        transcriptQuality: "live",
+      },
+    });
+
+    expect(subagentControlInput(ThreadId.make("thread-1"), waiting)).toEqual({
+      rootThreadId: "thread-1",
+      runId: "routed-waiting",
+      expectedSequence: 7,
+    });
+    expect(waiting.capabilities.canRespond).toBe(true);
+    expect(subagentRunDetailsInput(ThreadId.make("thread-1"), waiting.id)).toEqual({
+      rootThreadId: "thread-1",
+      runId: "routed-waiting",
+    });
   });
 });
 

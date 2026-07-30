@@ -81,6 +81,8 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import * as DelegatedRunServiceModule from "./orchestration/DelegatedRunService.ts";
 import * as SubagentTranscriptService from "./orchestration/SubagentTranscriptService.ts";
 import * as SubagentRunService from "./orchestration/SubagentRunService.ts";
+import { getOwnedSubagentRunDetails } from "./orchestration/SubagentRunDetails.ts";
+import { respondToOwnedSubagentRun } from "./orchestration/SubagentRunRespond.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
   observeRpcStream as instrumentRpcStream,
@@ -2241,6 +2243,27 @@ const makeWsRpcLayer = (
                 sequence: updated.sequence,
                 status: updated.status,
               };
+            }),
+            { "rpc.aggregate": "subagents" },
+          ),
+        [WS_METHODS.subagentsRespond]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.subagentsRespond,
+            respondToOwnedSubagentRun(input, {
+              subagentRuns,
+              delegatedRuns: {
+                get: DelegatedRunServiceModule.getActiveDelegatedRun,
+                respond: DelegatedRunServiceModule.respondToActiveDelegatedRun,
+              },
+            }),
+            { "rpc.aggregate": "subagents" },
+          ),
+        [WS_METHODS.subagentsGetRunDetails]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.subagentsGetRunDetails,
+            getOwnedSubagentRunDetails(input, {
+              subagentRuns,
+              delegatedRuns: { get: DelegatedRunServiceModule.getActiveDelegatedRun },
             }),
             { "rpc.aggregate": "subagents" },
           ),

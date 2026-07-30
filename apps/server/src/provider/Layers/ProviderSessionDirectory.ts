@@ -1,8 +1,9 @@
-import { defaultInstanceIdForDriver, ProviderDriverKind, type ThreadId } from "@t3tools/contracts";
+import { defaultInstanceIdForDriver, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
@@ -40,10 +41,6 @@ function decodeProviderDriverKind(
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 function mergeRuntimePayload(
   existing: unknown | null,
   next: unknown | null | undefined,
@@ -51,11 +48,33 @@ function mergeRuntimePayload(
   if (next === undefined) {
     return existing ?? null;
   }
-  if (isRecord(existing) && isRecord(next)) {
+  if (
+    Predicate.isObject(existing) &&
+    !Array.isArray(existing) &&
+    Predicate.isObject(next) &&
+    !Array.isArray(next)
+  ) {
     return { ...existing, ...next };
   }
   return next;
 }
+
+const readSessionOwnership = (
+  runtimePayload: unknown | null,
+): Pick<ProviderRuntimeBinding, "sessionKind" | "ownerThreadId"> => {
+  if (!Predicate.isObject(runtimePayload) || Array.isArray(runtimePayload)) {
+    return { sessionKind: "standard" };
+  }
+  const sessionKind = runtimePayload.sessionKind === "delegated" ? "delegated" : "standard";
+  const ownerThreadId =
+    sessionKind === "delegated" && typeof runtimePayload.ownerThreadId === "string"
+      ? ThreadId.make(runtimePayload.ownerThreadId)
+      : undefined;
+  return {
+    sessionKind,
+    ...(ownerThreadId ? { ownerThreadId } : {}),
+  };
+};
 
 function toRuntimeBinding(
   runtime: ProviderSessionRuntime.ProviderSessionRuntime,
@@ -77,6 +96,7 @@ function toRuntimeBinding(
           status: runtime.status,
           resumeCursor: runtime.resumeCursor,
           runtimePayload: runtime.runtimePayload,
+          ...readSessionOwnership(runtime.runtimePayload),
           lastSeenAt: runtime.lastSeenAt,
         }) satisfies ProviderRuntimeBindingWithMetadata,
     ),
@@ -140,10 +160,17 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
           binding.resumeCursor !== undefined
             ? binding.resumeCursor
             : (existingRuntime?.resumeCursor ?? null),
-        runtimePayload: mergeRuntimePayload(
-          existingRuntime?.runtimePayload ?? null,
-          binding.runtimePayload,
-        ),
+        runtimePayload: mergeRuntimePayload(existingRuntime?.runtimePayload ?? null, {
+          ...(Predicate.isObject(binding.runtimePayload) && !Array.isArray(binding.runtimePayload)
+            ? binding.runtimePayload
+            : {}),
+          ...(binding.sessionKind !== undefined ? { sessionKind: binding.sessionKind } : {}),
+          ...(binding.ownerThreadId !== undefined
+            ? { ownerThreadId: binding.ownerThreadId }
+            : binding.sessionKind === "standard"
+              ? { ownerThreadId: null }
+              : {}),
+        }),
       })
       .pipe(Effect.mapError(toPersistenceError("ProviderSessionDirectory.upsert:upsert")));
   });

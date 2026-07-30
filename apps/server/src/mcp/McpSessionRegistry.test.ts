@@ -66,7 +66,7 @@ const fakeEnvironment = ServerEnvironment.ServerEnvironment.of({
 });
 
 const makeProvider = (
-  driver: "claudeAgent" | "codex" | "cursor",
+  driver: "claudeAgent" | "codex" | "cursor" | "grok" | "opencode",
   overrides: Partial<ServerProvider> = {},
 ): ServerProvider => ({
   instanceId: ProviderInstanceId.make(driver),
@@ -157,12 +157,99 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
 
     const resolved = yield* registry.resolve(token);
     expect(resolved?.threadId).toBe(threadId);
+    expect(resolved?.ownerThreadId).toBe(threadId);
+    expect(resolved?.sessionKind).toBe("parent");
 
     yield* registry.revokeThread(threadId);
     expect(yield* registry.resolve(token)).toBeUndefined();
 
     timestamp += 2_000;
   }),
+);
+
+it.effect("recomputes capabilities from settings at call time after credential issuance", () =>
+  Effect.gen(function* () {
+    const settings = yield* ServerSettingsService;
+    const registry = yield* McpSessionRegistry.__testing.make({
+      now: () => 1_000,
+      livenessWindowMs: 100,
+    });
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-live-settings"),
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    expect([...(yield* registry.resolve(token))!.capabilities]).toEqual([
+      "preview",
+      "delegation-router",
+      "codex-agent",
+    ]);
+
+    yield* settings.updateSettings({
+      mcp: {
+        preview: false,
+        codexAgent: false,
+      },
+    });
+    expect([...(yield* registry.resolve(token))!.capabilities]).toEqual(["delegation-router"]);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.succeed(HttpServer.HttpServer, fakeHttpServer),
+        Layer.succeed(ServerEnvironment.ServerEnvironment, fakeEnvironment),
+        ServerSettingsService.layerTest({
+          mcp: {
+            preview: true,
+            codexAgent: true,
+            cursorAgent: false,
+            claudeAgent: false,
+            engine: {
+              planning: false,
+              consensus: false,
+              enrich: false,
+              implement: false,
+              quality: false,
+              performance: false,
+              typescript: false,
+            },
+          },
+        }),
+        makeProviderRegistryLayer([makeProvider("codex")]),
+        projectionRepositories,
+        NodeServices.layer,
+      ),
+    ),
+  ),
+);
+
+it.effect(
+  "issues provider transport profiles without coupling bearer ownership to MCP sessions",
+  () =>
+    Effect.gen(function* () {
+      const providers = [
+        makeProvider("claudeAgent"),
+        makeProvider("codex"),
+        makeProvider("cursor"),
+        makeProvider("grok"),
+        makeProvider("opencode"),
+      ];
+      for (const [driver, expectedProfile] of [
+        ["claudeAgent", "legacy"],
+        ["codex", "auto"],
+        ["cursor", "auto"],
+        ["grok", "auto"],
+        ["opencode", "auto"],
+      ] as const) {
+        const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, { providers });
+        const issued = yield* registry.issue({
+          threadId: ThreadId.make(`thread-profile-${driver}`),
+          providerInstanceId: ProviderInstanceId.make(driver),
+        });
+        expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
+        expect(issued.config.protocolProfile).toBe(expectedProfile);
+        expect(issued.config.providerSessionId).toBeTruthy();
+      }
+    }),
 );
 
 it.effect("grants MCP capabilities from settings and provider availability", () =>
@@ -177,7 +264,7 @@ it.effect("grants MCP capabilities from settings and provider availability", () 
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
-    expect([...resolved!.capabilities]).toEqual(["codex-agent"]);
+    expect([...resolved!.capabilities]).toEqual(["delegation-router", "codex-agent"]);
   }),
 );
 
@@ -194,7 +281,7 @@ it.effect("withholds Claude delegation from a Claude parent thread", () =>
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
-    expect([...resolved!.capabilities]).toEqual(["codex-agent"]);
+    expect([...resolved!.capabilities]).toEqual(["delegation-router", "codex-agent"]);
     expect(resolved!.providerDriver).toBe("claudeAgent");
   }),
 );
@@ -209,9 +296,9 @@ it.effect("exposes only cross-provider delegation when native tracking is enable
       cursorAgent: true,
     };
     const expectations = [
-      ["claudeAgent", ["codex-agent", "cursor-agent"]],
-      ["codex", ["cursor-agent", "claude-agent"]],
-      ["cursor", ["codex-agent", "claude-agent"]],
+      ["claudeAgent", ["delegation-router", "codex-agent", "cursor-agent"]],
+      ["codex", ["delegation-router", "cursor-agent", "claude-agent"]],
+      ["cursor", ["delegation-router", "codex-agent", "claude-agent"]],
     ] as const;
 
     for (const [driver, expected] of expectations) {
@@ -246,7 +333,12 @@ it.effect("restores the same-provider MCP path when a native tracking flag is di
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
-    expect([...resolved!.capabilities]).toEqual(["codex-agent", "cursor-agent", "claude-agent"]);
+    expect([...resolved!.capabilities]).toEqual([
+      "delegation-router",
+      "codex-agent",
+      "cursor-agent",
+      "claude-agent",
+    ]);
   }),
 );
 
@@ -265,6 +357,7 @@ it.effect("grants enabled engine abilities and the shared knowledge capability",
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
     expect([...resolved!.capabilities]).toEqual([
+      "delegation-router",
       "engine-planning",
       "engine-consensus",
       "engine-quality",
@@ -281,8 +374,10 @@ it.effect("does not grant recursive agent delegation to delegated sessions", () 
       providers: [makeProvider("codex"), makeProvider("cursor")],
     });
     const issued = yield* registry.issue({
-      threadId: ThreadId.make("delegated-child-run"),
+      threadId: ThreadId.make("ordinary-looking-child"),
       providerInstanceId: ProviderInstanceId.make("codex"),
+      sessionKind: "delegated",
+      ownerThreadId: ThreadId.make("parent-thread"),
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
@@ -290,11 +385,10 @@ it.effect("does not grant recursive agent delegation to delegated sessions", () 
   }),
 );
 
-it.effect("grants engine capabilities to delegated sessions using the parent project", () =>
+it.effect("withholds every start and engine indirection from delegated sessions", () =>
   Effect.gen(function* () {
     const parentThreadId = ThreadId.make("thread-delegated-parent");
     const delegatedThreadId = ThreadId.make("delegated-child-engine-run");
-    McpSessionRegistry.registerDelegatedMcpProjectContext(delegatedThreadId, parentThreadId);
     const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
       providers: [makeProvider("codex")],
       mcp: { engine: { planning: true, implement: true } },
@@ -302,16 +396,15 @@ it.effect("grants engine capabilities to delegated sessions using the parent pro
     const issued = yield* registry.issue({
       threadId: delegatedThreadId,
       providerInstanceId: ProviderInstanceId.make("codex"),
+      sessionKind: "delegated",
+      ownerThreadId: parentThreadId,
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
-    expect([...resolved!.capabilities]).toEqual([
-      "preview",
-      "engine-planning",
-      "engine-implement",
-      "engine-knowledge",
-    ]);
+    expect([...resolved!.capabilities]).toEqual(["preview"]);
     expect(resolved!.threadId).toBe(delegatedThreadId);
+    expect(resolved!.ownerThreadId).toBe(parentThreadId);
+    expect(resolved!.sessionKind).toBe("delegated");
     expect(resolved!.projectId).toBe(projectId);
   }),
 );

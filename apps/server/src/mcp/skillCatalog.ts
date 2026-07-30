@@ -45,9 +45,111 @@ export interface RenderSkillCatalogSectionInput extends SkillAvailabilityInput {
 
 const inline = (value: string): string => value.replace(/\s+/gu, " ").trim();
 
-const describe = (description: string): string => {
-  const normalized = inline(description);
-  return normalized.length > 0 ? normalized : "No description provided.";
+const stableHash = (value: string): string => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+};
+
+export const skillCatalogRevision = (input: RenderSkillCatalogSectionInput): string => {
+  const available = input.skills.filter((skill) => isSkillAvailable(skill, input));
+  return `skills-v1-${stableHash(
+    JSON.stringify(
+      available
+        .map((skill) => ({
+          skillId: skill.skillId,
+          slug: skill.slug,
+          title: skill.title,
+          description: skill.description,
+          source: skill.source,
+          capability: skill.capability,
+          projectId: skill.projectId,
+          activeVersion: skill.activeVersion,
+          updatedAt: skill.updatedAt,
+        }))
+        .sort((left, right) => left.skillId.localeCompare(right.skillId)),
+    ),
+  )}`;
+};
+
+export const skillSearchHandle = (skill: SkillSummary): string =>
+  `skill/${encodeURIComponent(skill.skillId)}/version/${skill.activeVersion}`;
+
+export const parseSkillSearchHandle = (
+  handle: string,
+): { readonly skillId: string; readonly version: number } | undefined => {
+  const match = /^skill\/([^/]+)\/version\/([1-9]\d*)$/u.exec(handle);
+  if (match === null) return undefined;
+  try {
+    return { skillId: decodeURIComponent(match[1]!), version: Number(match[2]) };
+  } catch {
+    return undefined;
+  }
+};
+
+export interface SearchSkillCatalogInput extends RenderSkillCatalogSectionInput {
+  readonly query: string;
+  readonly limit?: number | undefined;
+}
+
+const searchScore = (skill: SkillSummary, terms: ReadonlyArray<string>): number => {
+  if (terms.length === 0) return 1;
+  const slug = skill.slug.toLowerCase();
+  const title = skill.title.toLowerCase();
+  const description = skill.description.toLowerCase();
+  const source = skill.source.toLowerCase();
+  const scope = skill.projectId === null ? "global" : "project";
+  const tags = `${skill.capability ?? ""} ${skill.slug.replaceAll("-", " ")}`.toLowerCase();
+  return terms.reduce((score, term) => {
+    if (slug === term) return score + 20;
+    return (
+      score +
+      (slug.includes(term) ? 8 : 0) +
+      (title.includes(term) ? 6 : 0) +
+      (description.includes(term) ? 3 : 0) +
+      (tags.includes(term) ? 2 : 0) +
+      (source.includes(term) || scope.includes(term) ? 1 : 0)
+    );
+  }, 0);
+};
+
+export const searchSkillCatalog = (input: SearchSkillCatalogInput) => {
+  const terms = inline(input.query).toLowerCase().split(/\s+/u).filter(Boolean).slice(0, 8);
+  const limit = Math.max(1, Math.min(input.limit ?? 8, 20));
+  return input.skills
+    .filter((skill) => isSkillAvailable(skill, input))
+    .map((skill) => ({ skill, score: searchScore(skill, terms) }))
+    .filter(({ score }) => score > 0)
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.skill.title.localeCompare(right.skill.title) ||
+        left.skill.slug.localeCompare(right.skill.slug),
+    )
+    .slice(0, limit)
+    .map(({ skill }) => ({
+      handle: skillSearchHandle(skill),
+      slug: skill.slug,
+      title: inline(skill.title),
+      description: inline(skill.description),
+      source: skill.source,
+      scope: skill.projectId === null ? ("global" as const) : ("project" as const),
+      enabled: skill.enabled,
+      activeVersion: skill.activeVersion,
+      triggerPhrases: [inline(skill.title), inline(skill.description)].filter(Boolean),
+      tags: [
+        ...new Set([
+          skill.source,
+          skill.projectId === null ? "global" : "project",
+          ...(skill.capability === null ? [] : [skill.capability]),
+          ...skill.slug.split("-"),
+        ]),
+      ],
+      tool: skill.source === "builtin" ? builtinSkillToolName(skill.slug) : "engine_skill_run",
+    }));
 };
 
 export function renderSkillCatalogSection(
@@ -55,32 +157,10 @@ export function renderSkillCatalogSection(
 ): string | undefined {
   const available = input.skills.filter((skill) => isSkillAvailable(skill, input));
   if (available.length === 0) return undefined;
-
-  const builtins = available.filter((skill) => skill.source === "builtin");
-  const custom = available.filter((skill) => skill.source !== "builtin");
-  const sections = [
+  return [
     "## T3 Code skills",
     "",
-    "Skills are reusable workflows stored in T3 Code. Invoke one whenever the user's request matches its description — do not wait to be asked by name.",
-  ];
-
-  if (builtins.length > 0) {
-    sections.push("", "### Built-in (each has a dedicated tool)");
-    for (const skill of builtins) {
-      sections.push(
-        `- **${inline(skill.title)}** — ${describe(skill.description)} Tool: \`${builtinSkillToolName(skill.slug)}\`.`,
-      );
-    }
-  }
-
-  if (custom.length > 0) {
-    sections.push("", "### Custom (invoke via `engine_skill_run` with the slug)");
-    for (const skill of custom) {
-      sections.push(
-        `- **${inline(skill.title)}** (\`${inline(skill.slug)}\`) — ${describe(skill.description)}`,
-      );
-    }
-  }
-
-  return sections.join("\n");
+    `${available.length} reusable workflow${available.length === 1 ? " is" : "s are"} available. Search metadata with \`engine_skill_search\`, then pass the selected handle to \`engine_skill_run\` to load the full workflow.`,
+    `Catalog revision: \`${skillCatalogRevision(input)}\`.`,
+  ].join("\n");
 }

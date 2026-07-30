@@ -109,6 +109,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.transcriptionSendAudio]: AuthOrchestrationOperateScope,
   [WS_METHODS.transcriptionStop]: AuthOrchestrationOperateScope,
   [WS_METHODS.subagentsCancelRun]: AuthOrchestrationOperateScope,
+  [WS_METHODS.subagentsRespond]: AuthOrchestrationOperateScope,
+  [WS_METHODS.subagentsGetRunDetails]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeSubagentTranscript]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeSubagentRuns]: AuthOrchestrationReadScope,
   [WS_METHODS.voiceModelsGetState]: AuthOrchestrationReadScope,

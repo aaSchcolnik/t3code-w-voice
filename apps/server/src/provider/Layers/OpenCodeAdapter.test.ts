@@ -299,6 +299,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         providerSessionId: "provider-session-opencode-catalog",
         providerInstanceId: ProviderInstanceId.make("opencode"),
         capabilities: new Set(["engine-knowledge"]),
+        protocolProfile: "auto",
         endpoint: "http://127.0.0.1/mcp",
         authorizationHeader: "Bearer test",
       });
