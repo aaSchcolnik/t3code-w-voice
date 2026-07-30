@@ -128,9 +128,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
+      const repoRoot = yield* path.fromFileUrl(new URL("..", import.meta.url));
       for (const fileName of DESKTOP_NOTIFICATION_ASSET_FILES) {
         assert.isTrue(
-          yield* fs.exists(path.join("apps/desktop/resources/notifications", fileName)),
+          yield* fs.exists(path.join(repoRoot, "apps/desktop/resources/notifications", fileName)),
           `missing notifications/${fileName}`,
         );
       }
