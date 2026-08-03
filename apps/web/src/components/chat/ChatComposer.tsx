@@ -2874,7 +2874,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   // Render
   // ------------------------------------------------------------------
-  const renderProviderModelPicker = (compact: boolean) =>
+  const renderProviderModelPicker = (compact: boolean, triggerClassName?: string) =>
     noProviderAvailable ? (
       <Button
         type="button"
@@ -2897,6 +2897,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         instanceEntries={providerInstanceEntries}
         keybindings={keybindings}
         modelOptionsByInstance={modelOptionsByInstance}
+        {...(triggerClassName ? { triggerClassName } : {})}
         terminalOpen={terminalOpen}
         open={isComposerModelPickerOpen}
         {...(composerProviderState.modelPickerIconClassName
@@ -3389,7 +3390,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
             {/* Bottom toolbar */}
             {voiceIsActive || isComposerCollapsedMobile ? null : activePendingApproval ? (
-              <div className="flex items-center justify-end gap-2 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
+              <div className="flex items-center justify-end gap-2 px-3 pb-3 sm:px-4 sm:pb-4">
                 <ComposerPendingApprovalActions
                   requestId={activePendingApproval.requestId}
                   isResponding={respondingRequestIds.includes(activePendingApproval.requestId)}
@@ -3401,7 +3402,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 data-chat-composer-footer="true"
                 data-chat-composer-footer-compact={isComposerFooterCompact ? "true" : "false"}
                 className={cn(
-                  "flex min-w-0 flex-nowrap items-center justify-between gap-2 overflow-visible px-2.5 pb-2.5 sm:px-3 sm:pb-3",
+                  "flex min-w-0 flex-nowrap items-center justify-between gap-2 overflow-visible px-3 pb-3 sm:px-4 sm:pb-4",
                   pendingUserInputs.length > 0 && "pt-2",
                   isComposerFooterCompact ? "gap-1.5" : "gap-2 sm:gap-0",
                   showMobilePendingAnswerActions && "hidden sm:flex",
@@ -3441,7 +3442,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       </TooltipPopup>
                     </Tooltip>
                   ) : null}
-                  {showTopModelPicker ? null : renderProviderModelPicker(isComposerFooterCompact)}
+                  {showTopModelPicker
+                    ? null
+                    : renderProviderModelPicker(isComposerFooterCompact, "-ms-px ps-0")}
 
                   {isComposerFooterCompact ? (
                     <CompactComposerControlsMenu
