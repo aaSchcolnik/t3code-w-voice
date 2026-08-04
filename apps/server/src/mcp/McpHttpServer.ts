@@ -7,7 +7,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
-import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
+import { McpProtocol, McpSchema, McpServer, Tool } from "effect/unstable/ai";
 import {
   HttpEffect,
   HttpBody,
@@ -446,6 +446,7 @@ const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
   path: "/mcp",
+  protocols: [McpProtocol.v2025_06_18],
 }).pipe(
   Layer.provide(
     Layer.effect(HttpRouter.HttpRouter, LegacyMcpRouter.pipe(Effect.map((router) => router))),

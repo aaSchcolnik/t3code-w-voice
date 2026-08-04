@@ -87,7 +87,7 @@ import {
   CursorNativeSubagentTracker,
   type CursorNativeSubagentRecord,
 } from "../cursor/CursorNativeSubagentTracker.ts";
-const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.UnknownFromJsonString);
+const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
 const PROVIDER = ProviderDriverKind.make("cursor");
 export const CURSOR_INSTRUCTION_DELIVERY = {
