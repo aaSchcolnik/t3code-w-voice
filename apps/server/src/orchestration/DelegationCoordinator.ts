@@ -44,7 +44,7 @@ import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
 import { SubagentRunService } from "./SubagentRunService.ts";
 
 const MAX_REVISION_RETRIES = 3;
-const encodeUnknownJson = Schema.encodeEffect(Schema.UnknownFromJsonString);
+const encodeUnknownJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeDelegateStartInput = Schema.decodeUnknownEffect(DelegateStartInput);
 const callerContextBrand: unique symbol = Symbol("DelegationCallerContext");
 

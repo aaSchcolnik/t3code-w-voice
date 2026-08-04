@@ -19,7 +19,7 @@ import {
 } from "./DelegationRouter.ts";
 import { ProviderRegistry } from "./Services/ProviderRegistry.ts";
 
-const encodeUnknownJson = Schema.encodeSync(Schema.UnknownFromJsonString);
+const encodeUnknownJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalize);

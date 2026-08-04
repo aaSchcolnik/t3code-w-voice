@@ -85,6 +85,7 @@ const toOfficialCallToolResult = (result: McpSchema.CallToolResult): OfficialCal
 const makeEffectClient = () =>
   McpSchema.McpServerClient.of({
     clientId: 0,
+    protocolVersion: "2025-06-18",
     initializePayload: {
       protocolVersion: MCP_2026_PROTOCOL_VERSION,
       capabilities: {},

@@ -51,7 +51,7 @@ const Chunk = Schema.Struct({
 const ChunkState = Schema.Struct({ chunks: Schema.Array(Chunk) });
 const decodeChunkState = Schema.decodeUnknownEffect(Schema.fromJsonString(ChunkState));
 const encodeChunkState = Schema.encodeSync(Schema.fromJsonString(ChunkState));
-const encodeContext = Schema.encodeSync(Schema.UnknownFromJsonString);
+const encodeContext = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const isKnowledgeError = Schema.is(KnowledgeError);
 
 const mapFailure = (operation: string) =>

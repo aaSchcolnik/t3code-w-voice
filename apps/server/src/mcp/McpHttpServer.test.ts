@@ -895,7 +895,7 @@ const modernRequestBody = (method: string, params: Record<string, unknown> = {})
     }),
     "application/json",
   );
-const encodeUnknownJson = Schema.encodeSync(Schema.UnknownFromJsonString);
+const encodeUnknownJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const RegistryStubLive = Layer.succeed(
   McpSessionRegistry.McpSessionRegistry,
@@ -983,6 +983,7 @@ it.effect("serves /mcp deliberately and never redirects it to the dev server", (
           accept: "application/json, text/event-stream",
           authorization: `Bearer ${validToken}`,
           "mcp-session-id": legacySessionId,
+          "mcp-protocol-version": "2025-06-18",
         },
         body: HttpBody.text(
           encodeUnknownJson({
@@ -1134,6 +1135,7 @@ it.effect("serves /mcp deliberately and never redirects it to the dev server", (
           accept: "application/json, text/event-stream",
           authorization: `Bearer ${delegatedToken}`,
           "mcp-session-id": delegatedSessionId!,
+          "mcp-protocol-version": "2025-06-18",
         },
         body: HttpBody.text(
           encodeUnknownJson({

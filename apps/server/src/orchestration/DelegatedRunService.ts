@@ -73,7 +73,7 @@ const STREAM_ACTIVITY_DETAIL_CHARS = 500;
 const STREAM_ACTIVITY_INTERVAL_MS = 500;
 const MAX_WAKE_DISPATCH_ATTEMPTS = 3;
 const INTERRUPTED_RUN_ERROR = "Delegated run lost due to server restart.";
-const encodeCanonicalDelegationRequest = Schema.encodeEffect(Schema.UnknownFromJsonString);
+const encodeCanonicalDelegationRequest = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const canonicalizeDelegationRequest = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonicalizeDelegationRequest);
   if (!Predicate.isObject(value)) return value;

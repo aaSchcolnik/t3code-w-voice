@@ -100,8 +100,9 @@ class LegacyMcpRouter extends Context.Service<LegacyMcpRouter, HttpRouter.HttpRo
 ) {}
 
 const LegacyMcpRouterLive = Layer.effect(LegacyMcpRouter, HttpRouter.make);
-const decodeUnknownJson = Schema.decodeUnknownSync(Schema.UnknownFromJsonString);
-const encodeUnknownJson = Schema.encodeSync(Schema.UnknownFromJsonString);
+const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown);
+const decodeUnknownJson = Schema.decodeUnknownSync(UnknownFromJsonString);
+const encodeUnknownJson = Schema.encodeSync(UnknownFromJsonString);
 
 const readBoundedRequestBody = Effect.fn("McpHttpServer.readBoundedRequestBody")(function* (
   request: HttpServerRequest.HttpServerRequest,

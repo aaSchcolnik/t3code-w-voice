@@ -14,8 +14,9 @@ import genericPack from "./packs/generic.json" with { type: "json" };
 import { KnowledgeDatabase, withProjectDatabase } from "./ProjectKnowledgeStore.ts";
 
 const MAX_ARTIFACT_BYTES = 1024 * 1024;
-const encodeJson = Schema.encodeSync(Schema.UnknownFromJsonString);
-const decodeJson = Schema.decodeUnknownSync(Schema.UnknownFromJsonString);
+const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown);
+const encodeJson = Schema.encodeSync(UnknownFromJsonString);
+const decodeJson = Schema.decodeUnknownSync(UnknownFromJsonString);
 const jsonColumns = new Set([
   "layer_model",
   "path_aliases",
