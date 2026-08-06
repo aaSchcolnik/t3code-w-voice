@@ -25,6 +25,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -33,7 +34,9 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
+  workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
+  workEntryIndicatesToolSuccess,
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import { type TurnDiffSummary } from "../../types";
@@ -43,7 +46,26 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
-import { ChevronRightIcon, MousePointerClickIcon, PaintbrushIcon, Undo2Icon } from "lucide-react";
+import {
+  BotIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CircleAlertIcon,
+  EyeIcon,
+  GlobeIcon,
+  HammerIcon,
+  MessageCircleIcon,
+  MinusIcon,
+  MousePointerClickIcon,
+  PaintbrushIcon,
+  SquarePenIcon,
+  TerminalIcon,
+  Undo2Icon,
+  WrenchIcon,
+  XIcon,
+  ZapIcon,
+} from "lucide-react";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
@@ -57,6 +79,7 @@ import { TimelineTurnFoldToggle } from "./TimelineTurnFoldToggle";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
+  normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
@@ -831,6 +854,7 @@ function TimelineMinimap({
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
+type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"][number];
 type TimelineRow = MessagesTimelineRow;
 
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
@@ -1246,14 +1270,22 @@ const WorkGroupSection = memo(function WorkGroupSection({
         </p>
       )}
       <div className="space-y-px">
-        {nonEmptyEntries.map((workEntry) => (
-          <WorkLogEntryRow
-            key={workEntry.id}
-            entry={workEntry}
-            workspaceRoot={workspaceRoot}
-            turnSettled={!activity.activeTurnInProgress}
-          />
-        ))}
+        {nonEmptyEntries.map((workEntry) =>
+          workEntry.agentSpawn ? (
+            <SimpleWorkEntryRow
+              key={workEntry.id}
+              workEntry={workEntry}
+              workspaceRoot={workspaceRoot}
+            />
+          ) : (
+            <WorkLogEntryRow
+              key={workEntry.id}
+              entry={workEntry}
+              workspaceRoot={workspaceRoot}
+              turnSettled={!activity.activeTurnInProgress}
+            />
+          ),
+        )}
       </div>
     </section>
   );

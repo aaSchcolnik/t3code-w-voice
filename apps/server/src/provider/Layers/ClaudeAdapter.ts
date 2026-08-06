@@ -1207,6 +1207,8 @@ function summarizeToolRequest(toolName: string, input: Record<string, unknown>):
     const description =
       typeof input.description === "string" ? input.description.trim() : undefined;
     const prompt = typeof input.prompt === "string" ? input.prompt.trim() : undefined;
+    const subagentType =
+      typeof input.subagent_type === "string" ? input.subagent_type.trim() : undefined;
     const label = description || (prompt ? prompt.slice(0, 200) : undefined);
     if (label) {
       return label;
@@ -3830,45 +3832,40 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         return;
       case "task_started": {
-          if (message.task_type === "local_workflow") {
-            const workflow = context.workflows.linkTask({
-              taskId: message.task_id,
-              ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
-              ...(readString(
-                (message as unknown as { readonly workflow_name?: unknown }).workflow_name,
-              )
-                ? {
-                    workflowName: readString(
-                      (message as unknown as { readonly workflow_name?: unknown }).workflow_name,
-                    )!,
-                  }
-                : {}),
-            });
-            if (workflow) {
-              yield* emitWorkflowLifecycle(
-                context,
-                workflow,
-                "claude/system/task_started",
-                message,
-              );
-            }
-          } else {
-            const nativeRun = context.nativeSubagents.linkTask({
-              taskId: message.task_id,
-              ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
-              description: message.description,
-              ...(message.subagent_type ? { agentType: message.subagent_type } : {}),
-              ...(message.prompt ? { prompt: message.prompt } : {}),
-            });
-            if (nativeRun) {
-              yield* emitNativeSubagentLifecycle(
-                context,
-                nativeRun,
-                "claude/system/task_started",
-                message,
-              );
-            }
+        if (message.task_type === "local_workflow") {
+          const workflow = context.workflows.linkTask({
+            taskId: message.task_id,
+            ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
+            ...(readString(
+              (message as unknown as { readonly workflow_name?: unknown }).workflow_name,
+            )
+              ? {
+                  workflowName: readString(
+                    (message as unknown as { readonly workflow_name?: unknown }).workflow_name,
+                  )!,
+                }
+              : {}),
+          });
+          if (workflow) {
+            yield* emitWorkflowLifecycle(context, workflow, "claude/system/task_started", message);
           }
+        } else {
+          const nativeRun = context.nativeSubagents.linkTask({
+            taskId: message.task_id,
+            ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
+            description: message.description,
+            ...(message.subagent_type ? { agentType: message.subagent_type } : {}),
+            ...(message.prompt ? { prompt: message.prompt } : {}),
+          });
+          if (nativeRun) {
+            yield* emitNativeSubagentLifecycle(
+              context,
+              nativeRun,
+              "claude/system/task_started",
+              message,
+            );
+          }
+        }
         // A task launched by a tool that itself ran inside a subagent (the
         // in-flight tool carries agentId from parent_tool_use_id) is
         // agent-internal: a subagent's background shell, not parent work.
