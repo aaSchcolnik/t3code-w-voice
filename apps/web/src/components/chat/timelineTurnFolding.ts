@@ -8,6 +8,7 @@ export interface TimelineFoldEntry {
   updatedAt?: string | undefined;
   streaming?: boolean | undefined;
   messageId?: string | undefined;
+  foldable?: boolean | undefined;
 }
 
 export interface TimelineTurnTiming {
@@ -107,7 +108,7 @@ export function deriveTimelineTurnFolds(input: {
     if (turnId === input.unsettledTurnId || group.hasStreamingMessage) continue;
     const hiddenEntryIds = new Set(
       group.entries
-        .filter((entry) => entry.id !== group.terminalEntry?.id)
+        .filter((entry) => entry.id !== group.terminalEntry?.id && entry.foldable !== false)
         .map((entry) => entry.id),
     );
     if (hiddenEntryIds.size === 0) continue;

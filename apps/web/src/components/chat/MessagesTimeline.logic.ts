@@ -7,7 +7,7 @@ import {
   type OrchestrationSystemEvent,
   type TurnId,
 } from "@t3tools/contracts";
-import { partitionWorkLogEntries } from "./workLogPresentation";
+import { MAX_VISIBLE_WORK_LOG_ENTRIES, partitionWorkLogEntries } from "./workLogPresentation";
 import {
   deriveTerminalAssistantMessageIds as deriveSharedTerminalAssistantMessageIds,
   deriveTimelineTurnFolds,
@@ -231,6 +231,7 @@ function toFoldEntries(timelineEntries: ReadonlyArray<TimelineEntry>): TimelineF
         createdAt: entry.createdAt,
         turnId: entry.entry.turnId ?? null,
         role: "work",
+        foldable: entry.entry.agentSpawn === undefined,
       };
     }
     return {
@@ -378,9 +379,23 @@ export function deriveMessagesTimelineRows(input: {
         } else {
           const groupId = `work-group:${timelineEntry.id}`;
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
-          const partition = partitionWorkLogEntries(groupedEntries, { expanded });
+          // Agent-spawn CTA rows are always visible: a running fleet must
+          // never hide behind a "+N tool calls" toggle. Selection is by
+          // membership (spawn OR recent-tail), preserving the group's
+          // chronological order in both collapsed and expanded states
+          // (review finding: concatenating two filtered lists moved a
+          // mid-group spawn row above earlier tool rows).
+          const overflowCandidates = visibleGroupedEntries.filter(
+            (entry) => entry.agentSpawn === undefined,
+          );
+          const hiddenEntries = overflowCandidates.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
+          const hiddenIds = new Set(hiddenEntries.map((entry) => entry.id));
+          const visibleEntries = visibleGroupedEntries.filter(
+            (entry) => entry.agentSpawn !== undefined || !hiddenIds.has(entry.id),
+          );
+          const renderedEntries = expanded ? visibleGroupedEntries : visibleEntries;
 
-          for (const workEntry of partition.renderedEntries) {
+          for (const workEntry of renderedEntries) {
             nextRows.push({
               kind: "work",
               id: workEntry.id,
@@ -389,15 +404,19 @@ export function deriveMessagesTimelineRows(input: {
             });
           }
 
-          nextRows.push({
-            kind: "work-toggle",
-            id: `work-toggle:${timelineEntry.id}`,
-            createdAt: timelineEntry.createdAt,
-            groupId,
-            hiddenCount: partition.hiddenCount,
-            expanded,
-            onlyToolEntries: partition.onlyToolEntries,
-          });
+          if (hiddenEntries.length > 0) {
+            nextRows.push({
+              kind: "work-toggle",
+              id: `work-toggle:${timelineEntry.id}`,
+              createdAt: timelineEntry.createdAt,
+              groupId,
+              hiddenCount: hiddenEntries.length,
+              expanded,
+              onlyToolEntries: visibleGroupedEntries.every((entry) =>
+                workLogEntryIsToolLike(entry),
+              ),
+            });
+          }
         }
       }
       index = cursor - 1;
