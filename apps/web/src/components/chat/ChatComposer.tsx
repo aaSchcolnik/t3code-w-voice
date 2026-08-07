@@ -3026,7 +3026,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       type="button"
                       className={cn(
                         "min-w-0 flex-1 truncate bg-transparent py-1.5 text-left text-sm",
-                        activePendingProgress?.customAnswer ? "text-foreground" : "text-placeholder",
+                        activePendingProgress?.customAnswer
+                          ? "text-foreground"
+                          : "text-placeholder",
                         !activePendingProgress?.activeQuestion?.multiSelect && "px-3 py-2",
                       )}
                       onPointerDown={(event) => event.preventDefault()}

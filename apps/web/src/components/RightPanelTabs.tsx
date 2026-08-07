@@ -1,15 +1,6 @@
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
-import {
-  Bot,
-  FileDiff,
-  Files,
-  Globe2,
-  Plus,
-  TerminalSquare,
-  UsersRound,
-  X,
-} from "lucide-react";
+import { Bot, FileDiff, Files, Globe2, Plus, TerminalSquare, UsersRound, X } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,

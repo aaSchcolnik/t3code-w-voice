@@ -8050,7 +8050,7 @@ it.live(
                     } satisfies TransferBudgetRun;
                   }).pipe(Effect.provide(protocolLayer)),
                 );
-              }),
+              }).pipe(Effect.scoped),
             (harness) => harness.dispose,
           ).pipe(Effect.provide(NodeHttpServerTestWithWsDeflate)),
         { concurrency: 1 },

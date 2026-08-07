@@ -472,13 +472,11 @@ describe("MessagesTimeline", () => {
 
   it("anchors the first message in a thread", () => {
     const onAnchorReady = vi.fn();
-    const onAnchorSizeChanged = vi.fn();
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
         anchorMessageId={MessageId.make("message-1")}
         onAnchorReady={onAnchorReady}
-        onAnchorSizeChanged={onAnchorSizeChanged}
         contentInsetEndAdjustment={144}
         timelineEntries={[buildUserTimelineEntry("First prompt.")]}
       />,
@@ -490,7 +488,6 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain('data-maintain-scroll-at-end="enabled"');
     expect(onAnchorReady).toHaveBeenCalledOnce();
     expect(onAnchorReady).toHaveBeenCalledWith(MessageId.make("message-1"), 0);
-    expect(onAnchorSizeChanged).toHaveBeenCalledWith(MessageId.make("message-1"), 240);
   });
 
   it("renders collapse controls for long user messages", () => {

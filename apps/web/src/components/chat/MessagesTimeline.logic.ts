@@ -1,7 +1,5 @@
 import * as Equal from "effect/Equal";
 import {
-  formatDuration,
-  workEntryIndicatesToolNeutralStatus,
   workLogEntryIsToolLike,
   type TimelineEntry,
   type TurnPlanEntry,
