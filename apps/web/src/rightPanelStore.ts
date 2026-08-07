@@ -5,7 +5,7 @@
  * surface descriptors and the active surface, while each feature continues to
  * own its durable resource state. Browser surfaces point at preview tab ids,
  * terminal surfaces point at terminal session ids, file surfaces point at
- * workspace paths, and diff/plan/files/subagents remain singleton surfaces.
+ * workspace paths, and diff/files/subagents/agents remain singleton surfaces.
  */
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
@@ -15,7 +15,6 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { resolveStorage } from "./lib/storage";
 
 export const RIGHT_PANEL_KINDS = [
-  "plan",
   "subagents",
   "diff",
   "files",
@@ -46,12 +45,12 @@ export type RightPanelSurface =
       revealLine: number | null;
       revealRequestId: number;
     }
-  | { id: "plan"; kind: "plan" }
   | { id: "subagents"; kind: "subagents" }
   | { id: "agents"; kind: "agents" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-const RIGHT_PANEL_STORAGE_VERSION = 8;
+// v9 removed the "plan" surface kind (plans render inline in the transcript).
+const RIGHT_PANEL_STORAGE_VERSION = 9;
 
 export interface ThreadRightPanelState {
   isOpen: boolean;
@@ -101,8 +100,6 @@ const singletonSurface = (
       return { id: "diff", kind };
     case "files":
       return { id: "files", kind };
-    case "plan":
-      return { id: "plan", kind };
     case "subagents":
       return { id: "subagents", kind };
     case "agents":
@@ -185,6 +182,9 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 threadState && typeof threadState === "object" ? threadState : null;
               const surfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
+                    // Dropped surface kind: plans now render inline in the
+                    // transcript (v9).
+                    if ((surface as { kind?: string }).kind === "plan") return [];
                     if (surface.kind === "file") {
                       const revealLine =
                         typeof surface.revealLine === "number" &&
@@ -233,15 +233,23 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     ];
                   })
                 : [];
-              const activeSurfaceId = surfaces.some(
+              const persistedActiveSurfaceId = surfaces.some(
                 (surface) => surface.id === validThreadState?.activeSurfaceId,
               )
                 ? (validThreadState?.activeSurfaceId ?? null)
                 : null;
+              // A migration that dropped every surface (e.g. plan-only panels
+              // in v9) must not reopen an empty panel.
               const isOpen =
-                typeof validThreadState?.isOpen === "boolean"
+                surfaces.length > 0 &&
+                (typeof validThreadState?.isOpen === "boolean"
                   ? validThreadState.isOpen
-                  : activeSurfaceId !== null;
+                  : persistedActiveSurfaceId !== null);
+              // An open panel needs an active surface: if migration dropped
+              // the persisted one (e.g. plan was active), fall back to the
+              // first survivor instead of rendering an open empty panel.
+              const activeSurfaceId =
+                persistedActiveSurfaceId ?? (isOpen ? (surfaces[0]?.id ?? null) : null);
               return [threadKey, { isOpen, surfaces, activeSurfaceId }];
             },
           ),

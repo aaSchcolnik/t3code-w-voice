@@ -2,7 +2,6 @@ import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
   Bot,
-  ClipboardList,
   FileDiff,
   Files,
   Globe2,
@@ -233,8 +232,6 @@ function surfaceTitle(
         terminalLabelsById.get(surface.activeTerminalId) ??
         getTerminalLabel(surface.activeTerminalId)
       );
-    case "plan":
-      return "Plan";
     case "subagents":
       return "Subagents";
     case "agents":
@@ -298,8 +295,6 @@ function SurfaceIcon({
       );
     case "terminal":
       return <TerminalSquare className="size-3 shrink-0" />;
-    case "plan":
-      return <ClipboardList className="size-3 shrink-0" />;
     case "subagents":
       return <UsersRound className="size-3 shrink-0" />;
     case "agents":
