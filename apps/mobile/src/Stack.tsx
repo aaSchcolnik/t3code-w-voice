@@ -48,9 +48,8 @@ import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteSc
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
 import { SettingsProjectGroupingRouteScreen } from "./features/settings/SettingsProjectGroupingRouteScreen";
+import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
-import { SettingsRouterRouteScreen } from "./features/settings/SettingsRouterRouteScreen";
-import { SettingsUsageRouteScreen } from "./features/settings/usage/SettingsUsageRouteScreen";
 import { SettingsVoiceRouteScreen } from "./features/settings/SettingsVoiceRouteScreen";
 import { SubagentRunDetailsRouteScreen } from "./features/subagents/SubagentRunDetailsRouteScreen";
 import { SubagentRunsRouteScreen } from "./features/subagents/SubagentRunsRouteScreen";
@@ -196,7 +195,7 @@ const SettingsSheetStack = createNativeStackNavigator({
       },
     }),
     SettingsUsage: createNativeStackScreen({
-      screen: SettingsUsageRouteScreen,
+      screen: UsageRouteScreen,
       linking: "usage",
       options: {
         title: "Usage",
@@ -207,13 +206,6 @@ const SettingsSheetStack = createNativeStackNavigator({
       linking: "voice",
       options: {
         title: "Voice",
-      },
-    }),
-    SettingsRouter: createNativeStackScreen({
-      screen: SettingsRouterRouteScreen,
-      linking: "delegation-router",
-      options: {
-        title: "Delegation Router",
       },
     }),
     SettingsAuth: createNativeStackScreen({

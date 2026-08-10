@@ -4,7 +4,6 @@ export type SettingsSheetTarget =
   | "SettingsAppearance"
   | "SettingsProjectGrouping"
   | "SettingsClientStorage"
-  | "SettingsRouter"
   | "SettingsUsage"
   | "SettingsVoice";
 
