@@ -42,10 +42,6 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
-import type {
-  ProviderDelegationCapabilities,
-  ProviderInstructionDelivery,
-} from "../Services/ProviderAdapter.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { increment, nativeSubagentCorrelationMissingTotal } from "../../observability/Metrics.ts";
 import {
@@ -90,23 +86,6 @@ import {
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
 const PROVIDER = ProviderDriverKind.make("cursor");
-export const CURSOR_INSTRUCTION_DELIVERY = {
-  supported: false,
-  reason:
-    "Cursor ACP exposes MCP configuration but no legitimate system/developer instruction channel.",
-} as const satisfies ProviderInstructionDelivery;
-export const CURSOR_DELEGATION_CAPABILITIES = {
-  delegatedExecution: true,
-  cancellation: true,
-  structuredQuestions: true,
-  attachments: true,
-  enforcedReadOnlyWorkspace: false,
-  workspaceWriteSandboxContainment: false,
-  instructionDelivery: CURSOR_INSTRUCTION_DELIVERY,
-  providerThreadResume: true,
-  definitelyNotAcceptedDispatchOutcome: "unsupported",
-  usageReporting: "unsupported",
-} as const satisfies ProviderDelegationCapabilities;
 const CURSOR_RESUME_VERSION = 1 as const;
 const ACP_PLAN_MODE_ALIASES = ["plan", "architect"];
 const ACP_IMPLEMENT_MODE_ALIASES = ["code", "agent", "default", "chat", "implement"];
@@ -1292,7 +1271,6 @@ export function makeCursorAdapter(
       provider: PROVIDER,
       capabilities: {
         sessionModelSwitch: "in-session",
-        delegation: CURSOR_DELEGATION_CAPABILITIES,
       },
       startSession,
       sendTurn,

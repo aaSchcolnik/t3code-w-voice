@@ -9,7 +9,6 @@ import {
 } from "react";
 import {
   ArchiveIcon,
-  ChartNoAxesColumnIncreasingIcon,
   ArrowLeftIcon,
   BotIcon,
   GitBranchIcon,
@@ -58,7 +57,6 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/appearance": PaletteIcon,
   "/settings/keybindings": KeyboardIcon,
   "/settings/providers": BotIcon,
-  "/settings/usage": ChartNoAxesColumnIncreasingIcon,
   "/settings/mcp": PlugZapIcon,
   "/settings/skills": SparklesIcon,
   "/settings/knowledge": LibraryBigIcon,

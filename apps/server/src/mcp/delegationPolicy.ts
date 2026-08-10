@@ -1,7 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import type { DelegationMode, ProjectId, ProviderDriverKind } from "@t3tools/contracts";
+import type { ProjectId, ProviderDriverKind } from "@t3tools/contracts";
 
 import { searchKnowledge } from "../knowledge/KnowledgeRepository.ts";
 import { buildProjectInstructionCapsule } from "../knowledge/ProjectInstructionCapsuleService.ts";
@@ -46,26 +46,14 @@ export function trackedDelegationInstructions(
   capabilities: ReadonlySet<McpCapability>,
   providerDriver?: ProviderDriverKind,
   nativeSubagentTracking = false,
-  delegationMode: DelegationMode = "proactive",
 ): string | undefined {
-  const callable =
-    delegationMode === "proactive"
-      ? Object.entries(TRACKED_PROVIDER_TOOLS).flatMap(([capability, tool]) =>
-          capabilities.has(capability as McpCapability) ? [tool] : [],
-        )
-      : [];
+  const callable = Object.entries(TRACKED_PROVIDER_TOOLS).flatMap(([capability, tool]) =>
+    capabilities.has(capability as McpCapability) ? [tool] : [],
+  );
   const nativeInstruction = nativeSubagentTracking
     ? sameProviderNativeInstruction(providerDriver)
     : undefined;
-  const neutralInstruction =
-    delegationMode === "proactive" && capabilities.has("delegation-router")
-      ? "Actively look for independent, bounded work that benefits from delegation; prefer `delegate_start`. Submit one to four neutral task lanes together, classify read-only research/planning/evidence lanes as `scout`, classify implementation/debugging/testing lanes as `worker`, and provide a stable idempotency key. Keep synthesis, consequential decisions, and final verification on the parent thread. Reuse that key only when retrying the identical request. The returned `allocated` state does not mean a provider accepted the turn."
-      : undefined;
-  if (
-    callable.length === 0 &&
-    nativeInstruction === undefined &&
-    neutralInstruction === undefined
-  ) {
+  if (callable.length === 0 && nativeInstruction === undefined) {
     return undefined;
   }
 
@@ -73,14 +61,13 @@ export function trackedDelegationInstructions(
   return [
     "## T3 Code tracked subagents",
     nativeInstruction,
-    neutralInstruction,
     callable.length > 0
-      ? `Compatibility tools remain available for explicit provider requests: ${toolNames}. Pass a stable idempotency key for retry-safe starts; an omitted key has no retry deduplication. Start all needed runs, then end the turn. Results and questions arrive automatically—never wait, poll, sleep, or create background polling commands.`
+      ? `Callable tracked provider tools: ${toolNames}. Honor an explicit provider request. For independent work, start every needed run before ending the turn. Pass a stable idempotency key for retry-safe starts; an omitted key has no retry deduplication. Results and questions arrive automatically—never wait, poll, sleep, or create background polling commands. Concurrent writers are allowed, so assign disjoint work and keep shared files sequential.`
       : undefined,
     capabilities.has("cursor-agent")
       ? "Answer a tracked Cursor question with `cursor_respond`, then end the turn."
       : undefined,
-    callable.length > 0 || neutralInstruction !== undefined
+    callable.length > 0
       ? "Tracked subagents stay inside the workspace and use Git read-only; the server handles permission requests."
       : undefined,
   ]
@@ -102,7 +89,6 @@ export function mcpSessionInstructions(
   capabilities: ReadonlySet<McpCapability>,
   providerDriver?: ProviderDriverKind,
   nativeSubagentTracking = false,
-  delegationMode: DelegationMode = "proactive",
 ): string | undefined {
   if (capabilities.size === 0) return undefined;
   const capsule = buildProjectInstructionCapsule({
@@ -114,7 +100,6 @@ export function mcpSessionInstructions(
     capabilities,
     providerDriver,
     nativeSubagentTracking,
-    delegationMode,
   );
   return delegation === undefined ? capsule : `${capsule}\n\n${delegation}`;
 }
@@ -147,7 +132,6 @@ export const buildMcpSessionInstructions = Effect.fn("buildMcpSessionInstruction
     session.capabilities,
     session.providerDriver,
     session.nativeSubagentTracking,
-    session.delegationMode,
   );
   const loadCatalog = Effect.gen(function* () {
     const skills = yield* SkillRepository;
@@ -178,7 +162,6 @@ export const buildMcpSessionInstructions = Effect.fn("buildMcpSessionInstruction
       session.capabilities,
       session.providerDriver,
       session.nativeSubagentTracking,
-      session.delegationMode,
     );
     return delegation === undefined ? capsule : `${capsule}\n\n${delegation}`;
   });
@@ -207,7 +190,6 @@ export class McpSessionInstructionBuilderService extends Context.Reference<McpSe
           session.capabilities,
           session.providerDriver,
           session.nativeSubagentTracking,
-          session.delegationMode,
         ),
       ),
   },

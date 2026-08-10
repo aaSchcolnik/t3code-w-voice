@@ -28,10 +28,6 @@ import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
-import type {
-  ProviderDelegationCapabilities,
-  ProviderInstructionDelivery,
-} from "../Services/ProviderAdapter.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
@@ -63,22 +59,6 @@ import {
 import * as Option from "effect/Option";
 
 const PROVIDER = ProviderDriverKind.make("opencode");
-export const OPENCODE_INSTRUCTION_DELIVERY = {
-  supported: true,
-  channel: "system",
-} as const satisfies ProviderInstructionDelivery;
-export const OPENCODE_DELEGATION_CAPABILITIES = {
-  delegatedExecution: false,
-  cancellation: true,
-  structuredQuestions: true,
-  attachments: true,
-  enforcedReadOnlyWorkspace: false,
-  workspaceWriteSandboxContainment: false,
-  instructionDelivery: OPENCODE_INSTRUCTION_DELIVERY,
-  providerThreadResume: true,
-  definitelyNotAcceptedDispatchOutcome: "unsupported",
-  usageReporting: "unsupported",
-} as const satisfies ProviderDelegationCapabilities;
 
 /**
  * Version tag stamped into the OpenCode resume cursor. Bump if the cursor
@@ -1755,7 +1735,6 @@ export function makeOpenCodeAdapter(
       provider: PROVIDER,
       capabilities: {
         sessionModelSwitch: "in-session",
-        delegation: OPENCODE_DELEGATION_CAPABILITIES,
       },
       startSession,
       sendTurn,

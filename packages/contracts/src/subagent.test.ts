@@ -60,7 +60,6 @@ describe("SubagentRun", () => {
     expect(legacyRun).toEqual(baseRun);
     expect(legacyRun.resolvedOptionDetails).toBeUndefined();
     expect(legacyRun.runKind).toBeUndefined();
-    expect(legacyRun.route).toBeUndefined();
     expect(legacyRun.resultCompleteness).toBeUndefined();
 
     const run = decodeSubagentRun({
@@ -80,7 +79,7 @@ describe("SubagentRun", () => {
     expect(run.resolvedOptionDetails?.[0]?.valueLabel).toBe("Fast");
   });
 
-  it("decodes compact routed-run metadata without candidate diagnostics", () => {
+  it("ignores compact legacy route metadata", () => {
     const run = decodeSubagentRun({
       ...baseRun,
       source: "delegated",
@@ -103,9 +102,8 @@ describe("SubagentRun", () => {
       resultCompleteness: "terminal_message",
     });
 
-    expect(run.batchId).toBe("batch-1");
-    expect(run.route?.providerInstanceId).toBe("codex_work");
-    expect(run.route).not.toHaveProperty("candidates");
+    expect(run).not.toHaveProperty("batchId");
+    expect(run).not.toHaveProperty("route");
     expect(run.resultCompleteness).toBe("terminal_message");
   });
 
@@ -163,7 +161,22 @@ describe("SubagentRunDetails", () => {
     });
   });
 
-  it("decodes full durable delegated routing diagnostics", () => {
+  it("ignores legacy edit ownership details", () => {
+    const details = decodeSubagentRunDetails({
+      runId: "run-1",
+      source: "delegated",
+      attempts: [],
+      workspaceAccess: "workspace-write",
+      editScopes: [
+        { kind: "file", path: "packages/contracts/src/subagent.ts" },
+        { kind: "directory", path: "packages/contracts/src/fixtures" },
+      ],
+    });
+    expect(details).not.toHaveProperty("editScopes");
+    expect(details).not.toHaveProperty("workspaceAccess");
+  });
+
+  it("ignores legacy routing details and preserves direct attempts", () => {
     const details = decodeSubagentRunDetails({
       runId: "run-1",
       source: "delegated",
@@ -206,8 +219,8 @@ describe("SubagentRunDetails", () => {
       ],
     });
 
-    expect(details.routeGroupId).toBe("route-group-1");
-    expect(details.routeDecision?.selected.providerInstanceId).toBe("codex-primary");
+    expect(details).not.toHaveProperty("routeGroupId");
+    expect(details).not.toHaveProperty("routeDecision");
     expect(details.attempts[0]?.dispatchState).toBe("turn_accepted");
     expect(details.pendingQuestions?.[0]?.multiSelect).toBe(true);
   });

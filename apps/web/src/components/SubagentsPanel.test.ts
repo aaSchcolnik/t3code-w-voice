@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  DelegationAttemptId,
   ProviderDriverKind,
   ProviderInstanceId,
   SubagentRunId,
@@ -26,17 +27,16 @@ import {
   hasDetailedSubagentTranscript,
   isActiveSubagentStatus,
   resolveSubagentMetadata,
-  resolveSubagentRouteDiagnostics,
-  resolveSubagentRouteMetadata,
+  resolveSubagentRunDiagnostics,
   subagentPhaseLabel,
   subagentSummaryResult,
   subagentStatusLabel,
 } from "./subagents/subagentRunPresentation";
 import {
   SubagentInputResponseForm,
-  SubagentRouteDetails,
+  SubagentRunDiagnostics,
 } from "./subagents/SubagentTranscriptPanel";
-import { updateRouteDetailsCollapse } from "./subagents/subagentRouteCollapse";
+import { updateDiagnosticsCollapse } from "./subagents/subagentDiagnosticsCollapse";
 
 const run = (id: string, overrides: Partial<SubagentRun> = {}): SubagentRun => ({
   id: SubagentRunId.make(id),
@@ -72,15 +72,7 @@ const routedRun = (overrides: Partial<SubagentRun> = {}): SubagentRun =>
     source: "delegated",
     provider: ProviderDriverKind.make("codex"),
     providerInstanceId: ProviderInstanceId.make("codex-primary"),
-    route: {
-      decisionId: "decision-1",
-      policyVersion: 3,
-      role: "worker",
-      provider: "codex",
-      providerInstanceId: ProviderInstanceId.make("codex-primary"),
-      model: "gpt-5.6-sol",
-      explanation: "Selected the first eligible worker target.",
-    } as NonNullable<SubagentRun["route"]>,
+    resolvedModel: "gpt-5.6-sol",
     dispatchState: "allocated",
     ...overrides,
   });
@@ -444,7 +436,7 @@ describe("subagent status presentation", () => {
     ).toBe("Waiting for input");
   });
 
-  it("renders a compact selected route and truthful allocation phase in the live list", () => {
+  it("renders direct provider metadata and a truthful allocation phase in the live list", () => {
     const html = renderToStaticMarkup(
       createElement(SubagentsPanel, {
         runs: [routedRun()],
@@ -456,8 +448,7 @@ describe("subagent status presentation", () => {
       }),
     );
 
-    expect(html).toContain("Worker route");
-    expect(html).toContain("codex-primary / gpt-5.6-sol");
+    expect(html).toContain("GPT 5.6 Sol");
     expect(html).toContain("Allocated");
     expect(html).not.toContain(">Running<");
   });
@@ -512,194 +503,54 @@ describe("subagent metadata presentation", () => {
 
     expect(resolveSubagentMetadata(metadataRun, provider)).toEqual(["GPT 5.6 Sol"]);
   });
-
-  it("presents only server-selected route metadata", () => {
-    expect(resolveSubagentRouteMetadata(routedRun())).toEqual([
-      "Worker route",
-      "codex-primary / gpt-5.6-sol",
-    ]);
-  });
 });
 
-describe("subagent route diagnostics", () => {
-  it("presents server candidate exclusions, fallback history, grouping, and completeness", () => {
-    const routed = routedRun({
-      workflowId: "workflow-1" as NonNullable<SubagentRun["workflowId"]>,
-      batchId: "batch-1" as NonNullable<SubagentRun["batchId"]>,
-      laneId: "lane-2" as NonNullable<SubagentRun["laneId"]>,
-      workflow: { runId: "workflow-1", phaseIndex: 2, phaseTitle: "Verify" },
+describe("delegated run diagnostics", () => {
+  it("renders direct dispatch attempts without legacy routing metadata", () => {
+    const delegated = routedRun({
       terminalEventSeen: true,
-      assistantMessageCount: 2,
-      finalMessagePresent: true,
       resultCompleteness: "terminal_message",
     });
     const details = {
-      runId: routed.id,
+      runId: delegated.id,
       source: "delegated",
-      routeGroupId: "route-group-1",
-      routeDecision: {
-        decisionId: "decision-1",
-        policyVersion: 3,
-        mode: "proactive",
-        taskKind: "implementation",
-        role: "worker",
-        selected: {
-          provider: "codex",
-          providerInstanceId: "codex-primary",
-          model: "gpt-5.6-sol",
-        },
-        explanation: "The server selected the first eligible worker target.",
-        candidates: [
-          {
-            candidate: {
-              provider: "cursor",
-              providerInstanceId: "cursor",
-              model: "composer-2.5",
-            },
-            eligible: false,
-            reasonCodes: ["provider_unavailable"],
-          },
-          {
-            candidate: {
-              provider: "codex",
-              providerInstanceId: "codex-primary",
-              model: "gpt-5.6-sol",
-            },
-            eligible: true,
-            reasonCodes: [],
-          },
-        ],
-        fallbackChain: [
-          {
-            provider: "cursor",
-            providerInstanceId: "cursor",
-            model: "composer-2.5",
-          },
-        ],
-      },
       attempts: [
         {
-          attemptId: "attempt-1",
-          target: {
-            provider: "cursor",
-            providerInstanceId: "cursor",
-            model: "composer-2.5",
-          },
-          dispatchState: "session_starting",
-          allocatedAt: "2026-07-29T00:00:00.000Z",
-          failureReason: "Provider process was unavailable.",
-        },
-        {
-          attemptId: "attempt-2",
+          attemptId: DelegationAttemptId.make("attempt-1"),
           target: {
             provider: "codex",
-            providerInstanceId: "codex-primary",
+            providerInstanceId: ProviderInstanceId.make("codex-primary"),
             model: "gpt-5.6-sol",
           },
-          fallbackFrom: {
-            provider: "cursor",
-            providerInstanceId: "cursor",
-            model: "composer-2.5",
-          },
           dispatchState: "turn_accepted",
-          allocatedAt: "2026-07-29T00:00:01.000Z",
+          allocatedAt: "2026-07-29T00:00:00.000Z",
         },
       ],
-    } as unknown as SubagentRunDetails;
+    } as SubagentRunDetails;
 
-    const diagnostics = resolveSubagentRouteDiagnostics(routed, details);
-    expect(diagnostics).toMatchObject({
-      policyVersion: 3,
-      explanation: "The server selected the first eligible worker target.",
-      candidates: [
-        {
-          target: "cursor / composer-2.5",
-          eligible: false,
-          reasons: ["Provider unavailable"],
-        },
-        {
-          target: "codex-primary / gpt-5.6-sol",
-          eligible: true,
-          reasons: [],
-        },
-      ],
-      fallbackChain: ["cursor / composer-2.5"],
-      attempts: [
-        {
-          target: "cursor / composer-2.5",
-          phase: "Session starting",
-          fallbackFrom: null,
-          failure: "Provider process was unavailable.",
-        },
-        {
-          target: "codex-primary / gpt-5.6-sol",
-          phase: "Turn accepted",
-          fallbackFrom: "cursor / composer-2.5",
-          failure: null,
-        },
-      ],
+    expect(resolveSubagentRunDiagnostics(delegated, details)).toMatchObject({
+      attempts: [{ target: "codex-primary / gpt-5.6-sol", phase: "Turn accepted" }],
     });
-    expect(diagnostics?.grouping).toEqual([
-      { label: "Workflow", value: "workflow-1" },
-      { label: "Batch", value: "batch-1" },
-      { label: "Lane", value: "lane-2" },
-      { label: "Route group", value: "route-group-1" },
-      { label: "Phase", value: "Verify" },
-    ]);
-    expect(diagnostics?.completeness).toContainEqual({
-      label: "Result completeness",
-      value: "Terminal message",
-    });
-
     const html = renderToStaticMarkup(
-      createElement(SubagentRouteDetails, { run: routed, details }),
+      createElement(SubagentRunDiagnostics, { run: delegated, details }),
     );
-    expect(html).toContain("Candidate diagnostics");
-    expect(html).toContain("Provider unavailable");
+    expect(html).toContain("Run diagnostics");
     expect(html).toContain("Attempt history");
-    expect(html).toContain("fallback from cursor / composer-2.5");
-    expect(html).toContain("Policy v3");
-
-    const collapsedHtml = renderToStaticMarkup(
-      createElement(SubagentRouteDetails, { run: routed, details, collapsed: true }),
-    );
-    expect(collapsedHtml).toContain('aria-expanded="false"');
-    expect(collapsedHtml).toContain("Delegation route");
-    expect(collapsedHtml).not.toContain("Candidate diagnostics");
-    expect(collapsedHtml).not.toContain("Attempt history");
-  });
-
-  it("does not probe rich diagnostics from the compact streamed run", () => {
-    const routed = Object.assign(routedRun(), {
-      routeDecision: {
-        policyVersion: 99,
-        candidates: [],
-        fallbackChain: [],
-      },
-      attempts: [{ dispatchState: "turn_accepted" }],
-      routeGroupId: "must-not-be-read",
-    });
-
-    expect(resolveSubagentRouteDiagnostics(routed)).toMatchObject({
-      policyVersion: 3,
-      explanation: "Selected the first eligible worker target.",
-      candidates: [],
-      attempts: [],
-      grouping: [],
-    });
+    expect(html).not.toContain("Worker route");
+    expect(html).not.toContain("Route decision");
   });
 });
 
-describe("subagent route collapse behavior", () => {
+describe("subagent diagnostics collapse behavior", () => {
   it("auto-collapses after user scrolling and expands again at the top", () => {
     const initial = { manual: false, automatic: false };
-    const scrolled = updateRouteDetailsCollapse(initial, {
+    const scrolled = updateDiagnosticsCollapse(initial, {
       type: "user-scroll",
       atTop: false,
     });
     expect(scrolled).toEqual({ manual: false, automatic: true });
     expect(
-      updateRouteDetailsCollapse(scrolled, {
+      updateDiagnosticsCollapse(scrolled, {
         type: "user-scroll",
         atTop: true,
       }),
@@ -707,22 +558,22 @@ describe("subagent route collapse behavior", () => {
   });
 
   it("keeps a manual collapse closed across scroll position changes", () => {
-    const collapsed = updateRouteDetailsCollapse(
+    const collapsed = updateDiagnosticsCollapse(
       { manual: false, automatic: false },
       { type: "toggle" },
     );
     expect(collapsed).toEqual({ manual: true, automatic: false });
     expect(
-      updateRouteDetailsCollapse(collapsed, {
+      updateDiagnosticsCollapse(collapsed, {
         type: "user-scroll",
         atTop: true,
       }),
     ).toBe(collapsed);
   });
 
-  it("allows an automatically or manually collapsed route to be reopened", () => {
+  it("allows an automatically or manually collapsed diagnostics to be reopened", () => {
     expect(
-      updateRouteDetailsCollapse(
+      updateDiagnosticsCollapse(
         { manual: false, automatic: true },
         {
           type: "toggle",
@@ -730,7 +581,7 @@ describe("subagent route collapse behavior", () => {
       ),
     ).toEqual({ manual: false, automatic: false });
     expect(
-      updateRouteDetailsCollapse(
+      updateDiagnosticsCollapse(
         { manual: true, automatic: false },
         {
           type: "toggle",

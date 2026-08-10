@@ -3,15 +3,9 @@ import * as Schema from "effect/Schema";
 import { IsoDateTime, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   DelegationAttempt,
-  DelegationBatchId,
   DelegationDispatchState,
-  DelegationLaneId,
   DelegationResultCompleteness,
-  DelegationRouteDecision,
-  DelegationRouteGroupId,
-  DelegationRouteSummary,
-  DelegationWorkflowId,
-} from "./delegationRouter.ts";
+} from "./delegation.ts";
 import { ProviderOptionSelections, ResolvedProviderOption } from "./model.ts";
 import { OrchestrationMessage, OrchestrationThreadActivity } from "./orchestration.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
@@ -101,10 +95,6 @@ export const SubagentRun = Schema.Struct({
   capabilities: SubagentCapabilities,
   runKind: Schema.optional(Schema.Literals(["agent", "workflow"])),
   workflow: Schema.optional(SubagentWorkflowInfo),
-  workflowId: Schema.optional(DelegationWorkflowId),
-  batchId: Schema.optional(DelegationBatchId),
-  laneId: Schema.optional(DelegationLaneId),
-  route: Schema.optional(DelegationRouteSummary),
   dispatchState: Schema.optional(DelegationDispatchState),
   terminalEventSeen: Schema.optional(Schema.Boolean),
   assistantMessageCount: Schema.optional(NonNegativeInt),
@@ -129,8 +119,6 @@ export type SubagentRunDetailsInput = typeof SubagentRunDetailsInput.Type;
 export const SubagentRunDetails = Schema.Struct({
   runId: SubagentRunId,
   source: SubagentSource,
-  routeGroupId: Schema.optional(DelegationRouteGroupId),
-  routeDecision: Schema.optional(DelegationRouteDecision),
   attempts: Schema.Array(DelegationAttempt),
   pendingQuestions: Schema.optional(Schema.Array(UserInputQuestion)),
 });

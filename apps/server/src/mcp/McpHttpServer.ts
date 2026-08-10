@@ -45,8 +45,6 @@ import { EngineKnowledgeToolkitHandlersLive } from "./toolkits/engineKnowledge/h
 import { EngineKnowledgeToolkit } from "./toolkits/engineKnowledge/tools.ts";
 import { EngineToolkitHandlersLive } from "./toolkits/engine/handlers.ts";
 import { EngineToolkit } from "./toolkits/engine/tools.ts";
-import { DelegationRouterToolkitHandlersLive } from "./toolkits/delegationRouter/handlers.ts";
-import { DelegationRouterToolkit } from "./toolkits/delegationRouter/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -439,10 +437,6 @@ export const EngineToolkitRegistrationLive = McpServer.toolkit(EngineToolkit).pi
   Layer.provide(EngineToolkitHandlersLive),
 );
 
-export const DelegationRouterToolkitRegistrationLive = McpServer.toolkit(
-  DelegationRouterToolkit,
-).pipe(Layer.provide(DelegationRouterToolkitHandlersLive));
-
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -461,6 +455,5 @@ export const layer = Layer.mergeAll(
   ClaudeAgentToolkitRegistrationLive,
   EngineKnowledgeToolkitRegistrationLive,
   EngineToolkitRegistrationLive,
-  DelegationRouterToolkitRegistrationLive,
   McpGatewayLive,
 ).pipe(Layer.provideMerge(McpTransportLive), Layer.provide(LegacyMcpRouterLive));

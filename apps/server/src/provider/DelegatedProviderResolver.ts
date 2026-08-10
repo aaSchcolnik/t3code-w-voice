@@ -18,7 +18,7 @@ import {
   defaultInstanceIdForDriver,
   ProviderDriverKind,
   type DelegatedProviderInstanceCapability,
-  type DelegationReasonCode,
+  type DelegationProviderReasonCode,
   type DelegatedRunCapabilities,
   type DelegatedRunProvider,
   type ModelSelection,
@@ -56,7 +56,7 @@ export const instanceUnusableReason = (instance: ServerProvider): string | undef
 export const instanceUnusableReasonCode = (
   instance: ServerProvider,
 ): Extract<
-  DelegationReasonCode,
+  DelegationProviderReasonCode,
   "provider_disabled" | "provider_uninstalled" | "provider_unavailable"
 > => {
   if (instance.availability === "unavailable") return "provider_unavailable";
@@ -93,12 +93,12 @@ export type DelegatedProviderResolution =
   | { readonly ok: true; readonly value: ResolvedDelegatedProvider }
   | {
       readonly ok: false;
-      readonly reasonCode: DelegationReasonCode;
+      readonly reasonCode: DelegationProviderReasonCode;
       readonly message: string;
     };
 
 const failure = (
-  reasonCode: DelegationReasonCode,
+  reasonCode: DelegationProviderReasonCode,
   message: string,
 ): DelegatedProviderResolution => ({ ok: false, reasonCode, message });
 

@@ -56,8 +56,8 @@ import Migration0040 from "./Migrations/040_ProjectionThreadTitleRegeneration.ts
 import Migration0041 from "./Migrations/036_ProjectionThreadsPinned.ts";
 import Migration0042 from "./Migrations/042_ProjectionTurnsKeysetIndex.ts";
 import Migration0043 from "./Migrations/043_ProjectionThreadsPinOrderKey.ts";
-import Migration0044 from "./Migrations/039_ProjectionProjectsDefaultThreadEnvMode.ts";
-import Migration0045 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
+import Migration0044 from "./Migrations/044_ProjectionProjectsDefaultThreadEnvMode.ts";
+import Migration0045 from "./Migrations/045_ProjectionProjectFaviconPath.ts";
 
 /**
  * Migration loader with all migrations defined inline.

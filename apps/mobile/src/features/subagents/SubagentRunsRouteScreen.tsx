@@ -7,7 +7,7 @@ import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { StatusPill } from "../../components/StatusPill";
 import { useSubagentRuns } from "../../state/subagents";
-import { mobileSubagentRunPresentation, mobileSubagentStatusTone } from "./subagentPresentation";
+import { mobileSubagentStatusTone } from "./subagentPresentation";
 
 type Props = StaticScreenProps<{
   readonly environmentId: string;
@@ -38,11 +38,10 @@ export function SubagentRunsRouteScreen({ route }: Props) {
         ) : state.runs.length === 0 ? (
           <EmptyState
             title="No delegated runs"
-            detail="Routed and native subagent work for this thread will appear here."
+            detail="Delegated and native subagent work for this thread will appear here."
           />
         ) : (
           state.runs.map((run) => {
-            const presentation = mobileSubagentRunPresentation(run);
             return (
               <Pressable
                 key={run.id}
@@ -62,19 +61,9 @@ export function SubagentRunsRouteScreen({ route }: Props) {
                     <Text className="font-t3-bold text-lg text-foreground" numberOfLines={2}>
                       {run.title}
                     </Text>
-                    {presentation.routeLabel ? (
-                      <Text className="text-sm text-foreground-muted" numberOfLines={1}>
-                        {presentation.routeLabel}
-                      </Text>
-                    ) : null}
                   </View>
                   <StatusPill size="compact" {...mobileSubagentStatusTone(run)} />
                 </View>
-                {presentation.explanation ? (
-                  <Text className="text-sm leading-normal text-foreground-muted" numberOfLines={3}>
-                    {presentation.explanation}
-                  </Text>
-                ) : null}
                 {run.status === "waiting_for_input" ? (
                   <Text className="font-t3-bold text-sm text-amber-700 dark:text-amber-300">
                     {run.capabilities.canRespond

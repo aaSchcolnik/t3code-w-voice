@@ -1,21 +1,15 @@
 import {
   buildSubagentInputAnswers,
   isActiveSubagentStatus,
-  resolveSubagentRouteTarget,
   subagentPhaseLabel,
   type SubagentInputDraftAnswer,
 } from "@t3tools/client-runtime/state/subagents";
 import type { SubagentRun, UserInputQuestion } from "@t3tools/contracts";
 
 export function mobileSubagentRunPresentation(run: SubagentRun) {
-  const routeTarget = resolveSubagentRouteTarget(run);
   return {
     active: isActiveSubagentStatus(run.status),
     phaseLabel: subagentPhaseLabel(run),
-    routeLabel: run.route
-      ? `${run.route.role === "scout" ? "Scout" : "Worker"} · ${routeTarget ?? run.route.provider}`
-      : null,
-    explanation: run.route?.explanation ?? null,
     result: run.status === "failed" ? (run.error ?? run.finalMessage) : run.finalMessage,
     canCancel: run.capabilities.canCancel && isActiveSubagentStatus(run.status),
     canRespond: run.status === "waiting_for_input" && run.capabilities.canRespond,

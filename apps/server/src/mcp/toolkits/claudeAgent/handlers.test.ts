@@ -59,8 +59,6 @@ it.effect(
         received = input;
         return Effect.succeed(run);
       },
-      startResolved: () => Effect.die("unused"),
-      startAllocated: () => Effect.die("unused"),
       reconcileParentDelivery: () => Effect.void,
       capabilities: () => Effect.die("unused"),
       get: () => Effect.die("unused"),

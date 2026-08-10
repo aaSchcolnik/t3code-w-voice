@@ -69,14 +69,12 @@ describe("DelegatedRun", () => {
     expect(run.requestedOptions).toBeUndefined();
     expect(run.resolvedOptions).toBeUndefined();
     expect(run.resolvedOptionDetails).toBeUndefined();
-    expect(run.workflowId).toBeUndefined();
-    expect(run.routeDecision).toBeUndefined();
     expect(run.attempts).toBeUndefined();
     expect(run.resultCompleteness).toBeUndefined();
     expect(run.pendingQuestions).toBeUndefined();
   });
 
-  it("decodes routed workflow, attempt, dispatch, and completeness metadata", () => {
+  it("ignores legacy routing metadata while preserving direct-run diagnostics", () => {
     const run = decodeDelegatedRun({
       id: "run-2",
       provider: "codex",
@@ -122,6 +120,12 @@ describe("DelegatedRun", () => {
       lastSummary: null,
       finalMessage: "Done",
       error: null,
+      sandboxMode: "workspace-write",
+      workspaceAccess: "workspace-write",
+      editScopes: [
+        { kind: "file", path: "packages/contracts/src/delegatedRun.ts" },
+        { kind: "directory", path: "packages/contracts/src/fixtures" },
+      ],
       workspaceRoot: "/workspace",
       sequence: 3,
       allocatedAt: "2026-07-29T00:00:00.000Z",
@@ -145,7 +149,9 @@ describe("DelegatedRun", () => {
       updatedAt: "2026-07-29T00:00:02.000Z",
     });
 
-    expect(run.routeDecision?.selected.provider).toBe("codex");
+    expect(run).not.toHaveProperty("routeDecision");
+    expect(run).not.toHaveProperty("workspaceAccess");
+    expect(run).not.toHaveProperty("editScopes");
     expect(run.attempts?.[0]?.dispatchState).toBe("turn_accepted");
     expect(run.resultCompleteness).toBe("terminal_message");
     expect(run.pendingQuestions?.[0]?.id).toBe("scope");

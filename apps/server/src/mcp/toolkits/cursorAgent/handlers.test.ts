@@ -59,8 +59,6 @@ it.effect(
         received = input;
         return Effect.succeed(run);
       },
-      startResolved: () => Effect.die("unused"),
-      startAllocated: () => Effect.die("unused"),
       reconcileParentDelivery: () => Effect.void,
       capabilities: () => Effect.die("unused"),
       get: () => Effect.die("unused"),
@@ -71,14 +69,20 @@ it.effect(
     return Effect.gen(function* () {
       const result = yield* cursorAgentHandlers.cursor_start({
         task: "Inspect the source",
+        providerInstanceId: ProviderInstanceId.make("cursor-work"),
         model: "composer-2.5",
+        options: [{ id: "mode", value: "agent" }],
+        profile: "review",
         idempotencyKey: DelegationIdempotencyKey.make("stable-key"),
       });
 
       expect(result).toBe(run);
       expect(received).toMatchObject({
         task: "Inspect the source",
+        providerInstanceId: "cursor-work",
         model: "composer-2.5",
+        options: [{ id: "mode", value: "agent" }],
+        profile: "review",
         idempotencyKey: "stable-key",
         provider: "cursor",
         parentThreadId: ownerThreadId,

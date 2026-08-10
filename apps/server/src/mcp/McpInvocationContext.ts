@@ -10,11 +10,8 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-import type { TrustedRoutingContext } from "../provider/DelegationRouter.ts";
-
 export type McpCapability =
   | "preview"
-  | "delegation-router"
   | "codex-agent"
   | "cursor-agent"
   | "claude-agent"
@@ -41,8 +38,6 @@ export interface McpInvocationScope {
   readonly capabilities: ReadonlySet<McpCapability>;
   readonly effectiveMcp?: McpSettings;
   readonly providerDriver?: ProviderDriverKind;
-  /** Created by the server only; public MCP inputs cannot supply routing-policy provenance. */
-  readonly trustedRoutingContext?: TrustedRoutingContext;
   readonly issuedAt: number;
 }
 
@@ -66,7 +61,7 @@ export const requireMcpCapability = Effect.fn("mcp.requireCapability")(function*
     (mcpSessionKind(invocation) === "delegated" && capability !== "preview")
   ) {
     return yield* new PreviewAutomationUnavailableError({
-      capability: capability === "delegation-router" ? "preview" : capability,
+      capability,
       environmentId: invocation.environmentId,
       threadId: invocation.threadId,
       providerSessionId: invocation.providerSessionId,

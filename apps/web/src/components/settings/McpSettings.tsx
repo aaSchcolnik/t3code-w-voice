@@ -1,7 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
-  type DelegationMode,
-  type DelegationRouterSettings,
   type EngineDelegationRole,
   type EngineDelegationSettings,
   type EngineDelegationTarget,
@@ -9,7 +7,6 @@ import {
   type ServerSettingsPatch,
   SCOUT_DEFAULTS,
   WORKER_DEFAULTS,
-  resolveEffectiveMcpSettings,
 } from "@t3tools/contracts";
 import { MonitorSmartphoneIcon } from "lucide-react";
 import { useState } from "react";
@@ -25,13 +22,6 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Field, FieldDescription, FieldLabel } from "../ui/field";
 import {
-  NumberField,
-  NumberFieldDecrement,
-  NumberFieldGroup,
-  NumberFieldIncrement,
-  NumberFieldInput,
-} from "../ui/number-field";
-import {
   Select,
   SelectGroup,
   SelectItem,
@@ -40,7 +30,6 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Switch } from "../ui/switch";
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { ChainEditor } from "./EngineDelegationSettings";
 import {
   SettingResetButton,
@@ -51,43 +40,14 @@ import {
 import { ComputerUseSettingsSection } from "./ComputerUseSettings";
 
 type McpBooleanKey = "preview" | "codexAgent" | "cursorAgent" | "claudeAgent";
-type RouterSettingKey = keyof DelegationRouterSettings;
-type RouterRole = Extract<EngineDelegationRole, "scout" | "worker">;
-type GlobalRouterRolesPatch = Partial<
+type DelegationRoleChain = Extract<EngineDelegationRole, "scout" | "worker">;
+type GlobalDelegationRolesPatch = Partial<
   Record<EngineDelegationRole, ReadonlyArray<EngineDelegationTarget>>
 >;
 
-export const routerModeLabels: Record<DelegationMode, string> = {
-  off: "Off",
-  suggested: "Suggested",
-  proactive: "Proactive",
-};
-
-export function withProjectRouterSetting(
+export function withProjectDelegationRole(
   overrides: ProjectMcpOverrides | undefined,
-  key: RouterSettingKey,
-  value: DelegationRouterSettings[RouterSettingKey] | undefined,
-): ProjectMcpOverrides {
-  const next = { ...overrides } as Record<string, unknown>;
-  const router = { ...overrides?.router } as Record<string, unknown>;
-  if (value === undefined) delete router[key];
-  else router[key] = value;
-  if (Object.keys(router).length === 0) delete next.router;
-  else next.router = router;
-  return next as ProjectMcpOverrides;
-}
-
-export function withoutProjectRouterSettings(
-  overrides: ProjectMcpOverrides | undefined,
-): ProjectMcpOverrides {
-  const next = { ...overrides } as Record<string, unknown>;
-  delete next.router;
-  return next as ProjectMcpOverrides;
-}
-
-export function withProjectRouterRole(
-  overrides: ProjectMcpOverrides | undefined,
-  role: RouterRole,
+  role: DelegationRoleChain,
   chain: ReadonlyArray<EngineDelegationTarget> | undefined,
 ): ProjectMcpOverrides {
   const next = { ...overrides } as Record<string, unknown>;
@@ -105,12 +65,12 @@ export function withProjectRouterRole(
   return next as ProjectMcpOverrides;
 }
 
-export function withGlobalRouterRole(
+export function withGlobalDelegationRole(
   roles: EngineDelegationSettings["roles"],
-  role: RouterRole,
+  role: DelegationRoleChain,
   chain: ReadonlyArray<EngineDelegationTarget> | undefined,
-): GlobalRouterRolesPatch {
-  const next: GlobalRouterRolesPatch = {};
+): GlobalDelegationRolesPatch {
+  const next: GlobalDelegationRolesPatch = {};
   if (roles.scout !== undefined) next.scout = roles.scout;
   if (roles.worker !== undefined) next.worker = roles.worker;
   if (roles.consensus !== undefined) next.consensus = roles.consensus;
@@ -118,126 +78,6 @@ export function withGlobalRouterRole(
   if (chain === undefined) delete next[role];
   else next[role] = chain;
   return next;
-}
-
-function RouterModeControl({
-  value,
-  inherited,
-  onChange,
-}: {
-  value: DelegationMode;
-  inherited: boolean;
-  onChange: (value: DelegationMode) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      {inherited ? <Badge variant="secondary">Inherited</Badge> : null}
-      <ToggleGroup
-        aria-label="Delegation router mode"
-        variant="outline"
-        size="sm"
-        value={[value]}
-        onValueChange={(values) => {
-          const next = values[0];
-          if (next === "off" || next === "suggested" || next === "proactive") onChange(next);
-        }}
-      >
-        {(Object.entries(routerModeLabels) as ReadonlyArray<[DelegationMode, string]>).map(
-          ([mode, label]) => (
-            <Toggle key={mode} value={mode} aria-label={`${label} delegation mode`}>
-              {label}
-            </Toggle>
-          ),
-        )}
-      </ToggleGroup>
-    </div>
-  );
-}
-
-function RouterNumberControl({
-  value,
-  inherited,
-  label,
-  min,
-  max,
-  step = 1,
-  suffix,
-  onChange,
-}: {
-  value: number;
-  inherited: boolean;
-  label: string;
-  min: number;
-  max?: number;
-  step?: number;
-  suffix?: string;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      {inherited ? <Badge variant="secondary">Inherited</Badge> : null}
-      <NumberField
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        size="sm"
-        className="w-32"
-        onValueChange={(next) => {
-          if (typeof next === "number" && Number.isFinite(next)) {
-            onChange(Math.max(min, Math.round(next)));
-          }
-        }}
-      >
-        <NumberFieldGroup>
-          <NumberFieldDecrement aria-label={`Decrease ${label}`} />
-          <NumberFieldInput aria-label={label} />
-          <NumberFieldIncrement aria-label={`Increase ${label}`} />
-        </NumberFieldGroup>
-      </NumberField>
-      {suffix ? <span className="text-xs text-muted-foreground">{suffix}</span> : null}
-    </div>
-  );
-}
-
-function RouterSelectControl<T extends string>({
-  value,
-  inherited,
-  label,
-  items,
-  onChange,
-}: {
-  value: T;
-  inherited: boolean;
-  label: string;
-  items: ReadonlyArray<{ value: T; label: string }>;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      {inherited ? <Badge variant="secondary">Inherited</Badge> : null}
-      <Select
-        items={[...items]}
-        value={value}
-        onValueChange={(next) => {
-          if (next !== null) onChange(next as T);
-        }}
-      >
-        <SelectTrigger className="w-44" aria-label={label}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectPopup>
-          <SelectGroup>
-            {items.map((item) => (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectPopup>
-      </Select>
-    </div>
-  );
 }
 
 export function McpBooleanControl({
@@ -307,7 +147,6 @@ export function McpSettingsPanel() {
     (project) => `${project.environmentId}:${project.id}` === scope,
   );
   const projectOverrides = selectedProject?.mcpOverrides ?? undefined;
-  const effectiveMcp = resolveEffectiveMcpSettings(settings.mcp, projectOverrides);
   const codexAvailable = providerEntries.some(
     (entry) =>
       entry.driverKind === "codex" && entry.enabled && entry.installed && entry.isAvailable,
@@ -336,49 +175,39 @@ export function McpSettingsPanel() {
     else next[key] = value;
     persistProjectOverrides(next as ProjectMcpOverrides);
   };
-  const updateRouterSetting = <K extends RouterSettingKey>(
-    key: K,
-    value: DelegationRouterSettings[K],
-  ) => {
-    if (selectedProject === undefined) {
-      updateMcp({ router: { [key]: value } });
-      return;
-    }
-    persistProjectOverrides(withProjectRouterSetting(projectOverrides, key, value));
-  };
-  const resetRouterSetting = (key: RouterSettingKey) => {
-    persistProjectOverrides(withProjectRouterSetting(projectOverrides, key, undefined));
-  };
-  const globalRoleChain = (role: RouterRole) =>
+  const globalRoleChain = (role: DelegationRoleChain) =>
     settings.mcp.engine.delegation.roles[role] ??
     (role === "scout" ? SCOUT_DEFAULTS : WORKER_DEFAULTS);
-  const effectiveRoleChain = (role: RouterRole) =>
+  const effectiveRoleChain = (role: DelegationRoleChain) =>
     projectOverrides?.engine?.delegation?.roles?.[role] ?? globalRoleChain(role);
-  const updateRoleChain = (role: RouterRole, chain: ReadonlyArray<EngineDelegationTarget>) => {
+  const updateRoleChain = (
+    role: DelegationRoleChain,
+    chain: ReadonlyArray<EngineDelegationTarget>,
+  ) => {
     if (selectedProject === undefined) {
       updateMcp({
         engine: {
           delegation: {
-            roles: withGlobalRouterRole(settings.mcp.engine.delegation.roles, role, chain),
+            roles: withGlobalDelegationRole(settings.mcp.engine.delegation.roles, role, chain),
           },
         },
       });
       return;
     }
-    persistProjectOverrides(withProjectRouterRole(projectOverrides, role, chain));
+    persistProjectOverrides(withProjectDelegationRole(projectOverrides, role, chain));
   };
-  const resetRoleChain = (role: RouterRole) => {
+  const resetRoleChain = (role: DelegationRoleChain) => {
     if (selectedProject === undefined) {
       updateMcp({
         engine: {
           delegation: {
-            roles: withGlobalRouterRole(settings.mcp.engine.delegation.roles, role, undefined),
+            roles: withGlobalDelegationRole(settings.mcp.engine.delegation.roles, role, undefined),
           },
         },
       });
       return;
     }
-    persistProjectOverrides(withProjectRouterRole(projectOverrides, role, undefined));
+    persistProjectOverrides(withProjectDelegationRole(projectOverrides, role, undefined));
   };
 
   const scopeItems = [
@@ -394,9 +223,8 @@ export function McpSettingsPanel() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">MCP</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Control the built-in toolkits granted to agent sessions. Router mode and instruction
-          changes apply when a new session starts; routing chains are read when a delegated run is
-          requested.
+          Control the built-in toolkits granted to agent sessions. Changes apply when a new session
+          starts; delegation role preferences select provider-specific tools for engine workflows.
         </p>
       </div>
       <Field>
@@ -437,251 +265,7 @@ export function McpSettingsPanel() {
           ) : null}
         </div>
       </Field>
-      <SettingsSection
-        title="Delegation router"
-        headerAction={
-          selectedProject !== undefined &&
-          (projectOverrides?.router !== undefined ||
-            projectOverrides?.engine?.delegation?.roles?.scout !== undefined ||
-            projectOverrides?.engine?.delegation?.roles?.worker !== undefined) ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                const withoutRouter = withoutProjectRouterSettings(projectOverrides);
-                const withoutScout = withProjectRouterRole(withoutRouter, "scout", undefined);
-                persistProjectOverrides(withProjectRouterRole(withoutScout, "worker", undefined));
-              }}
-            >
-              Reset router to global
-            </Button>
-          ) : null
-        }
-      >
-        <SettingsRow
-          title="Router mode"
-          description="Off blocks new delegation. Suggested makes the tool available without asking the parent to seek work for it. Proactive instructs a new parent session to look for safe, independent lanes; the parent still decides whether delegation is useful."
-          status={
-            selectedProject !== undefined
-              ? projectOverrides?.router?.mode === undefined
-                ? `Inherited from global: ${routerModeLabels[settings.mcp.router.mode]}`
-                : "Overridden for this project"
-              : "Applies to projects without an override"
-          }
-          resetAction={
-            selectedProject !== undefined && projectOverrides?.router?.mode !== undefined ? (
-              <SettingResetButton
-                label="delegation router mode to global"
-                onClick={() => resetRouterSetting("mode")}
-              />
-            ) : null
-          }
-          control={
-            <RouterModeControl
-              value={effectiveMcp.router.mode}
-              inherited={
-                selectedProject !== undefined && projectOverrides?.router?.mode === undefined
-              }
-              onChange={(mode) => updateRouterSetting("mode", mode)}
-            />
-          }
-        />
-        {(
-          [
-            {
-              key: "maxBatchSize",
-              title: "Maximum batch size",
-              description: "Most lanes accepted in one atomic routing request.",
-              min: 1,
-              max: 4,
-              suffix: "lanes",
-            },
-            {
-              key: "maxConcurrentPerParent",
-              title: "Parent concurrency",
-              description: "Active delegated runs allowed for one parent thread.",
-              min: 1,
-              max: 64,
-              suffix: "runs",
-            },
-            {
-              key: "maxConcurrentEnvironment",
-              title: "Environment concurrency",
-              description: "Active delegated runs allowed across this environment.",
-              min: 1,
-              max: 128,
-              suffix: "runs",
-            },
-          ] as const
-        ).map(({ key, title, description, min, max, suffix }) => {
-          const overridden = projectOverrides?.router?.[key] !== undefined;
-          return (
-            <SettingsRow
-              key={key}
-              title={title}
-              description={description}
-              status={
-                selectedProject !== undefined
-                  ? overridden
-                    ? "Overridden for this project"
-                    : `Inherited from global: ${settings.mcp.router[key]}`
-                  : undefined
-              }
-              resetAction={
-                selectedProject !== undefined && overridden ? (
-                  <SettingResetButton
-                    label={`${title.toLowerCase()} to global`}
-                    onClick={() => resetRouterSetting(key)}
-                  />
-                ) : null
-              }
-              control={
-                <RouterNumberControl
-                  value={effectiveMcp.router[key]}
-                  inherited={selectedProject !== undefined && !overridden}
-                  label={title}
-                  min={min}
-                  max={max}
-                  suffix={suffix}
-                  onChange={(value) => updateRouterSetting(key, value)}
-                />
-              }
-            />
-          );
-        })}
-        <SettingsRow
-          title="Delegated run timeout"
-          description="Deadline measured from durable allocation. Expiry requests cancellation and never activates fallback."
-          status={
-            selectedProject !== undefined
-              ? projectOverrides?.router?.defaultTimeoutMs === undefined
-                ? `Inherited from global: ${Math.round(settings.mcp.router.defaultTimeoutMs / 60_000)} minutes`
-                : "Overridden for this project"
-              : undefined
-          }
-          resetAction={
-            selectedProject !== undefined &&
-            projectOverrides?.router?.defaultTimeoutMs !== undefined ? (
-              <SettingResetButton
-                label="delegated run timeout to global"
-                onClick={() => resetRouterSetting("defaultTimeoutMs")}
-              />
-            ) : null
-          }
-          control={
-            <RouterNumberControl
-              value={Math.round(effectiveMcp.router.defaultTimeoutMs / 60_000)}
-              inherited={
-                selectedProject !== undefined &&
-                projectOverrides?.router?.defaultTimeoutMs === undefined
-              }
-              label="Delegated run timeout in minutes"
-              min={1}
-              max={1_440}
-              suffix="minutes"
-              onChange={(minutes) => updateRouterSetting("defaultTimeoutMs", minutes * 60_000)}
-            />
-          }
-        />
-        <SettingsRow
-          title="Batch diversity"
-          description="Prefer unused providers within the configured eligible chain. Hard constraints and chain order still win."
-          status={
-            selectedProject !== undefined
-              ? projectOverrides?.router?.diversity === undefined
-                ? `Inherited from global: ${settings.mcp.router.diversity}`
-                : "Overridden for this project"
-              : undefined
-          }
-          resetAction={
-            selectedProject !== undefined && projectOverrides?.router?.diversity !== undefined ? (
-              <SettingResetButton
-                label="batch diversity to global"
-                onClick={() => resetRouterSetting("diversity")}
-              />
-            ) : null
-          }
-          control={
-            <RouterSelectControl
-              value={effectiveMcp.router.diversity}
-              inherited={
-                selectedProject !== undefined && projectOverrides?.router?.diversity === undefined
-              }
-              label="Batch diversity preference"
-              items={[
-                { value: "off", label: "Keep chain order" },
-                { value: "prefer", label: "Prefer diversity" },
-              ]}
-              onChange={(diversity) => updateRouterSetting("diversity", diversity)}
-            />
-          }
-        />
-        <SettingsRow
-          title="Fallback policy"
-          description="Fallback is allowed only before provider dispatch begins. Ambiguous post-dispatch failures are never replayed."
-          status={
-            selectedProject !== undefined
-              ? projectOverrides?.router?.fallback === undefined
-                ? `Inherited from global: ${settings.mcp.router.fallback}`
-                : "Overridden for this project"
-              : undefined
-          }
-          resetAction={
-            selectedProject !== undefined && projectOverrides?.router?.fallback !== undefined ? (
-              <SettingResetButton
-                label="fallback policy to global"
-                onClick={() => resetRouterSetting("fallback")}
-              />
-            ) : null
-          }
-          control={
-            <RouterSelectControl
-              value={effectiveMcp.router.fallback}
-              inherited={
-                selectedProject !== undefined && projectOverrides?.router?.fallback === undefined
-              }
-              label="Delegation fallback policy"
-              items={[
-                { value: "none", label: "No fallback" },
-                { value: "pre-dispatch", label: "Before dispatch" },
-              ]}
-              onChange={(fallback) => updateRouterSetting("fallback", fallback)}
-            />
-          }
-        />
-        <SettingsRow
-          title="Explanation detail"
-          description="Controls how much server-authored routing rationale is retained for run diagnostics."
-          status={
-            selectedProject !== undefined
-              ? projectOverrides?.router?.explanation === undefined
-                ? `Inherited from global: ${settings.mcp.router.explanation}`
-                : "Overridden for this project"
-              : undefined
-          }
-          resetAction={
-            selectedProject !== undefined && projectOverrides?.router?.explanation !== undefined ? (
-              <SettingResetButton
-                label="explanation detail to global"
-                onClick={() => resetRouterSetting("explanation")}
-              />
-            ) : null
-          }
-          control={
-            <RouterSelectControl
-              value={effectiveMcp.router.explanation}
-              inherited={
-                selectedProject !== undefined && projectOverrides?.router?.explanation === undefined
-              }
-              label="Route explanation detail"
-              items={[
-                { value: "summary", label: "Summary" },
-                { value: "full", label: "Full diagnostics" },
-              ]}
-              onChange={(explanation) => updateRouterSetting("explanation", explanation)}
-            />
-          }
-        />
+      <SettingsSection title="Delegation roles">
         {(["scout", "worker"] as const).map((role) => {
           const overridden = projectOverrides?.engine?.delegation?.roles?.[role] !== undefined;
           return (
@@ -690,15 +274,15 @@ export function McpSettingsPanel() {
               title={`${role === "scout" ? "Scout" : "Worker"} chain`}
               description={
                 role === "scout"
-                  ? "Fallback order for read-only research, planning, and evidence gathering. The first eligible target is used unless batch diversity selects another eligible provider."
-                  : "Fallback order for implementation, debugging, and testing that may write to the workspace. The first eligible target is used unless batch diversity selects another eligible provider."
+                  ? "Provider preference for read-only research, planning, and evidence gathering."
+                  : "Provider preference for implementation, debugging, and testing that may write to the workspace."
               }
               status={
                 selectedProject !== undefined
                   ? overridden
                     ? "Overridden for this project"
                     : "Inherited from the global chain"
-                  : "The server validates candidate capabilities and exclusions at route time."
+                  : "The engine selects the first available provider-specific target."
               }
               resetAction={
                 (

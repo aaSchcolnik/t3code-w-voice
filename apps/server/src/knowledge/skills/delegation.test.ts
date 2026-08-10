@@ -7,11 +7,7 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import type { McpCapability } from "../../mcp/McpInvocationContext.ts";
-import {
-  renderDelegationSection,
-  resolveDelegationChains,
-  resolveDelegationRoutingChain,
-} from "./delegation.ts";
+import { renderDelegationSection, resolveDelegationChains } from "./delegation.ts";
 
 const capabilities = (...values: ReadonlyArray<McpCapability>): ReadonlySet<McpCapability> =>
   new Set(values);
@@ -80,62 +76,6 @@ describe("resolveDelegationChains", () => {
   });
 });
 
-describe("resolveDelegationRoutingChain", () => {
-  const availableProviders = new Set(["codex", "cursor", "claudeAgent", "inline"] as const);
-
-  it("reports provider defaults separately from configured role chains", () => {
-    expect(
-      resolveDelegationRoutingChain({
-        settings: defaults,
-        availableProviders,
-        role: "scout",
-      }),
-    ).toMatchObject({ policySource: "role_chain" });
-
-    expect(
-      resolveDelegationRoutingChain({
-        settings: { ...defaults, roles: {} },
-        availableProviders,
-        role: "scout",
-      }),
-    ).toMatchObject({ policySource: "provider_default", chain: SCOUT_DEFAULTS });
-  });
-
-  it("applies trusted skill overrides before workflow overrides", () => {
-    const settings = {
-      ...defaults,
-      skillOverrides: {
-        plan: { scout: [{ provider: "cursor" as const, model: "workflow-model" }] },
-      },
-    };
-    expect(
-      resolveDelegationRoutingChain({
-        settings,
-        availableProviders,
-        role: "scout",
-        workflow: "plan",
-      }),
-    ).toEqual({
-      policySource: "workflow_override",
-      chain: [{ provider: "cursor", model: "workflow-model" }],
-    });
-    expect(
-      resolveDelegationRoutingChain({
-        settings,
-        availableProviders,
-        role: "scout",
-        workflow: "plan",
-        skillOverride: {
-          scout: [{ provider: "codex", model: "skill-model" }],
-        },
-      }),
-    ).toEqual({
-      policySource: "skill_override",
-      chain: [{ provider: "codex", model: "skill-model" }],
-    });
-  });
-});
-
 describe("renderDelegationSection", () => {
   it("renders the inline fallback when no matching provider is available", () => {
     const resolved = resolveDelegationChains({
@@ -172,6 +112,13 @@ describe("renderDelegationSection", () => {
     expect(section).toContain('"reasoningEffort"');
     expect(section).toContain("then end the main-thread turn");
     expect(section).toContain("results arrive automatically");
+    expect(section).toContain("complete intentional edit set");
+    expect(section).toContain("disjoint intentional edit sets");
+    expect(section).toContain("does not reserve or enforce file ownership");
+    expect(section).toContain("shared snapshots, fixtures, generated files");
+    expect(section).toContain("exactly one Worker");
+    expect(section).toContain("keep the affected work sequential");
+    expect(section).toContain("do not edit its intended files");
     expect(section).not.toContain("codex_result");
   });
 

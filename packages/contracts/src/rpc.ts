@@ -236,7 +236,6 @@ import {
   ComputerUseTestInput,
   ComputerUseTestResult,
 } from "./computerUse.ts";
-import { SubscriptionUsageReadInput, SubscriptionUsageSnapshot } from "./usage.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -310,7 +309,6 @@ export const WS_METHODS = {
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
-  usageRead: "usage.read",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
   serverRetryResourceTelemetry: "server.retryResourceTelemetry",
@@ -473,12 +471,6 @@ export const WsServerGetTraceDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetTrace
 export const WsServerGetProcessDiagnosticsRpc = Rpc.make(WS_METHODS.serverGetProcessDiagnostics, {
   payload: Schema.Struct({}),
   success: ServerProcessDiagnosticsResult,
-  error: EnvironmentAuthorizationError,
-});
-
-export const WsUsageReadRpc = Rpc.make(WS_METHODS.usageRead, {
-  payload: SubscriptionUsageReadInput,
-  success: SubscriptionUsageSnapshot,
   error: EnvironmentAuthorizationError,
 });
 
@@ -1175,7 +1167,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,
-  WsUsageReadRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerGetResourceTelemetryHistoryRpc,
   WsServerRetryResourceTelemetryRpc,

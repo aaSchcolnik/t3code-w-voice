@@ -2,10 +2,14 @@ import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DelegatedRunId,
+  DelegationIdempotencyKey,
   EnvironmentId,
   PreviewTabId,
   ProjectId,
+  ProviderDriverKind,
   SkillSlug,
+  type DelegatedRun,
   type ProjectMcpOverrides,
   ProviderInstanceId,
   ThreadId,
@@ -42,6 +46,11 @@ import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { SkillDefaultsSeederLive } from "../knowledge/skills/seed.ts";
 import { DEFAULT_SKILLS } from "../knowledge/skills/defaults.ts";
 import { isSkillAvailable, searchSkillCatalog } from "./skillCatalog.ts";
+import {
+  __testing as delegatedRunTesting,
+  type DelegatedRunServiceShape,
+  type StartDelegatedRunInput,
+} from "../orchestration/DelegatedRunService.ts";
 import {
   MCP_2026_PROTOCOL_VERSION,
   MCP_MAX_REQUEST_BODY_BYTES,
@@ -83,8 +92,9 @@ const invocation = {
   projectId: ProjectId.make("project-mcp-test"),
   worktreePath: "/tmp/project-mcp-test",
   providerSessionId: "provider-session-mcp-test",
-  providerInstanceId: ProviderInstanceId.make("codex"),
-  capabilities: new Set(["preview", "delegation-router"] as const),
+  providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+  providerDriver: ProviderDriverKind.make("claudeAgent"),
+  capabilities: new Set(["preview", "cursor-agent"] as const),
   issuedAt: 1,
 };
 const client = McpSchema.McpServerClient.of({
@@ -147,6 +157,7 @@ const ProjectOverridesToolkitTestLayer = makeAllToolkitTestLayer(({ projectId })
       title: "Project overrides",
       workspaceRoot: "/tmp/project-mcp-test",
       defaultModelSelection: null,
+      defaultThreadEnvMode: null,
       scripts: [],
       mcpOverrides: overridesRef.current,
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -735,21 +746,23 @@ it.effect("emits an MCP-valid object inputSchema for every registered tool", () 
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
 
-it.effect("exposes provider-neutral delegated execution configuration", () =>
+it.effect("exposes only supported direct delegated-run configuration", () =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
-    for (const provider of ["codex", "cursor"] as const) {
+    for (const provider of ["codex", "cursor", "claude"] as const) {
       const start = server.tools.find(({ tool }) => tool.name === `${provider}_start`)?.tool;
       expect(start?.inputSchema.properties).toMatchObject({
         model: expect.any(Object),
         options: expect.any(Object),
         interactionMode: expect.any(Object),
-        approvalPolicy: expect.any(Object),
-        sandboxMode: expect.any(Object),
-        runtimeMode: expect.any(Object),
         attachments: expect.any(Object),
         profile: expect.any(Object),
+        idempotencyKey: expect.any(Object),
       });
+      expect(start?.inputSchema.properties).not.toHaveProperty("approvalPolicy");
+      expect(start?.inputSchema.properties).not.toHaveProperty("sandboxMode");
+      expect(start?.inputSchema.properties).not.toHaveProperty("runtimeMode");
+      expect(start?.description).toContain("fixed to workspace-write");
     }
   }).pipe(Effect.provide(AllToolkitTestLayer)),
 );
@@ -873,6 +886,7 @@ const delegatedInvocation: McpInvocationContext.McpInvocationScope = {
   threadId: ThreadId.make("delegated-child"),
   ownerThreadId: invocation.threadId,
   sessionKind: "delegated",
+  capabilities: new Set(["preview"]),
 };
 
 const modernRequestBody = (method: string, params: Record<string, unknown> = {}) =>
@@ -1000,8 +1014,9 @@ it.effect("serves /mcp deliberately and never redirects it to the dev server", (
       };
       const legacyToolNames = legacyListed.result.tools.map(({ name }) => name);
       expect(legacyToolNames).toEqual(
-        expect.arrayContaining(["preview_status", "delegate_start", "delegate_cancel"]),
+        expect.arrayContaining(["preview_status", "cursor_start", "cursor_cancel"]),
       );
+      expect(legacyToolNames.some((name) => name.startsWith("delegate_"))).toBe(false);
       expect(legacyToolNames).not.toContain("engine_plan");
 
       const unauthenticatedDiscover = yield* httpClient.post("/mcp", {
@@ -1055,11 +1070,14 @@ it.effect("serves /mcp deliberately and never redirects it to the dev server", (
         expect.arrayContaining([
           "preview_status",
           "preview_snapshot",
-          "delegate_start",
-          "delegate_cancel",
-          "delegate_respond",
+          "cursor_start",
+          "cursor_cancel",
+          "cursor_respond",
         ]),
       );
+      expect(
+        listed.result.tools.some((tool: { name: string }) => tool.name.startsWith("delegate_")),
+      ).toBe(false);
       expect(
         listed.result.tools.every(
           (tool: { _meta?: Record<string, unknown> }) =>
@@ -1094,31 +1112,69 @@ it.effect("serves /mcp deliberately and never redirects it to the dev server", (
       });
       expect(yield* hiddenCallResponse.json).toMatchObject({ error: { code: -32602 } });
 
-      const delegatedModernStart = yield* httpClient.post("/mcp", {
-        headers: {
-          accept: "application/json, text/event-stream",
-          authorization: `Bearer ${delegatedToken}`,
-          "mcp-protocol-version": MCP_2026_PROTOCOL_VERSION,
-          "mcp-method": "tools/call",
-          "mcp-name": "delegate_start",
+      let receivedCursorStart: StartDelegatedRunInput | undefined;
+      const directRun: DelegatedRun = {
+        id: DelegatedRunId.make("http-direct-cursor-run"),
+        provider: "cursor",
+        providerInstanceId: ProviderInstanceId.make("cursor-work"),
+        parentThreadId: threadId,
+        title: "Inspect the HTTP transport",
+        taskPreview: "Inspect the HTTP transport",
+        status: "queued",
+        lastSummary: null,
+        finalMessage: null,
+        error: null,
+        workspaceRoot: invocation.worktreePath,
+        sequence: 0,
+        startedAt: null,
+        completedAt: null,
+        createdAt: "2026-08-04T00:00:00.000Z",
+        updatedAt: "2026-08-04T00:00:00.000Z",
+      };
+      const directService = {
+        start: (input) => {
+          receivedCursorStart = input;
+          return Effect.succeed(directRun);
         },
-        body: modernRequestBody("tools/call", {
-          name: "delegate_start",
-          arguments: {
-            idempotencyKey: "child-modern",
-            tasks: [
-              {
-                laneId: "lane",
-                title: "Lane",
-                task: "Re-delegate",
-                workspaceAccess: "workspace-write",
-              },
-            ],
+        reconcileParentDelivery: () => Effect.void,
+        capabilities: () => Effect.die("unused"),
+        get: () => Effect.die("unused"),
+        cancel: () => Effect.die("unused"),
+        respond: () => Effect.die("unused"),
+      } satisfies DelegatedRunServiceShape;
+      const parentCursorStart = yield* delegatedRunTesting.withActiveService(
+        directService,
+        httpClient.post("/mcp", {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: `Bearer ${validToken}`,
+            "mcp-protocol-version": MCP_2026_PROTOCOL_VERSION,
+            "mcp-method": "tools/call",
+            "mcp-name": "cursor_start",
           },
+          body: modernRequestBody("tools/call", {
+            name: "cursor_start",
+            arguments: {
+              task: "Inspect the HTTP transport",
+              providerInstanceId: "cursor-work",
+              model: "composer-2.5",
+              options: [{ id: "mode", value: "agent" }],
+              idempotencyKey: "http-stable-key",
+            },
+          }),
         }),
+      );
+      expect(yield* parentCursorStart.json).toMatchObject({
+        result: { isError: false },
       });
-      expect(yield* delegatedModernStart.json).toMatchObject({
-        result: { isError: true },
+      expect(receivedCursorStart).toMatchObject({
+        task: "Inspect the HTTP transport",
+        providerInstanceId: "cursor-work",
+        model: "composer-2.5",
+        options: [{ id: "mode", value: "agent" }],
+        idempotencyKey: DelegationIdempotencyKey.make("http-stable-key"),
+        provider: "cursor",
+        parentThreadId: threadId,
       });
 
       const delegatedInitialize = yield* httpClient.post("/mcp", {
@@ -1143,18 +1199,8 @@ it.effect("serves /mcp deliberately and never redirects it to the dev server", (
             id: "legacy-delegated-start",
             method: "tools/call",
             params: {
-              name: "delegate_start",
-              arguments: {
-                idempotencyKey: "child-legacy",
-                tasks: [
-                  {
-                    laneId: "lane",
-                    title: "Lane",
-                    task: "Re-delegate",
-                    workspaceAccess: "workspace-write",
-                  },
-                ],
-              },
+              name: "cursor_start",
+              arguments: { task: "Re-delegate" },
             },
           }),
           "application/json",

@@ -3,17 +3,11 @@ import * as Schema from "effect/Schema";
 import { IsoDateTime, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   DelegationAttempt,
-  DelegationBatchId,
-  DelegationDeliveryMode,
   DelegationDispatchState,
   DelegationIdempotencyKey,
-  DelegationLaneId,
   DelegationRequestHash,
   DelegationResultCompleteness,
-  DelegationRouteDecision,
-  DelegationRouteGroupId,
-  DelegationWorkflowId,
-} from "./delegationRouter.ts";
+} from "./delegation.ts";
 import {
   ChatAttachment,
   ProviderApprovalPolicy,
@@ -55,14 +49,8 @@ export const DelegatedRun = Schema.Struct({
   parentTurnId: Schema.optional(TrimmedNonEmptyString),
   parentToolCallId: Schema.optional(TrimmedNonEmptyString),
   parentRunId: Schema.optional(DelegatedRunId),
-  workflowId: Schema.optional(DelegationWorkflowId),
-  batchId: Schema.optional(DelegationBatchId),
-  laneId: Schema.optional(DelegationLaneId),
-  routeGroupId: Schema.optional(DelegationRouteGroupId),
   idempotencyKey: Schema.optional(DelegationIdempotencyKey),
   requestHash: Schema.optional(DelegationRequestHash),
-  deliveryMode: Schema.optional(DelegationDeliveryMode),
-  routeDecision: Schema.optional(DelegationRouteDecision),
   attempts: Schema.optional(Schema.Array(DelegationAttempt)),
   dispatchState: Schema.optional(DelegationDispatchState),
   resumeOfRunId: Schema.optional(DelegatedRunId),
@@ -130,6 +118,23 @@ export const DelegatedRunStartInput = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
 });
 export type DelegatedRunStartInput = typeof DelegatedRunStartInput.Type;
+
+// Provider-specific MCP start tools expose only caller-selectable options.
+// Delegated execution itself is fixed to workspace-write, approval "never",
+// and auto-accept-edits by the server safety boundary.
+export const DelegatedRunToolStartInput = Schema.Struct({
+  task: DelegatedRunStartInput.fields.task,
+  title: DelegatedRunStartInput.fields.title,
+  providerInstanceId: DelegatedRunStartInput.fields.providerInstanceId,
+  model: DelegatedRunStartInput.fields.model,
+  options: DelegatedRunStartInput.fields.options,
+  interactionMode: DelegatedRunStartInput.fields.interactionMode,
+  attachments: DelegatedRunStartInput.fields.attachments,
+  profile: DelegatedRunStartInput.fields.profile,
+  workspaceRoot: DelegatedRunStartInput.fields.workspaceRoot,
+  idempotencyKey: Schema.optional(DelegationIdempotencyKey),
+});
+export type DelegatedRunToolStartInput = typeof DelegatedRunToolStartInput.Type;
 
 export const DelegationProfile = Schema.Struct({
   id: TrimmedNonEmptyString,

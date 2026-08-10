@@ -36,6 +36,7 @@ import {
   serverVoiceModelState,
 } from "~/state/transcription";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { ensureLocalApi } from "~/localApi";
 
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Badge } from "../ui/badge";
@@ -412,10 +413,7 @@ export function VoiceSettingsPanel() {
         localModelManager !== undefined
           ? "Remove the selected voice model? Voice inference will switch to the server."
           : "Remove the selected server voice model? Another installed model will be selected when available.";
-      const confirmed =
-        localModelManager !== undefined
-          ? ((await window.desktopBridge?.confirm(message)) ?? false)
-          : window.confirm(message);
+      const confirmed = await ensureLocalApi().dialogs.confirm(message);
       if (!confirmed) return;
       if (localModelManager !== undefined) {
         updateSettings({

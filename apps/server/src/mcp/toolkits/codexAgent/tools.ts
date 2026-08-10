@@ -4,25 +4,13 @@ import {
   DelegatedRunCapabilities,
   DelegatedRunError,
   DelegatedRunLookupInput,
-  DelegatedRunStartInput,
-  DelegationIdempotencyKey,
+  DelegatedRunToolStartInput,
 } from "@t3tools/contracts";
-import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
-import { DelegationCoordinator } from "../../../orchestration/DelegationCoordinator.ts";
 import { DelegatedRunService } from "../../../orchestration/DelegatedRunService.ts";
-const dependencies = [
-  McpInvocationContext.McpInvocationContext,
-  DelegationCoordinator,
-  DelegatedRunService,
-];
-
-const CompatibilityDelegatedRunStartInput = Schema.Struct({
-  ...DelegatedRunStartInput.fields,
-  idempotencyKey: Schema.optional(DelegationIdempotencyKey),
-});
+const dependencies = [McpInvocationContext.McpInvocationContext, DelegatedRunService];
 
 export const CodexCapabilitiesTool = Tool.make("codex_capabilities", {
   description: "Report the capabilities of the built-in Codex delegated-run backend.",
@@ -36,8 +24,8 @@ export const CodexCapabilitiesTool = Tool.make("codex_capabilities", {
 
 export const CodexStartTool = Tool.make("codex_start", {
   description:
-    "Start a one-shot Codex subagent in the parent thread workspace. Provide a stable idempotencyKey for retry-safe calls; omitted keys preserve legacy behavior and have no retry deduplication. Always use this tool instead of launching codex exec through a shell. Returns immediately with tracked allocation state; provider acceptance happens later. Start every needed run, then end your turn; the server delivers results automatically.",
-  parameters: CompatibilityDelegatedRunStartInput,
+    "Start a one-shot Codex subagent in the parent thread workspace. Execution is fixed to workspace-write with automatic edit acceptance; express a read-only task in the task text. Provide a stable idempotencyKey for retry-safe calls; omitted keys preserve legacy behavior and have no retry deduplication. Always use this tool instead of launching codex exec through a shell. Returns immediately with tracked allocation state; provider acceptance happens later. Start every needed run, then end your turn; the server delivers results automatically.",
+  parameters: DelegatedRunToolStartInput,
   success: DelegatedRun,
   failure: DelegatedRunError,
   dependencies,

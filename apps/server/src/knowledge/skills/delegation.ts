@@ -1,9 +1,8 @@
 import type {
   EngineDelegationSettings,
+  EngineDelegationRole,
   EngineDelegationSkillOverride,
   EngineDelegationTarget,
-  DelegationPolicySource,
-  DelegationRole,
   EngineWorkflowName,
 } from "@t3tools/contracts";
 import { NATIVE_SUBAGENT_MODEL_BY_DRIVER, resolveDelegationRoles } from "@t3tools/contracts";
@@ -17,11 +16,6 @@ export interface ResolvedDelegationChains {
   readonly consensusPanel: ReadonlyArray<EngineDelegationTarget>;
   /** Every configured available scanner runs; inline is the Judge lane. */
   readonly scannerPanel: ReadonlyArray<EngineDelegationTarget>;
-}
-
-export interface ResolvedDelegationRoutingChain {
-  readonly chain: ReadonlyArray<EngineDelegationTarget>;
-  readonly policySource: DelegationPolicySource;
 }
 
 const providerCapability = {
@@ -41,16 +35,16 @@ const firstAvailable = (
 ): EngineDelegationTarget | undefined =>
   chain.find((target) => targetAvailable(target, capabilities));
 
-export function resolveDelegationRoutingChain(input: {
+function resolveDelegationChain(input: {
   readonly settings: EngineDelegationSettings;
   readonly availableProviders: ReadonlySet<EngineDelegationTarget["provider"]>;
-  readonly role: DelegationRole;
+  readonly role: EngineDelegationRole;
   readonly workflow?: EngineWorkflowName | undefined;
   readonly skillOverride?: EngineDelegationSkillOverride | null | undefined;
-}): ResolvedDelegationRoutingChain {
+}): ReadonlyArray<EngineDelegationTarget> {
   const skillChain = input.skillOverride?.[input.role];
   if (skillChain !== undefined) {
-    return { chain: skillChain, policySource: "skill_override" };
+    return skillChain;
   }
 
   const workflowChain =
@@ -58,13 +52,11 @@ export function resolveDelegationRoutingChain(input: {
       ? undefined
       : input.settings.skillOverrides[input.workflow]?.[input.role];
   if (workflowChain !== undefined) {
-    return { chain: workflowChain, policySource: "workflow_override" };
+    return workflowChain;
   }
 
   const roles = resolveDelegationRoles(input.settings, input.availableProviders);
-  return input.settings.roles[input.role] === undefined
-    ? { chain: roles[input.role], policySource: "provider_default" }
-    : { chain: roles[input.role], policySource: "role_chain" };
+  return roles[input.role];
 }
 
 export function resolveDelegationChains(input: {
@@ -78,8 +70,8 @@ export function resolveDelegationChains(input: {
   if (input.capabilities.has("cursor-agent")) availableProviders.add("cursor");
   if (input.capabilities.has("claude-agent")) availableProviders.add("claudeAgent");
   availableProviders.add("inline");
-  const routingChain = (role: DelegationRole) =>
-    resolveDelegationRoutingChain({
+  const delegationChain = (role: EngineDelegationRole) =>
+    resolveDelegationChain({
       settings: input.settings,
       availableProviders,
       role,
@@ -91,8 +83,8 @@ export function resolveDelegationChains(input: {
     input.skillOverride ??
     (input.workflow === undefined ? undefined : input.settings.skillOverrides[input.workflow]);
   return {
-    scout: firstAvailable(routingChain("scout").chain, input.capabilities),
-    worker: firstAvailable(routingChain("worker").chain, input.capabilities),
+    scout: firstAvailable(delegationChain("scout"), input.capabilities),
+    worker: firstAvailable(delegationChain("worker"), input.capabilities),
     consensusPanel: (override?.consensus ?? roles.consensus).filter((target) =>
       targetAvailable(target, input.capabilities),
     ),
@@ -157,7 +149,7 @@ const workflowGuidance: Partial<Record<EngineWorkflowName, WorkflowDelegationGui
   },
   implement: {
     worker:
-      "Delegate a whole dependency-ready chunk only when its lane permits delegation and its files are disjoint from every concurrent chunk.",
+      "Delegate a whole dependency-ready chunk only when its lane permits delegation and its complete intentional edit set is known. Concurrent Workers must have disjoint intentional edit sets.",
     judge:
       "Split chunks, persist engine_chunks_update transitions, verify completeness independently, classify failures, and perform final preview verification on the main thread.",
   },
@@ -311,9 +303,11 @@ ${targets.join("\n")}
 ${roleSteps.join("\n")}
 
 ### Guardrails
-- Prefer provider-neutral \`delegate_start\` when it is available; submit independent lanes together and use a stable idempotency key. Compatibility \`cursor_start\`/\`codex_start\`/\`claude_start\` calls also require stable keys for retry safety. Start every selected target, then end the main-thread turn; results arrive automatically in one server wake-up after all runs finish.
+- Call the resolved provider-specific \`cursor_start\`, \`codex_start\`, or \`claude_start\` tool with a stable idempotency key. Start every selected independent target, then end the main-thread turn; results arrive automatically after runs finish.
 - Never wait, poll, sleep, or create background polling commands while delegated runs are active.
 - Subagents report findings or diffs to the Judge. They never mark chunks complete, write engine artifacts, or adjudicate findings.
-- Parallelize only Scouts with disjoint scopes and Workers with disjoint files. Consensus panelists always run in parallel over the identical subject.
+- Parallelize only independent lanes. Concurrent Workers require dependency-ready chunks with complete, disjoint intentional edit sets; T3 does not reserve or enforce file ownership.
+- Assign shared snapshots, fixtures, generated files, barrels, lockfiles, and configuration to exactly one Worker; otherwise keep the affected work sequential.
+- After starting a Worker cohort, do not edit its intended files on the main thread until the cohort finishes.
 - Verify every subagent result against source, tests, and artifacts. If verification fails, retry inline; do not re-delegate the same work more than once.${trailingSections}`;
 }

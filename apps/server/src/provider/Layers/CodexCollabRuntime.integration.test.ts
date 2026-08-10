@@ -277,6 +277,7 @@ describe("CodexSessionRuntime collab integration", () => {
         cwd: "/tmp",
         runtimeMode: "full-access",
         environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+        buildMcpSessionInstructions: () => Effect.succeed(undefined),
       });
 
       yield* runtime.start();

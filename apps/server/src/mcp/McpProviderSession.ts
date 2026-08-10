@@ -1,6 +1,5 @@
 import type {
   EnvironmentId,
-  DelegationMode,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -18,7 +17,6 @@ export interface McpProviderSessionConfig {
   readonly providerInstanceId: ProviderInstanceId;
   readonly providerDriver?: ProviderDriverKind;
   readonly nativeSubagentTracking?: boolean;
-  readonly delegationMode?: DelegationMode;
   readonly capabilities: ReadonlySet<McpCapability>;
   readonly protocolProfile: McpProtocolProfile;
   readonly endpoint: string;

@@ -33,42 +33,13 @@ describe("buildMcpToolCatalog", () => {
     );
   });
 
-  it("advertises neutral delegation controls while hiding starts when routing is off", () => {
-    const enabled = buildMcpToolCatalog({
-      capabilities: capabilities("delegation-router"),
+  it("advertises only provider-specific delegation tools", () => {
+    const catalog = buildMcpToolCatalog({
+      capabilities: capabilities("codex-agent", "cursor-agent", "claude-agent"),
     });
-    expect(enabled.tools).toEqual(["delegate_cancel", "delegate_respond", "delegate_start"]);
-
-    const disabled = buildMcpToolCatalog({
-      capabilities: capabilities("delegation-router"),
-      effectiveMcp: {
-        preview: false,
-        codexAgent: false,
-        cursorAgent: false,
-        claudeAgent: false,
-        engine: {
-          planning: false,
-          consensus: false,
-          enrich: false,
-          implement: false,
-          quality: false,
-          performance: false,
-          typescript: false,
-          delegation: { roles: {}, skillOverrides: {} },
-          knowledgeScan: { mainThreadModelPreference: [] },
-        },
-        router: {
-          mode: "off",
-          maxBatchSize: 4,
-          maxConcurrentPerParent: 4,
-          maxConcurrentEnvironment: 8,
-          defaultTimeoutMs: 1_800_000,
-          diversity: "prefer",
-          fallback: "pre-dispatch",
-          explanation: "summary",
-        },
-      },
-    });
-    expect(disabled.tools).toEqual(["delegate_cancel", "delegate_respond"]);
+    expect(catalog.tools).toContain("codex_start");
+    expect(catalog.tools).toContain("cursor_start");
+    expect(catalog.tools).toContain("claude_start");
+    expect(catalog.tools.some((tool) => tool.startsWith("delegate_"))).toBe(false);
   });
 });

@@ -5,7 +5,7 @@ import { Alert, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  resolveSubagentRouteDiagnostics,
+  resolveSubagentRunDiagnostics,
   setSubagentInputCustomAnswer,
   subagentControlInput,
   subagentRespondInput,
@@ -105,7 +105,7 @@ export function SubagentRunDetailsRouteScreen({ route }: Props) {
   }
 
   const presentation = mobileSubagentRunPresentation(run);
-  const diagnostics = resolveSubagentRouteDiagnostics(run, details.data);
+  const diagnostics = resolveSubagentRunDiagnostics(details.data);
   const pendingQuestions = details.data?.pendingQuestions ?? [];
   const responsePresentation = mobileSubagentResponsePresentation(
     run,
@@ -155,9 +155,6 @@ export function SubagentRunDetailsRouteScreen({ route }: Props) {
             <StatusPill size="compact" {...mobileSubagentStatusTone(run)} />
           </View>
           <Text className="text-sm leading-normal text-foreground-muted">{run.taskPreview}</Text>
-          {presentation.routeLabel ? (
-            <Text className="font-t3-bold text-sm text-foreground">{presentation.routeLabel}</Text>
-          ) : null}
         </View>
 
         {run.status === "waiting_for_input" ? (
@@ -257,45 +254,9 @@ export function SubagentRunDetailsRouteScreen({ route }: Props) {
           </DetailSection>
         ) : null}
 
-        {diagnostics ? (
-          <DetailSection title="Route decision">
-            {diagnostics.explanation ? (
-              <Text className="text-sm leading-normal text-foreground">
-                {diagnostics.explanation}
-              </Text>
-            ) : null}
-            {diagnostics.policyVersion !== null ? (
-              <Text className="text-xs text-foreground-muted">
-                Policy version {diagnostics.policyVersion}
-              </Text>
-            ) : null}
-          </DetailSection>
-        ) : null}
-
         {details.error ? <ErrorBanner message={details.error} /> : null}
         {details.isPending && details.data === null ? (
           <Text className="px-2 text-sm text-foreground-muted">Loading server diagnostics…</Text>
-        ) : null}
-
-        {diagnostics?.candidates.length ? (
-          <DetailSection title="Candidates">
-            {diagnostics.candidates.map((candidate) => (
-              <DiagnosticLine
-                key={candidate.target}
-                title={`${candidate.eligible ? "Eligible" : "Excluded"} · ${candidate.target}`}
-                detail={candidate.reasons.join(" · ")}
-                tone={candidate.eligible ? "success" : "warning"}
-              />
-            ))}
-          </DetailSection>
-        ) : null}
-
-        {diagnostics?.fallbackChain.length ? (
-          <DetailSection title="Fallback order">
-            {diagnostics.fallbackChain.map((target, index) => (
-              <DiagnosticLine key={target} title={`${index + 1}. ${target}`} />
-            ))}
-          </DetailSection>
         ) : null}
 
         {diagnostics?.attempts.length ? (
@@ -304,12 +265,7 @@ export function SubagentRunDetailsRouteScreen({ route }: Props) {
               <DiagnosticLine
                 key={attempt.id}
                 title={`${attempt.target} · ${attempt.phase}`}
-                detail={[
-                  attempt.fallbackFrom ? `Fallback from ${attempt.fallbackFrom}` : null,
-                  attempt.failure,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
+                detail={attempt.failure}
                 tone={attempt.failure ? "warning" : "default"}
               />
             ))}

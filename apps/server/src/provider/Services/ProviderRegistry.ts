@@ -16,14 +16,8 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 import type { ProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
-import type { ProviderDelegationCapabilities } from "./ProviderAdapter.ts";
 
 export type ProviderMaintenanceActionKind = "update";
-
-export interface DelegatedProviderCandidate {
-  readonly snapshot: ServerProvider;
-  readonly capabilities: ProviderDelegationCapabilities;
-}
 
 export interface ProviderRegistryShape {
   /**
@@ -32,13 +26,6 @@ export interface ProviderRegistryShape {
    * instances of the same driver) and disambiguate via `instanceId`.
    */
   readonly getProviders: Effect.Effect<ReadonlyArray<ServerProvider>>;
-
-  /**
-   * Enumerate live, usable provider instances whose concrete adapters declare
-   * delegated execution support. The snapshot carries the exact instance and
-   * advertised model inventory; no driver-kind allowlist participates.
-   */
-  readonly getDelegatedCandidates: Effect.Effect<ReadonlyArray<DelegatedProviderCandidate>>;
 
   /**
    * Refresh all providers, or the default instance of the specified

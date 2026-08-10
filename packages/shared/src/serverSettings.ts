@@ -127,7 +127,6 @@ export function applyServerSettingsPatch(
 ): ServerSettings {
   const selectionPatch = patch.textGenerationModelSelection;
   const mcpPatch = patch.mcp;
-  const routerPatch = mcpPatch?.router;
   const enginePatch = mcpPatch?.engine;
   const delegationPatch = enginePatch?.delegation;
   const skillProviderPatches = patch.skills?.providers;
@@ -210,18 +209,6 @@ export function applyServerSettingsPatch(
     codexAgent: mcpPatch?.codexAgent ?? current.mcp.codexAgent,
     cursorAgent: mcpPatch?.cursorAgent ?? current.mcp.cursorAgent,
     claudeAgent: mcpPatch?.claudeAgent ?? current.mcp.claudeAgent,
-    router: {
-      mode: routerPatch?.mode ?? current.mcp.router.mode,
-      maxBatchSize: routerPatch?.maxBatchSize ?? current.mcp.router.maxBatchSize,
-      maxConcurrentPerParent:
-        routerPatch?.maxConcurrentPerParent ?? current.mcp.router.maxConcurrentPerParent,
-      maxConcurrentEnvironment:
-        routerPatch?.maxConcurrentEnvironment ?? current.mcp.router.maxConcurrentEnvironment,
-      defaultTimeoutMs: routerPatch?.defaultTimeoutMs ?? current.mcp.router.defaultTimeoutMs,
-      diversity: routerPatch?.diversity ?? current.mcp.router.diversity,
-      fallback: routerPatch?.fallback ?? current.mcp.router.fallback,
-      explanation: routerPatch?.explanation ?? current.mcp.router.explanation,
-    },
     engine: {
       planning: enginePatch?.planning ?? current.mcp.engine.planning,
       consensus: enginePatch?.consensus ?? current.mcp.engine.consensus,

@@ -1,11 +1,8 @@
 import {
   DelegatedRun as DelegatedRunSchema,
   DelegatedRunId,
-  DelegationBatchId,
-  DelegationBatchStatus,
   DelegationIdempotencyKey,
   DelegationRequestHash,
-  DelegationWorkflowId,
   ThreadId,
   type DelegatedRun,
 } from "@t3tools/contracts";
@@ -26,15 +23,14 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import { ServerConfig } from "../config.ts";
-
-const REPOSITORY_SCHEMA_VERSION = 2 as const;
+const REPOSITORY_SCHEMA_VERSION = 4 as const;
 const INTERRUPTED_RUN_ERROR = "Delegated run lost due to server restart.";
 
 /**
  * Aggregate JSON is compacted on every durable mutation. Thirty days is long
  * enough for normal transcript/history workflows, while the hard record cap
- * bounds whole-file rewrite amplification. Active runs, their batches, leases,
- * and idempotency ownership are never eligible for removal.
+ * bounds whole-file rewrite amplification. Active runs and their idempotency
+ * ownership are never eligible for removal.
  */
 export const DELEGATED_RUN_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 export const DELEGATED_RUN_MAX_TERMINAL_RECORDS = 2_000;
@@ -42,39 +38,15 @@ export const DELEGATED_RUN_MAX_TERMINAL_RECORDS = 2_000;
 const EnvironmentId = Schema.String.pipe(Schema.check(Schema.isMinLength(1)));
 type EnvironmentId = typeof EnvironmentId.Type;
 
-const PersistedBatch = Schema.Struct({
-  id: DelegationBatchId,
-  environmentId: EnvironmentId,
-  parentThreadId: ThreadId,
-  runIds: Schema.Array(DelegatedRunId),
-  status: DelegationBatchStatus,
-  createdAt: Schema.String,
-  updatedAt: Schema.String,
-  workflowId: Schema.optional(DelegationWorkflowId),
-});
-type PersistedBatch = typeof PersistedBatch.Type;
-
 const PersistedIdempotency = Schema.Struct({
   environmentId: EnvironmentId,
   parentThreadId: ThreadId,
   key: DelegationIdempotencyKey,
   requestHash: DelegationRequestHash,
-  batchId: DelegationBatchId,
-  runIds: Schema.Array(DelegatedRunId),
+  runId: DelegatedRunId,
   createdAt: Schema.String,
 });
 type PersistedIdempotency = typeof PersistedIdempotency.Type;
-
-const PersistedLease = Schema.Struct({
-  kind: Schema.Literals(["environment", "parent", "workspace-write"]),
-  key: Schema.String,
-  runId: DelegatedRunId,
-  environmentId: EnvironmentId,
-  parentThreadId: ThreadId,
-  workspaceIdentity: Schema.optional(Schema.String),
-  acquiredAt: Schema.String,
-});
-type PersistedLease = typeof PersistedLease.Type;
 
 const PersistedParentDelivery = Schema.Struct({
   environmentId: EnvironmentId,
@@ -88,23 +60,38 @@ type PersistedParentDelivery = typeof PersistedParentDelivery.Type;
 const RepositoryPayloadSchema = Schema.Struct({
   schemaVersion: Schema.Literal(REPOSITORY_SCHEMA_VERSION),
   revision: Schema.Int,
-  batches: Schema.Array(PersistedBatch),
   runs: Schema.Array(DelegatedRunSchema),
   idempotency: Schema.Array(PersistedIdempotency),
-  leases: Schema.Array(PersistedLease),
   parentDeliveries: Schema.optional(Schema.Array(PersistedParentDelivery)),
 });
-const RepositoryAggregate = Schema.Struct({
+const RepositoryAggregateSchema = Schema.Struct({
   ...RepositoryPayloadSchema.fields,
   checksum: Schema.String,
 });
-type RepositoryAggregate = typeof RepositoryAggregate.Type;
+type RepositoryAggregate = typeof RepositoryAggregateSchema.Type;
 
 const LegacyRuns = Schema.Array(DelegatedRunSchema);
-const AggregateJson = Schema.fromJsonString(RepositoryAggregate);
+const AggregateJson = Schema.fromJsonString(RepositoryAggregateSchema);
+const LegacyRouterEnvelopeJson = Schema.fromJsonString(
+  Schema.Struct({
+    schemaVersion: Schema.Int,
+    revision: Schema.Int,
+    runs: Schema.Array(Schema.Unknown),
+    idempotency: Schema.optional(Schema.Array(Schema.Unknown)),
+    parentDeliveries: Schema.optional(Schema.Array(PersistedParentDelivery)),
+    checksum: Schema.optional(Schema.String),
+  }),
+);
+const RepositoryVersionHeaderJson = Schema.fromJsonString(
+  Schema.Struct({ schemaVersion: Schema.Int }),
+);
 const PayloadJson = Schema.fromJsonString(RepositoryPayloadSchema);
 const decodeAggregateJson = Schema.decodeUnknownEffect(AggregateJson);
+const decodeLegacyRouterEnvelopeJson = Schema.decodeUnknownEffect(LegacyRouterEnvelopeJson);
+const decodeRepositoryVersionHeader = Schema.decodeUnknownEffect(RepositoryVersionHeaderJson);
+const decodeRepositoryVersionHeaderOption = Schema.decodeUnknownOption(RepositoryVersionHeaderJson);
 const decodeLegacyJson = Schema.decodeUnknownEffect(Schema.fromJsonString(LegacyRuns));
+const decodeRun = Schema.decodeUnknownEffect(DelegatedRunSchema);
 const encodeAggregateJson = Schema.encodeEffect(AggregateJson);
 const encodePayloadJson = Schema.encodeEffect(PayloadJson);
 
@@ -135,8 +122,6 @@ export class DelegatedRunRepositoryError extends Schema.TaggedErrorClass<Delegat
       "corrupt_repository",
       "idempotency_conflict",
       "parent_admission_exhausted",
-      "environment_capacity_exhausted",
-      "workspace_write_conflict",
       "workspace_outside_authorized_root",
       "run_not_found",
     ]),
@@ -154,39 +139,12 @@ export interface DelegatedRunReservation {
   readonly run: DelegatedRun;
   readonly environmentId: string;
   readonly canonicalWorkspace: string;
-  readonly limits: {
-    readonly maxConcurrentPerParent: number;
-    readonly maxConcurrentEnvironment: number;
-  };
+  readonly maxConcurrentPerParent: number;
   readonly idempotency?: {
     readonly key: DelegationIdempotencyKey;
     readonly requestHash: DelegationRequestHash;
   };
 }
-
-export interface DelegatedRunBatchReservation {
-  readonly batchId: DelegationBatchId;
-  readonly workflowId: DelegationWorkflowId;
-  readonly environmentId: string;
-  readonly parentThreadId: ThreadId;
-  readonly runs: ReadonlyArray<{
-    readonly run: DelegatedRun;
-    readonly canonicalWorkspace: string;
-    readonly workspaceAccess: "read-only" | "workspace-write";
-  }>;
-  readonly limits: {
-    readonly maxConcurrentPerParent: number;
-    readonly maxConcurrentEnvironment: number;
-  };
-  readonly idempotency: {
-    readonly key: DelegationIdempotencyKey;
-    readonly requestHash: DelegationRequestHash;
-  };
-}
-
-export type DelegatedRunBatchReservationResult =
-  | { readonly kind: "allocated"; readonly runs: ReadonlyArray<DelegatedRun> }
-  | { readonly kind: "replay"; readonly runs: ReadonlyArray<DelegatedRun> };
 
 export type DelegatedRunReservationResult =
   | { readonly kind: "allocated"; readonly run: DelegatedRun }
@@ -197,18 +155,9 @@ export interface DelegatedRunRepositoryShape {
   readonly list: Effect.Effect<ReadonlyArray<DelegatedRun>>;
   readonly drain: Effect.Effect<void>;
   readonly get: (runId: DelegatedRunId) => Effect.Effect<DelegatedRun | undefined>;
-  readonly findBatchByIdempotency: (
-    environmentId: string,
-    parentThreadId: ThreadId,
-    key: DelegationIdempotencyKey,
-    requestHash: DelegationRequestHash,
-  ) => Effect.Effect<ReadonlyArray<DelegatedRun> | undefined, DelegatedRunRepositoryError>;
   readonly reserve: (
     input: DelegatedRunReservation,
   ) => Effect.Effect<DelegatedRunReservationResult, DelegatedRunRepositoryError>;
-  readonly reserveBatch: (
-    input: DelegatedRunBatchReservation,
-  ) => Effect.Effect<DelegatedRunBatchReservationResult, DelegatedRunRepositoryError>;
   readonly update: (
     runId: DelegatedRunId,
     update: (run: DelegatedRun) => DelegatedRun,
@@ -263,32 +212,11 @@ export interface DelegatedRunRepositoryOptions {
 const isTerminal = (run: DelegatedRun) =>
   run.status === "completed" || run.status === "failed" || run.status === "cancelled";
 
-const batchStatus = (
-  batch: PersistedBatch,
-  runsById: ReadonlyMap<DelegatedRunId, DelegatedRun>,
-): DelegationBatchStatus => {
-  const runs = batch.runIds.flatMap((runId) => {
-    const run = runsById.get(runId);
-    return run ? [run] : [];
-  });
-  if (runs.some((run) => run.status === "waiting_for_input")) return "waiting_for_input";
-  if (runs.some((run) => !isTerminal(run))) {
-    return runs.some((run) => run.status === "running" || run.status === "starting")
-      ? "running"
-      : "allocated";
-  }
-  if (runs.length > 0 && runs.every((run) => run.status === "completed")) return "completed";
-  if (runs.length > 0 && runs.every((run) => run.status === "cancelled")) return "cancelled";
-  return "failed";
-};
-
 const payloadOf = (aggregate: RepositoryAggregate): RepositoryPayload => ({
   schemaVersion: aggregate.schemaVersion,
   revision: aggregate.revision,
-  batches: aggregate.batches,
   runs: aggregate.runs,
   idempotency: aggregate.idempotency,
-  leases: aggregate.leases,
   ...(aggregate.parentDeliveries === undefined
     ? {}
     : { parentDeliveries: aggregate.parentDeliveries }),
@@ -310,12 +238,17 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
   const lock = yield* Semaphore.make(1);
   const nowMillis = options.nowMillis ?? Clock.currentTimeMillis;
 
+  const checksumEncoded = Effect.fn("DelegatedRunRepository.checksumEncoded")(function* (
+    encoded: string,
+  ) {
+    const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(encoded));
+    return bytesToHex(digest);
+  });
+
   const checksumPayload = Effect.fn("DelegatedRunRepository.checksumPayload")(function* (
     payload: RepositoryPayload,
   ) {
-    const encoded = yield* encodePayloadJson(payload);
-    const digest = yield* crypto.digest("SHA-256", new TextEncoder().encode(encoded));
-    return bytesToHex(digest);
+    return yield* checksumEncoded(yield* encodePayloadJson(payload));
   });
 
   const seal = Effect.fn("DelegatedRunRepository.seal")(function* (payload: RepositoryPayload) {
@@ -328,14 +261,55 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
   const parseAggregate = Effect.fn("DelegatedRunRepository.parseAggregate")(function* (
     contents: string,
   ) {
-    const decoded = yield* decodeAggregateJson(contents);
-    const checksum = yield* checksumPayload(payloadOf(decoded));
-    if (checksum !== decoded.checksum) {
-      return yield* new DelegatedRunRepositoryFault({
-        point: "delegated-run repository checksum mismatch",
-      });
+    const header = yield* decodeRepositoryVersionHeader(contents).pipe(
+      Effect.mapError(
+        () =>
+          new DelegatedRunRepositoryFault({
+            point: "delegated-run repository is not valid JSON",
+          }),
+      ),
+    );
+    if (header.schemaVersion === REPOSITORY_SCHEMA_VERSION) {
+      const decoded = yield* decodeAggregateJson(contents);
+      const checksum = yield* checksumPayload(payloadOf(decoded));
+      if (checksum !== decoded.checksum) {
+        return yield* new DelegatedRunRepositoryFault({
+          point: "delegated-run repository checksum mismatch",
+        });
+      }
+      return decoded;
     }
-    return decoded;
+    const legacy = yield* decodeLegacyRouterEnvelopeJson(contents);
+    const runs = yield* Effect.forEach(legacy.runs, (run) => decodeRun(run));
+    const idempotency: Array<PersistedIdempotency> = [];
+    for (const run of runs) {
+      if (!run.idempotencyKey || !run.requestHash) continue;
+      const duplicate = idempotency.some(
+        (entry) =>
+          entry.environmentId === config.stateDir &&
+          entry.parentThreadId === run.parentThreadId &&
+          entry.key === run.idempotencyKey,
+      );
+      if (!duplicate) {
+        idempotency.push({
+          environmentId: config.stateDir,
+          parentThreadId: run.parentThreadId,
+          key: run.idempotencyKey,
+          requestHash: run.requestHash,
+          runId: run.id,
+          createdAt: run.createdAt,
+        });
+      }
+    }
+    return yield* seal({
+      schemaVersion: REPOSITORY_SCHEMA_VERSION,
+      revision: legacy.revision,
+      runs,
+      idempotency,
+      ...(legacy.parentDeliveries === undefined
+        ? {}
+        : { parentDeliveries: legacy.parentDeliveries }),
+    });
   });
 
   const readContents = Effect.fn("DelegatedRunRepository.readContents")(function* (
@@ -392,10 +366,8 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
   const emptyPayload = (): RepositoryPayload => ({
     schemaVersion: REPOSITORY_SCHEMA_VERSION,
     revision: 0,
-    batches: [],
     runs: [],
     idempotency: [],
-    leases: [],
     parentDeliveries: [],
   });
 
@@ -403,6 +375,13 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
   const recoveryRead = yield* readContents(recoveryPath);
   const primaryContents = primaryRead._tag === "Success" ? primaryRead.contents : undefined;
   const recoveryContents = recoveryRead._tag === "Success" ? recoveryRead.contents : undefined;
+  const isLegacyEnvelope = (contents: string | undefined) => {
+    if (contents === undefined) return false;
+    return (
+      Option.getOrUndefined(decodeRepositoryVersionHeaderOption(contents))?.schemaVersion !==
+      REPOSITORY_SCHEMA_VERSION
+    );
+  };
   const primary = primaryContents
     ? yield* parseAggregate(primaryContents).pipe(Effect.option)
     : Option.none<RepositoryAggregate>();
@@ -416,9 +395,11 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
   let source: "empty" | "primary" | "recovery" | "legacy" = "empty";
   let initial: RepositoryAggregate;
   let degraded: DelegatedRunRepositoryHealth | undefined;
+  let needsSchemaUpgrade = false;
   if (Option.isSome(primary)) {
     source = "primary";
     initial = primary.value;
+    needsSchemaUpgrade = isLegacyEnvelope(primaryContents);
   } else if (primaryRead._tag === "Failure") {
     initial = yield* seal(emptyPayload());
     degraded = {
@@ -428,6 +409,7 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
   } else if (Option.isSome(recovery)) {
     source = "recovery";
     initial = recovery.value;
+    needsSchemaUpgrade = isLegacyEnvelope(recoveryContents);
   } else if (recoveryRead._tag === "Failure") {
     initial = yield* seal(emptyPayload());
     degraded = {
@@ -487,16 +469,10 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
       .slice(0, maxTerminalRuns);
     const runs = [...active, ...terminal];
     const retainedRunIds = new Set(runs.map((run) => run.id));
-    const batches = aggregate.batches.filter((batch) =>
-      batch.runIds.some((runId) => retainedRunIds.has(runId)),
-    );
-    const retainedBatchIds = new Set(batches.map((batch) => batch.id));
     return {
       ...aggregate,
       runs,
-      batches,
-      idempotency: aggregate.idempotency.filter((entry) => retainedBatchIds.has(entry.batchId)),
-      leases: aggregate.leases.filter((lease) => retainedRunIds.has(lease.runId)),
+      idempotency: aggregate.idempotency.filter((entry) => retainedRunIds.has(entry.runId)),
       parentDeliveries: (aggregate.parentDeliveries ?? [])
         .map((delivery) => ({
           ...delivery,
@@ -580,8 +556,8 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
               sequence: run.sequence + 1,
             };
           });
-          const runsById = new Map(runs.map((run) => [run.id, run] as const));
           const needsUpgrade =
+            needsSchemaUpgrade ||
             source === "legacy" ||
             source === "recovery" ||
             interruptedIds.size > 0 ||
@@ -592,12 +568,6 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
             ...current,
             revision: current.revision + 1,
             runs,
-            leases: current.leases.filter((lease) => !interruptedIds.has(lease.runId)),
-            batches: current.batches.map((batch) => ({
-              ...batch,
-              status: batchStatus(batch, runsById),
-              updatedAt: interruptedIds.size > 0 ? recoveredAt : batch.updatedAt,
-            })),
             parentDeliveries: (current.parentDeliveries ?? []).map((delivery) => {
               const newlyTerminal = delivery.outstandingRunIds.filter((runId) =>
                 interruptedIds.has(runId),
@@ -711,7 +681,7 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
               message: `Idempotency key '${existing.key}' is already owned by a different request.`,
             });
           }
-          const run = current.runs.find((candidate) => existing.runIds.includes(candidate.id));
+          const run = current.runs.find((candidate) => candidate.id === existing.runId);
           if (!run) {
             return yield* new DelegatedRunRepositoryError({
               operation: "reserve",
@@ -722,58 +692,20 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
           return { kind: "replay" as const, run };
         }
 
-        const environmentActive = current.leases.filter(
-          (lease) => lease.kind === "environment" && lease.environmentId === input.environmentId,
+        const parentActive = current.runs.filter(
+          (run) => run.parentThreadId === input.run.parentThreadId && !isTerminal(run),
         ).length;
-        if (environmentActive >= input.limits.maxConcurrentEnvironment) {
-          return yield* new DelegatedRunRepositoryError({
-            operation: "reserve",
-            reason: "environment_capacity_exhausted",
-            message: `The environment may run at most ${input.limits.maxConcurrentEnvironment} delegated agents concurrently.`,
-          });
-        }
-        const parentActive = current.leases.filter(
-          (lease) =>
-            lease.kind === "parent" &&
-            lease.environmentId === input.environmentId &&
-            lease.parentThreadId === input.run.parentThreadId,
-        ).length;
-        if (parentActive >= input.limits.maxConcurrentPerParent) {
+        if (parentActive >= input.maxConcurrentPerParent) {
           return yield* new DelegatedRunRepositoryError({
             operation: "reserve",
             reason: "parent_admission_exhausted",
-            message: `A parent thread may run at most ${input.limits.maxConcurrentPerParent} delegated agents concurrently.`,
-          });
-        }
-        if (
-          current.leases.some(
-            (lease) =>
-              lease.kind === "workspace-write" &&
-              lease.environmentId === input.environmentId &&
-              lease.workspaceIdentity === input.canonicalWorkspace,
-          )
-        ) {
-          return yield* new DelegatedRunRepositoryError({
-            operation: "reserve",
-            reason: "workspace_write_conflict",
-            message: "Another delegated run already holds the write lease for this workspace.",
+            message: `A parent thread may run at most ${input.maxConcurrentPerParent} delegated agents concurrently.`,
           });
         }
 
-        const batchId = DelegationBatchId.make(`compat-${input.run.id}`);
-        const now = input.run.createdAt;
-        const batch: PersistedBatch = {
-          id: batchId,
-          environmentId: input.environmentId,
-          parentThreadId: input.run.parentThreadId,
-          runIds: [input.run.id],
-          status: "allocated",
-          createdAt: now,
-          updatedAt: now,
-        };
-        const run = {
+        const run: DelegatedRun = {
           ...input.run,
-          batchId,
+          workspaceRoot: input.canonicalWorkspace,
           ...(input.idempotency
             ? {
                 idempotencyKey: input.idempotency.key,
@@ -781,259 +713,41 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
               }
             : {}),
         };
-        const leases: ReadonlyArray<PersistedLease> = [
-          {
-            kind: "environment",
-            key: input.environmentId,
-            runId: run.id,
-            environmentId: input.environmentId,
-            parentThreadId: run.parentThreadId,
-            acquiredAt: now,
-          },
-          {
-            kind: "parent",
-            key: `${input.environmentId}:${run.parentThreadId}`,
-            runId: run.id,
-            environmentId: input.environmentId,
-            parentThreadId: run.parentThreadId,
-            acquiredAt: now,
-          },
-          {
-            kind: "workspace-write",
-            key: `${input.environmentId}:${input.canonicalWorkspace}`,
-            runId: run.id,
-            environmentId: input.environmentId,
-            parentThreadId: run.parentThreadId,
-            workspaceIdentity: input.canonicalWorkspace,
-            acquiredAt: now,
-          },
-        ];
-        const idempotency: ReadonlyArray<PersistedIdempotency> = input.idempotency
-          ? [
-              ...current.idempotency,
-              {
-                environmentId: input.environmentId,
-                parentThreadId: run.parentThreadId,
-                key: input.idempotency.key,
-                requestHash: input.idempotency.requestHash,
-                batchId,
-                runIds: [run.id],
-                createdAt: now,
-              },
-            ]
-          : current.idempotency;
-        const currentTime = yield* nowMillis;
-        const draft = compactAggregate(
-          {
-            ...current,
-            revision: current.revision + 1,
-            batches: [...current.batches, batch],
-            runs: [...current.runs, run],
-            idempotency,
-            leases: [...current.leases, ...leases],
-          },
-          currentTime,
-          DELEGATED_RUN_RETENTION_MS,
-          DELEGATED_RUN_MAX_TERMINAL_RECORDS,
-        );
-        yield* persist(current, draft, "reserve");
-        return { kind: "allocated" as const, run };
-      }),
-    );
-  });
-
-  const reserveBatch: DelegatedRunRepositoryShape["reserveBatch"] = Effect.fn(
-    "DelegatedRunRepository.reserveBatch",
-  )(function* (input) {
-    return yield* lock.withPermit(
-      Effect.gen(function* () {
-        yield* assertHealthy("reserve");
-        const current = yield* Ref.get(stateRef);
-        if (
-          input.runs.length === 0 ||
-          new Set(input.runs.map((entry) => entry.run.id)).size !== input.runs.length ||
-          input.runs.some((entry) => entry.run.parentThreadId !== input.parentThreadId)
-        ) {
-          return yield* new DelegatedRunRepositoryError({
-            operation: "reserve",
-            reason: "persistence_unavailable",
-            message: "The batch allocation is structurally inconsistent.",
-          });
-        }
-        const existing = current.idempotency.find(
+        const parentDeliveries = [...(current.parentDeliveries ?? [])];
+        const deliveryIndex = parentDeliveries.findIndex(
           (entry) =>
             entry.environmentId === input.environmentId &&
-            entry.parentThreadId === input.parentThreadId &&
-            entry.key === input.idempotency.key,
+            entry.parentThreadId === run.parentThreadId,
         );
-        if (existing) {
-          if (existing.requestHash !== input.idempotency.requestHash) {
-            return yield* new DelegatedRunRepositoryError({
-              operation: "reserve",
-              reason: "idempotency_conflict",
-              message: `Idempotency key '${existing.key}' is already owned by a different request.`,
-            });
-          }
-          const runs = existing.runIds.flatMap((runId) => {
-            const run = current.runs.find((candidate) => candidate.id === runId);
-            return run ? [run] : [];
-          });
-          if (runs.length !== existing.runIds.length) {
-            return yield* new DelegatedRunRepositoryError({
-              operation: "reserve",
-              reason: "corrupt_repository",
-              message: `Idempotency key '${existing.key}' references a missing delegated run.`,
-            });
-          }
-          return { kind: "replay" as const, runs };
-        }
-
-        const requested = input.runs.length;
-        const environmentActive = current.leases.filter(
-          (lease) => lease.kind === "environment" && lease.environmentId === input.environmentId,
-        ).length;
-        if (environmentActive + requested > input.limits.maxConcurrentEnvironment) {
-          return yield* new DelegatedRunRepositoryError({
-            operation: "reserve",
-            reason: "environment_capacity_exhausted",
-            message: `The environment may run at most ${input.limits.maxConcurrentEnvironment} delegated agents concurrently.`,
-          });
-        }
-        const parentActive = current.leases.filter(
-          (lease) =>
-            lease.kind === "parent" &&
-            lease.environmentId === input.environmentId &&
-            lease.parentThreadId === input.parentThreadId,
-        ).length;
-        if (parentActive + requested > input.limits.maxConcurrentPerParent) {
-          return yield* new DelegatedRunRepositoryError({
-            operation: "reserve",
-            reason: "parent_admission_exhausted",
-            message: `A parent thread may run at most ${input.limits.maxConcurrentPerParent} delegated agents concurrently.`,
-          });
-        }
-
-        const requestedWriterKeys = input.runs
-          .filter((entry) => entry.workspaceAccess === "workspace-write")
-          .map((entry) => entry.canonicalWorkspace);
-        if (
-          new Set(requestedWriterKeys).size !== requestedWriterKeys.length ||
-          requestedWriterKeys.some((workspace) =>
-            current.leases.some(
-              (lease) =>
-                lease.kind === "workspace-write" &&
-                lease.environmentId === input.environmentId &&
-                lease.workspaceIdentity === workspace,
-            ),
-          )
-        ) {
-          return yield* new DelegatedRunRepositoryError({
-            operation: "reserve",
-            reason: "workspace_write_conflict",
-            message: "Another delegated run already holds the write lease for this workspace.",
-          });
-        }
-
-        const now = input.runs[0]?.run.createdAt;
-        if (!now) {
-          return yield* new DelegatedRunRepositoryError({
-            operation: "reserve",
-            reason: "persistence_unavailable",
-            message: "A delegation batch must contain at least one run.",
-          });
-        }
-        const runs = input.runs.map((entry) => ({
-          ...entry.run,
-          batchId: input.batchId,
-          workflowId: input.workflowId,
-          idempotencyKey: input.idempotency.key,
-          requestHash: input.idempotency.requestHash,
-        }));
-        const batch: PersistedBatch = {
-          id: input.batchId,
-          workflowId: input.workflowId,
+        const previous = deliveryIndex >= 0 ? parentDeliveries[deliveryIndex] : undefined;
+        const delivery: PersistedParentDelivery = {
           environmentId: input.environmentId,
-          parentThreadId: input.parentThreadId,
-          runIds: runs.map((run) => run.id),
-          status: "allocated",
-          createdAt: now,
-          updatedAt: now,
+          parentThreadId: run.parentThreadId,
+          outstandingRunIds: [...(previous?.outstandingRunIds ?? []), run.id],
+          contributionRunIds: previous?.contributionRunIds ?? [],
+          inFlightRunIds: previous?.inFlightRunIds ?? [],
         };
-        const leases: ReadonlyArray<PersistedLease> = input.runs.flatMap((entry, index) => {
-          const run = runs[index]!;
-          return [
-            {
-              kind: "environment" as const,
-              key: input.environmentId,
-              runId: run.id,
-              environmentId: input.environmentId,
-              parentThreadId: input.parentThreadId,
-              acquiredAt: now,
-            },
-            {
-              kind: "parent" as const,
-              key: `${input.environmentId}:${input.parentThreadId}`,
-              runId: run.id,
-              environmentId: input.environmentId,
-              parentThreadId: input.parentThreadId,
-              acquiredAt: now,
-            },
-            ...(entry.workspaceAccess === "workspace-write"
-              ? [
-                  {
-                    kind: "workspace-write" as const,
-                    key: `${input.environmentId}:${entry.canonicalWorkspace}`,
-                    runId: run.id,
-                    environmentId: input.environmentId,
-                    parentThreadId: input.parentThreadId,
-                    workspaceIdentity: entry.canonicalWorkspace,
-                    acquiredAt: now,
-                  },
-                ]
-              : []),
-          ];
-        });
-        const parentWakeRunIds = runs
-          .filter((run) => (run.deliveryMode ?? "parent_wake") === "parent_wake")
-          .map((run) => run.id);
-        const parentDeliveries = [...(current.parentDeliveries ?? [])];
-        if (parentWakeRunIds.length > 0) {
-          const index = parentDeliveries.findIndex(
-            (entry) =>
-              entry.environmentId === input.environmentId &&
-              entry.parentThreadId === input.parentThreadId,
-          );
-          const previous = index >= 0 ? parentDeliveries[index]! : undefined;
-          const delivery: PersistedParentDelivery = {
-            environmentId: input.environmentId,
-            parentThreadId: input.parentThreadId,
-            outstandingRunIds: [...(previous?.outstandingRunIds ?? []), ...parentWakeRunIds],
-            contributionRunIds: previous?.contributionRunIds ?? [],
-            inFlightRunIds: previous?.inFlightRunIds ?? [],
-          };
-          if (index >= 0) parentDeliveries[index] = delivery;
-          else parentDeliveries.push(delivery);
-        }
+        if (deliveryIndex >= 0) parentDeliveries[deliveryIndex] = delivery;
+        else parentDeliveries.push(delivery);
 
         const draft = compactAggregate(
           {
             ...current,
             revision: current.revision + 1,
-            batches: [...current.batches, batch],
-            runs: [...current.runs, ...runs],
-            idempotency: [
-              ...current.idempotency,
-              {
-                environmentId: input.environmentId,
-                parentThreadId: input.parentThreadId,
-                key: input.idempotency.key,
-                requestHash: input.idempotency.requestHash,
-                batchId: input.batchId,
-                runIds: runs.map((run) => run.id),
-                createdAt: now,
-              },
-            ],
-            leases: [...current.leases, ...leases],
+            runs: [...current.runs, run],
+            idempotency: input.idempotency
+              ? [
+                  ...current.idempotency,
+                  {
+                    environmentId: input.environmentId,
+                    parentThreadId: run.parentThreadId,
+                    key: input.idempotency.key,
+                    requestHash: input.idempotency.requestHash,
+                    runId: run.id,
+                    createdAt: run.createdAt,
+                  },
+                ]
+              : current.idempotency,
             parentDeliveries,
           },
           yield* nowMillis,
@@ -1041,44 +755,7 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
           DELEGATED_RUN_MAX_TERMINAL_RECORDS,
         );
         yield* persist(current, draft, "reserve");
-        return { kind: "allocated" as const, runs };
-      }),
-    );
-  });
-
-  const findBatchByIdempotency: DelegatedRunRepositoryShape["findBatchByIdempotency"] = Effect.fn(
-    "DelegatedRunRepository.findBatchByIdempotency",
-  )(function* (environmentId, parentThreadId, key, requestHash) {
-    return yield* lock.withPermit(
-      Effect.gen(function* () {
-        yield* assertHealthy("reserve");
-        const current = yield* Ref.get(stateRef);
-        const existing = current.idempotency.find(
-          (entry) =>
-            entry.environmentId === environmentId &&
-            entry.parentThreadId === parentThreadId &&
-            entry.key === key,
-        );
-        if (!existing) return undefined;
-        if (existing.requestHash !== requestHash) {
-          return yield* new DelegatedRunRepositoryError({
-            operation: "reserve",
-            reason: "idempotency_conflict",
-            message: `Idempotency key '${existing.key}' is already owned by a different request.`,
-          });
-        }
-        const runs = existing.runIds.flatMap((runId) => {
-          const run = current.runs.find((candidate) => candidate.id === runId);
-          return run ? [run] : [];
-        });
-        if (runs.length !== existing.runIds.length) {
-          return yield* new DelegatedRunRepositoryError({
-            operation: "reserve",
-            reason: "corrupt_repository",
-            message: `Idempotency key '${existing.key}' references a missing delegated run.`,
-          });
-        }
-        return runs;
+        return { kind: "allocated" as const, run };
       }),
     );
   });
@@ -1098,28 +775,13 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
               : updatedCandidate;
           const firstTerminal = !isTerminal(existing) && isTerminal(updated);
           const runs = current.runs.map((run) => (run.id === runId ? updated : run));
-          const runsById = new Map(runs.map((run) => [run.id, run] as const));
           const draft: RepositoryAggregate = {
             ...current,
             revision: current.revision + (updateOptions?.durable === false ? 0 : 1),
             runs,
-            leases: firstTerminal
-              ? current.leases.filter((lease) => lease.runId !== runId)
-              : current.leases,
-            batches: current.batches.map((batch) =>
-              batch.runIds.includes(runId)
-                ? {
-                    ...batch,
-                    status: batchStatus(batch, runsById),
-                    updatedAt: updated.updatedAt,
-                  }
-                : batch,
-            ),
             parentDeliveries: firstTerminal
               ? (current.parentDeliveries ?? []).map((delivery) => {
                   if (
-                    delivery.environmentId !==
-                      current.leases.find((lease) => lease.runId === runId)?.environmentId ||
                     delivery.parentThreadId !== existing.parentThreadId ||
                     !delivery.outstandingRunIds.includes(runId)
                   ) {
@@ -1328,9 +990,7 @@ const make = Effect.fn("DelegatedRunRepository.make")(function* (
       lock.withPermit(
         Ref.get(stateRef).pipe(Effect.map((state) => state.runs.find((run) => run.id === runId))),
       ),
-    findBatchByIdempotency,
     reserve,
-    reserveBatch,
     update,
     compact,
     repairCorrupt,
@@ -1347,4 +1007,6 @@ export const __testing = {
   make,
   schemaVersion: REPOSITORY_SCHEMA_VERSION,
   interruptedRunError: INTERRUPTED_RUN_ERROR,
+  repositoryPayloadSchema: RepositoryPayloadSchema,
+  repositoryAggregateSchema: RepositoryAggregateSchema,
 };

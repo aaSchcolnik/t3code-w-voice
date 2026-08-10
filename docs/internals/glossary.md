@@ -119,41 +119,28 @@ A point-in-time view of state. The word is used in multiple layers, including or
 
 ### Delegation
 
-Delegation is tracked child work routed by the server while the parent agent retains decomposition,
-synthesis, and final responsibility. See [subagents-and-routing.md][25] and
-[delegation-router.md][26].
+Delegation is tracked child work started through a provider-specific tool while the parent agent
+retains decomposition, synthesis, verification, and final responsibility. See [subagents.md][25].
 
 #### Lane
 
-One independently executable task within a delegation batch. One to four lanes are routed and
-reserved together.
-
-#### Route decision
-
-The immutable record of the selected candidate, rejected candidates and reason codes, policy
-source/version, diversity outcome, and pre-dispatch fallback chain.
+One independently executable task assigned to a delegated run.
 
 #### Allocation and acceptance
 
-Allocation is the atomic repository reservation of a routed run. Acceptance is a later provider
+Allocation is the durable repository reservation of a direct run. Acceptance is a later provider
 milestone after session startup and turn dispatch. An `allocated` result MUST NOT be presented as
 provider acceptance.
 
 #### Admission
 
-The server-side checks that bound batch size, per-parent/environment concurrency, workspace
-ownership, attachment ownership, recursion, provider availability, and declared capabilities
-before allocation.
+The server-side checks that enforce per-parent concurrency, attachment ownership, recursion,
+provider availability, and provider/model/option validity before allocation.
 
 #### Idempotency key
 
-A parent-scoped key for retrying an identical `delegate_start`. The same key and request returns the
-existing batch; the same key with a different request is an `idempotency_conflict`.
-
-#### Fallback
-
-A pre-dispatch retry against the next persisted eligible candidate after session startup fails.
-Fallback stops once a provider accepts the turn.
+A parent-scoped key for retrying an identical provider-specific start. The same key and request
+returns the existing run; the same key with a different request is an `idempotency_conflict`.
 
 #### Parent wake
 
@@ -215,8 +202,7 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 - [Provider architecture][16]
 - [Permission modes][18]
 - [Workspace layout][2]
-- [Subagents and routing][25]
-- [Delegation router][26]
+- [Subagents][25]
 - [MCP protocol compatibility][27]
 
 [1]: ../../packages/contracts/src/orchestration.ts
@@ -243,6 +229,5 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
-[25]: ../user/subagents-and-routing.md
-[26]: ./delegation-router.md
+[25]: ../user/subagents.md
 [27]: ./mcp-protocol-compatibility.md

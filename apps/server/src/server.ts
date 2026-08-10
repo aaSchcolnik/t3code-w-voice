@@ -45,7 +45,6 @@ import * as ServerVoiceModelManager from "./transcription/ServerVoiceModelManage
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as DelegatedRunService from "./orchestration/DelegatedRunService.ts";
 import * as DelegatedRunRepository from "./orchestration/DelegatedRunRepository.ts";
-import * as DelegationCoordinator from "./orchestration/DelegationCoordinator.ts";
 import * as SubagentTranscriptService from "./orchestration/SubagentTranscriptService.ts";
 import * as SubagentRunService from "./orchestration/SubagentRunService.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
@@ -74,7 +73,6 @@ import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletion
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
-import * as DelegationRouterService from "./provider/DelegationRouterService.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
@@ -411,19 +409,6 @@ const DelegatedRunLayerLive = DelegatedRunService.layer.pipe(
   Layer.provide(OrchestrationLayerLive),
 );
 
-const DelegationRouterLayerLive = DelegationRouterService.layer.pipe(
-  Layer.provide(ServerSettingsLayerLive),
-  Layer.provide(ProviderRegistryLive),
-);
-
-const DelegationCoordinatorLayerLive = DelegationCoordinator.layer.pipe(
-  Layer.provide(DelegatedRunRepository.layer),
-  Layer.provide(DelegatedRunLayerLive),
-  Layer.provide(SubagentRunLayerLive),
-  Layer.provide(DelegationRouterLayerLive),
-  Layer.provide(OrchestrationLayerLive),
-);
-
 const RuntimeCoreServicesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(ServerSettingsLayerLive),
@@ -435,8 +420,6 @@ const RuntimeCoreServicesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(
     Layer.mergeAll(DelegatedRunLayerLive, SubagentTranscriptLayerLive, SubagentRunLayerLive),
   ),
-  Layer.provideMerge(DelegationRouterLayerLive),
-  Layer.provideMerge(DelegationCoordinatorLayerLive),
   Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
   Layer.provideMerge(Layer.mergeAll(PersistenceLayerLive, McpSessionInstructionBuilderLive)),
   Layer.provideMerge(Keybindings.layer),
@@ -488,7 +471,6 @@ const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   Layer.provideMerge(ResourceDiagnosticsLayerLive),
   Layer.provideMerge(UsageLayerLive),
   Layer.provideMerge(TraceDiagnostics.layer),
-  Layer.provideMerge(UsageService.layer),
   Layer.provideMerge(AnalyticsService.layer),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),

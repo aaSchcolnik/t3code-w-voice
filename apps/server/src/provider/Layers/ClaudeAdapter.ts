@@ -83,10 +83,6 @@ import {
   NATIVE_CLAUDE_KNOWLEDGE_SCANNER_NAME,
   NATIVE_CLAUDE_KNOWLEDGE_SCANNER_PROMPT,
 } from "../../knowledge/nativeClaudeKnowledgeScanner.ts";
-import type {
-  ProviderDelegationCapabilities,
-  ProviderInstructionDelivery,
-} from "../Services/ProviderAdapter.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
@@ -129,22 +125,6 @@ const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonStri
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
 const PROVIDER = ProviderDriverKind.make("claudeAgent");
-export const CLAUDE_INSTRUCTION_DELIVERY = {
-  supported: true,
-  channel: "system",
-} as const satisfies ProviderInstructionDelivery;
-export const CLAUDE_DELEGATION_CAPABILITIES = {
-  delegatedExecution: true,
-  cancellation: true,
-  structuredQuestions: true,
-  attachments: true,
-  enforcedReadOnlyWorkspace: false,
-  workspaceWriteSandboxContainment: false,
-  instructionDelivery: CLAUDE_INSTRUCTION_DELIVERY,
-  providerThreadResume: true,
-  definitelyNotAcceptedDispatchOutcome: "unsupported",
-  usageReporting: "correlated",
-} as const satisfies ProviderDelegationCapabilities;
 type ClaudeTextStreamKind = Extract<RuntimeContentStreamKind, "assistant_text" | "reasoning_text">;
 type ClaudeToolResultStreamKind = Extract<
   RuntimeContentStreamKind,
@@ -5569,7 +5549,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
-      delegation: CLAUDE_DELEGATION_CAPABILITIES,
     },
     startSession,
     sendTurn,

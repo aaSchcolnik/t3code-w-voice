@@ -1,5 +1,4 @@
 import {
-  DelegationRouteDecisionId,
   ProviderDriverKind,
   ProviderInstanceId,
   SubagentRunId,
@@ -34,15 +33,6 @@ const baseRun = {
     canResume: false,
     transcriptQuality: "none",
   },
-  route: {
-    decisionId: DelegationRouteDecisionId.make("decision-1"),
-    policyVersion: 1,
-    role: "scout",
-    provider: "codex",
-    providerInstanceId: ProviderInstanceId.make("codex"),
-    model: "gpt-5.6",
-    explanation: "Selected for repository research.",
-  },
   dispatchState: "allocated",
   createdAt: "2026-07-29T10:00:00.000Z",
   startedAt: null,
@@ -55,8 +45,6 @@ describe("mobile subagent presentation", () => {
   it("keeps allocation distinct from execution", () => {
     expect(mobileSubagentRunPresentation(baseRun)).toMatchObject({
       phaseLabel: "Allocated",
-      routeLabel: "Scout · codex / gpt-5.6",
-      explanation: "Selected for repository research.",
       canCancel: true,
     });
   });

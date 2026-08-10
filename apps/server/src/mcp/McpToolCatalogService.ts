@@ -41,8 +41,6 @@ const DELEGATION_TOOLS = {
   "claude-agent": ["claude_capabilities", "claude_start", "claude_cancel"],
 } as const satisfies Partial<Record<McpCapability, ReadonlyArray<string>>>;
 
-const NEUTRAL_DELEGATION_CONTROL_TOOLS = ["delegate_cancel", "delegate_respond"] as const;
-
 const ENGINE_WORKFLOW_TOOLS = {
   "engine-planning": ["engine_plan_brief", "engine_plan"],
   "engine-consensus": ["engine_consensus"],
@@ -88,8 +86,6 @@ const settingAllows = (capability: McpCapability, settings: McpSettings | undefi
   switch (capability) {
     case "preview":
       return settings.preview;
-    case "delegation-router":
-      return true;
     case "codex-agent":
       return settings.codexAgent;
     case "cursor-agent":
@@ -122,10 +118,6 @@ export const buildMcpToolCatalog = (input: McpToolCatalogInput): McpToolCatalog 
 
   if (enabled("preview")) {
     for (const tool of PREVIEW_TOOLS) tools.add(tool);
-  }
-  if (enabled("delegation-router")) {
-    if (input.effectiveMcp?.router.mode !== "off") tools.add("delegate_start");
-    for (const tool of NEUTRAL_DELEGATION_CONTROL_TOOLS) tools.add(tool);
   }
   for (const [capability, names] of Object.entries(DELEGATION_TOOLS)) {
     if (!enabled(capability as McpCapability)) continue;

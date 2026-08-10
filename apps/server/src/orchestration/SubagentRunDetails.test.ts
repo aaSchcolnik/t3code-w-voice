@@ -51,22 +51,6 @@ const projectedRun = (source: SubagentRun["source"]): SubagentRun => ({
 const durableRun = {
   id: "run-1",
   parentThreadId: rootThreadId,
-  routeGroupId: "route-group-1",
-  routeDecision: {
-    decisionId: "decision-1",
-    policyVersion: 3,
-    mode: "proactive",
-    taskKind: "implementation",
-    role: "worker",
-    selected: {
-      provider: "codex",
-      providerInstanceId: "codex-primary",
-      model: "gpt-5.6-sol",
-    },
-    candidates: [],
-    fallbackChain: [],
-    explanation: "Selected the first eligible worker.",
-  },
   attempts: [
     {
       attemptId: "attempt-1",
@@ -114,6 +98,17 @@ describe("subagent run details", () => {
     }),
   );
 
+  it.effect("returns valid empty details for delegated workflow summaries", () =>
+    Effect.gen(function* () {
+      const details = yield* getOwnedSubagentRunDetails(
+        { rootThreadId, runId },
+        dependencies({ ...projectedRun("delegated"), runKind: "workflow" }),
+      );
+
+      expect(details).toEqual({ runId, source: "delegated", attempts: [] });
+    }),
+  );
+
   it.effect("returns full durable diagnostics for delegated runs", () =>
     Effect.gen(function* () {
       const details = yield* getOwnedSubagentRunDetails(
@@ -121,8 +116,6 @@ describe("subagent run details", () => {
         dependencies(projectedRun("delegated")),
       );
 
-      expect(details.routeGroupId).toBe("route-group-1");
-      expect(details.routeDecision?.selected.providerInstanceId).toBe("codex-primary");
       expect(details.attempts[0]?.attemptId).toBe("attempt-1");
       expect(details.pendingQuestions?.[0]?.id).toBe("scope");
     }),

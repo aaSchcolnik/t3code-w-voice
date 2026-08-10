@@ -34,10 +34,6 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
-import type {
-  ProviderDelegationCapabilities,
-  ProviderInstructionDelivery,
-} from "../Services/ProviderAdapter.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
@@ -76,23 +72,6 @@ import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogg
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
 const PROVIDER = ProviderDriverKind.make("grok");
-export const GROK_INSTRUCTION_DELIVERY = {
-  supported: false,
-  reason:
-    "Grok ACP exposes MCP configuration but no legitimate system/developer instruction channel.",
-} as const satisfies ProviderInstructionDelivery;
-export const GROK_DELEGATION_CAPABILITIES = {
-  delegatedExecution: false,
-  cancellation: true,
-  structuredQuestions: true,
-  attachments: true,
-  enforcedReadOnlyWorkspace: false,
-  workspaceWriteSandboxContainment: false,
-  instructionDelivery: GROK_INSTRUCTION_DELIVERY,
-  providerThreadResume: true,
-  definitelyNotAcceptedDispatchOutcome: "unsupported",
-  usageReporting: "unsupported",
-} as const satisfies ProviderDelegationCapabilities;
 const GROK_RESUME_VERSION = 1 as const;
 
 function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
@@ -1474,7 +1453,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
       provider: PROVIDER,
       capabilities: {
         sessionModelSwitch: "in-session",
-        delegation: GROK_DELEGATION_CAPABILITIES,
       },
       startSession,
       sendTurn,

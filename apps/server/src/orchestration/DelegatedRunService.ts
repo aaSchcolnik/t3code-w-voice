@@ -17,7 +17,6 @@ import {
   type DelegatedRunCapabilities,
   type DelegatedRunProvider,
   type DelegatedRunStartInput,
-  type DelegationCandidateRef,
   type ModelSelection,
   type OrchestrationEvent,
   type ProviderApprovalPolicy,
@@ -42,7 +41,6 @@ import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
-import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -219,58 +217,8 @@ export interface StartDelegatedRunInput extends DelegatedRunStartInput {
   readonly idempotencyKey?: DelegationIdempotencyKey;
 }
 
-export interface ResolvedDelegatedRunTarget {
-  readonly provider: DelegatedRunProvider;
-  readonly providerInstanceId: ProviderInstanceId;
-  readonly model?: string;
-  readonly options?: ProviderOptionSelections;
-  readonly resolvedOptionDetails?: ReadonlyArray<ResolvedProviderOption>;
-}
-
-export interface DelegatedExecutionPolicy {
-  readonly workspaceAccess: "read-only" | "workspace-write";
-  readonly approvalPolicy: ProviderApprovalPolicy;
-  readonly sandboxMode: ProviderSandboxMode;
-  readonly runtimeMode: RuntimeMode;
-}
-
-export interface StartResolvedDelegatedRunInput {
-  readonly target: ResolvedDelegatedRunTarget;
-  readonly fallbackTargets?: ReadonlyArray<ResolvedDelegatedRunTarget>;
-  readonly parentThreadId: ThreadId;
-  readonly parentTurnId?: string;
-  readonly parentToolCallId?: string;
-  readonly task: string;
-  readonly title?: string;
-  readonly workspaceRoot: string;
-  readonly interactionMode: ProviderInteractionMode;
-  readonly attachments: DelegatedRunStartInput["attachments"];
-  readonly executionPolicy: DelegatedExecutionPolicy;
-  readonly requestedModel?: string;
-  readonly requestedOptions?: ProviderOptionSelections;
-  readonly profile?: string;
-  readonly timeoutMs?: number;
-  readonly resumeOfRunId?: DelegatedRunId;
-  readonly idempotencyKey?: DelegationIdempotencyKey;
-  /** Internal coordinator-only allocation. Presence skips repository reservation. */
-  readonly allocatedRun?: DelegatedRun;
-}
-
-export interface StartAllocatedDelegatedRunInput {
-  readonly run: DelegatedRun;
-  readonly task: string;
-  readonly fallbackTargets?: ReadonlyArray<DelegationCandidateRef>;
-  readonly timeoutMs: number;
-}
-
 export interface DelegatedRunServiceShape {
   readonly start: (input: StartDelegatedRunInput) => Effect.Effect<DelegatedRun, DelegatedRunError>;
-  readonly startResolved: (
-    input: StartResolvedDelegatedRunInput,
-  ) => Effect.Effect<DelegatedRun, DelegatedRunError>;
-  readonly startAllocated: (
-    input: StartAllocatedDelegatedRunInput,
-  ) => Effect.Effect<DelegatedRun, DelegatedRunError>;
   readonly reconcileParentDelivery: (parentThreadId: ThreadId) => Effect.Effect<void>;
   readonly capabilities: (
     provider: DelegatedRunProvider,
@@ -312,7 +260,6 @@ const make = Effect.gen(function* () {
   const emissionRef = yield* Ref.make(new Map<DelegatedRunId, EmissionState>());
   const initialWakeStates = new Map<ThreadId, ParentWakeState>();
   for (const run of orphanedRuns) {
-    if (run.workflowId || run.deliveryMode === "mcp_task") continue;
     const current = initialWakeStates.get(run.parentThreadId) ?? emptyWakeState();
     initialWakeStates.set(run.parentThreadId, {
       ...current,
@@ -379,24 +326,6 @@ const make = Effect.gen(function* () {
           transcriptQuality: "live",
         },
         runKind: "agent",
-        ...(run.workflowId ? { workflowId: run.workflowId } : {}),
-        ...(run.batchId ? { batchId: run.batchId } : {}),
-        ...(run.laneId ? { laneId: run.laneId } : {}),
-        ...(run.routeDecision
-          ? {
-              route: {
-                decisionId: run.routeDecision.decisionId,
-                policyVersion: run.routeDecision.policyVersion,
-                role: run.routeDecision.role,
-                provider: run.routeDecision.selected.provider,
-                providerInstanceId: run.routeDecision.selected.providerInstanceId,
-                ...(run.routeDecision.selected.model
-                  ? { model: run.routeDecision.selected.model }
-                  : {}),
-                explanation: run.routeDecision.explanation,
-              },
-            }
-          : {}),
         ...(run.dispatchState ? { dispatchState: run.dispatchState } : {}),
         ...(run.terminalEventSeen === undefined
           ? {}
@@ -777,7 +706,6 @@ const make = Effect.gen(function* () {
   const registerOutstandingRun = Effect.fn("DelegatedRunService.registerOutstandingRun")(function* (
     run: DelegatedRun,
   ) {
-    if (run.workflowId || run.deliveryMode === "mcp_task") return;
     yield* Ref.update(wakeStatesRef, (states) => {
       const current = states.get(run.parentThreadId) ?? emptyWakeState();
       if (current.suppressed) return states;
@@ -792,30 +720,6 @@ const make = Effect.gen(function* () {
   const recordTerminalRun = Effect.fn("DelegatedRunService.recordTerminalRun")(function* (
     run: DelegatedRun,
   ) {
-    if (run.deliveryMode === "mcp_task") return;
-    if (run.workflowId) {
-      const current = (yield* Ref.get(wakeStatesRef)).get(run.parentThreadId);
-      const contributed = yield* repository
-        .takeParentDelivery(
-          serverConfig.stateDir,
-          run.parentThreadId,
-          current?.parentTurnRunning ?? false,
-        )
-        .pipe(Effect.orElseSucceed(() => []));
-      if (contributed.length === 0) return;
-      yield* Ref.update(wakeStatesRef, (states) => {
-        const state = states.get(run.parentThreadId) ?? emptyWakeState();
-        return setWakeState(states, run.parentThreadId, {
-          ...state,
-          pendingResultRunIds: new Set([
-            ...state.pendingResultRunIds,
-            ...contributed.map((entry) => entry.id),
-          ]),
-        });
-      });
-      yield* tryDispatchWake(run.parentThreadId);
-      return;
-    }
     yield* Ref.update(wakeStatesRef, (states) => {
       const current = states.get(run.parentThreadId);
       if (!current || current.suppressed) return states;
@@ -830,6 +734,26 @@ const make = Effect.gen(function* () {
         pendingInputByRunId,
       });
     });
+    const current = (yield* Ref.get(wakeStatesRef)).get(run.parentThreadId);
+    const contributed = yield* repository
+      .takeParentDelivery(
+        serverConfig.stateDir,
+        run.parentThreadId,
+        current?.parentTurnRunning ?? false,
+      )
+      .pipe(Effect.orElseSucceed(() => []));
+    if (contributed.length > 0) {
+      yield* Ref.update(wakeStatesRef, (states) => {
+        const state = states.get(run.parentThreadId) ?? emptyWakeState();
+        return setWakeState(states, run.parentThreadId, {
+          ...state,
+          pendingResultRunIds: new Set([
+            ...state.pendingResultRunIds,
+            ...contributed.map((entry) => entry.id),
+          ]),
+        });
+      });
+    }
     yield* tryDispatchWake(run.parentThreadId);
   });
 
@@ -1585,11 +1509,8 @@ const make = Effect.gen(function* () {
   );
 
   const startInternal = Effect.fn("DelegatedRunService.startInternal")(function* (
-    input: StartDelegatedRunInput | StartResolvedDelegatedRunInput,
+    input: StartDelegatedRunInput,
   ) {
-    const resolvedRequest =
-      "target" in input ? (input as StartResolvedDelegatedRunInput) : undefined;
-    const compatibilityRequest = resolvedRequest ? undefined : (input as StartDelegatedRunInput);
     const parent = yield* projectionSnapshotQuery.getThreadDetailById(input.parentThreadId).pipe(
       Effect.map(Option.getOrUndefined),
       Effect.mapError(
@@ -1657,119 +1578,83 @@ const make = Effect.gen(function* () {
     let sandboxMode: ProviderSandboxMode;
     let runtimeMode: RuntimeMode;
     let attachments: NonNullable<DelegatedRunStartInput["attachments"]>;
-    let primaryTarget: ResolvedDelegatedRunTarget;
-    let fallbackTargets: ReadonlyArray<ResolvedDelegatedRunTarget>;
+    let resolvedProviderInstanceId: ProviderInstanceId;
+    let resolvedModel: string | undefined;
+    let resolvedOptions: ProviderOptionSelections | undefined;
     let resolvedOptionDetails: ReadonlyArray<ResolvedProviderOption> | undefined;
-
-    if (resolvedRequest) {
-      if (
-        resolvedRequest.executionPolicy.approvalPolicy !== DELEGATED_APPROVAL_POLICY ||
-        (resolvedRequest.executionPolicy.workspaceAccess === "workspace-write"
-          ? resolvedRequest.executionPolicy.sandboxMode !== DELEGATED_SANDBOX_MODE ||
-            resolvedRequest.executionPolicy.runtimeMode !== DELEGATED_RUNTIME_MODE
-          : resolvedRequest.executionPolicy.sandboxMode !== "read-only" ||
-            resolvedRequest.executionPolicy.runtimeMode !== "approval-required")
-      ) {
-        return yield* new DelegatedRunError({
-          operation: "start",
-          message:
-            "The resolved delegated execution policy is not supported by the current provider runtime.",
-        });
-      }
-      profileId = resolvedRequest.profile;
-      requestedModel = resolvedRequest.requestedModel;
-      requestedOptions = resolvedRequest.requestedOptions;
-      interactionMode = resolvedRequest.interactionMode;
-      approvalPolicy = resolvedRequest.executionPolicy.approvalPolicy;
-      sandboxMode = resolvedRequest.executionPolicy.sandboxMode;
-      runtimeMode = resolvedRequest.executionPolicy.runtimeMode;
-      attachments = resolvedRequest.attachments ?? [];
-      primaryTarget = resolvedRequest.target;
-      fallbackTargets = resolvedRequest.fallbackTargets ?? [];
-      resolvedOptionDetails = resolvedRequest.target.resolvedOptionDetails;
-    } else {
-      const compatibility = compatibilityRequest!;
-      const explicitConfiguration =
-        compatibility.providerInstanceId !== undefined ||
-        compatibility.model !== undefined ||
-        compatibility.options !== undefined ||
-        compatibility.interactionMode !== undefined ||
-        compatibility.approvalPolicy !== undefined ||
-        compatibility.sandboxMode !== undefined ||
-        compatibility.runtimeMode !== undefined ||
-        compatibility.attachments !== undefined;
-      if (compatibility.profile !== undefined && explicitConfiguration) {
-        return yield* new DelegatedRunError({
-          operation: "start",
-          message: "A delegation profile cannot be combined with explicit execution configuration.",
-        });
-      }
-      const matchingProfiles = compatibility.profile
-        ? settings.delegationProfiles.filter((candidate) => candidate.id === compatibility.profile)
-        : [];
-      if (matchingProfiles.length > 1) {
-        return yield* new DelegatedRunError({
-          operation: "start",
-          message: `Delegation profile '${compatibility.profile}' is configured more than once.`,
-        });
-      }
-      const profile = matchingProfiles[0];
-      if (compatibility.profile !== undefined && !profile) {
-        return yield* new DelegatedRunError({
-          operation: "start",
-          message: `Delegation profile '${compatibility.profile}' is not configured.`,
-        });
-      }
-      if (profile && profile.provider !== compatibility.provider) {
-        return yield* new DelegatedRunError({
-          operation: "start",
-          message: `Delegation profile '${profile.id}' is for '${profile.provider}', not '${compatibility.provider}'.`,
-        });
-      }
-      if (
-        !isDelegatedExecutionConfiguration(compatibility) ||
-        (profile && !isDelegatedExecutionConfiguration(profile))
-      ) {
-        return yield* new DelegatedRunError({
-          operation: "start",
-          message:
-            "Delegated runs are fixed to the workspace-write sandbox and auto-accept-edits runtime. They may not use read-only, full-access, or danger-full-access execution settings.",
-        });
-      }
-      profileId = profile?.id;
-      requestedModel = profile?.model ?? compatibility.model;
-      requestedOptions = profile?.options ?? compatibility.options;
-      interactionMode = profile?.interactionMode ?? compatibility.interactionMode ?? "default";
-      approvalPolicy = DELEGATED_APPROVAL_POLICY;
-      sandboxMode = DELEGATED_SANDBOX_MODE;
-      runtimeMode = DELEGATED_RUNTIME_MODE;
-      attachments = profile?.attachments ?? compatibility.attachments ?? [];
-      const providerSnapshots = yield* providerRegistry.getProviders;
-      const resolution = resolveDelegatedProvider({
-        providers: providerSnapshots,
-        provider: compatibility.provider,
-        providerInstanceId: profile?.providerInstanceId ?? compatibility.providerInstanceId,
-        model: requestedModel,
-        options: requestedOptions,
+    const explicitConfiguration =
+      input.providerInstanceId !== undefined ||
+      input.model !== undefined ||
+      input.options !== undefined ||
+      input.interactionMode !== undefined ||
+      input.approvalPolicy !== undefined ||
+      input.sandboxMode !== undefined ||
+      input.runtimeMode !== undefined ||
+      input.attachments !== undefined;
+    if (input.profile !== undefined && explicitConfiguration) {
+      return yield* new DelegatedRunError({
+        operation: "start",
+        message: "A delegation profile cannot be combined with explicit execution configuration.",
       });
-      if (!resolution.ok) {
-        return yield* new DelegatedRunError({
-          operation: "start",
-          message: resolution.message,
-        });
-      }
-      primaryTarget = {
-        provider: compatibility.provider,
-        providerInstanceId: resolution.value.instance.instanceId,
-        ...(resolution.value.resolvedModel ? { model: resolution.value.resolvedModel } : {}),
-        ...(resolution.value.resolvedOptions ? { options: resolution.value.resolvedOptions } : {}),
-        ...(resolution.value.resolvedOptionDetails
-          ? { resolvedOptionDetails: resolution.value.resolvedOptionDetails }
-          : {}),
-      };
-      fallbackTargets = [];
-      resolvedOptionDetails = resolution.value.resolvedOptionDetails;
     }
+    const matchingProfiles = input.profile
+      ? settings.delegationProfiles.filter((candidate) => candidate.id === input.profile)
+      : [];
+    if (matchingProfiles.length > 1) {
+      return yield* new DelegatedRunError({
+        operation: "start",
+        message: `Delegation profile '${input.profile}' is configured more than once.`,
+      });
+    }
+    const profile = matchingProfiles[0];
+    if (input.profile !== undefined && !profile) {
+      return yield* new DelegatedRunError({
+        operation: "start",
+        message: `Delegation profile '${input.profile}' is not configured.`,
+      });
+    }
+    if (profile && profile.provider !== input.provider) {
+      return yield* new DelegatedRunError({
+        operation: "start",
+        message: `Delegation profile '${profile.id}' is for '${profile.provider}', not '${input.provider}'.`,
+      });
+    }
+    if (
+      !isDelegatedExecutionConfiguration(input) ||
+      (profile && !isDelegatedExecutionConfiguration(profile))
+    ) {
+      return yield* new DelegatedRunError({
+        operation: "start",
+        message:
+          "Delegated runs are fixed to the workspace-write sandbox and auto-accept-edits runtime. They may not use read-only, full-access, or danger-full-access execution settings.",
+      });
+    }
+    profileId = profile?.id;
+    requestedModel = profile?.model ?? input.model;
+    requestedOptions = profile?.options ?? input.options;
+    interactionMode = profile?.interactionMode ?? input.interactionMode ?? "default";
+    approvalPolicy = DELEGATED_APPROVAL_POLICY;
+    sandboxMode = DELEGATED_SANDBOX_MODE;
+    runtimeMode = DELEGATED_RUNTIME_MODE;
+    attachments = profile?.attachments ?? input.attachments ?? [];
+    const providerSnapshots = yield* providerRegistry.getProviders;
+    const resolution = resolveDelegatedProvider({
+      providers: providerSnapshots,
+      provider: input.provider,
+      providerInstanceId: profile?.providerInstanceId ?? input.providerInstanceId,
+      model: requestedModel,
+      options: requestedOptions,
+    });
+    if (!resolution.ok) {
+      return yield* new DelegatedRunError({
+        operation: "start",
+        message: resolution.message,
+      });
+    }
+    resolvedProviderInstanceId = resolution.value.instance.instanceId;
+    resolvedModel = resolution.value.resolvedModel;
+    resolvedOptions = resolution.value.resolvedOptions;
+    resolvedOptionDetails = resolution.value.resolvedOptionDetails;
     const task = delegatedTaskInput(input.task);
     if (task.length > PROVIDER_SEND_TURN_MAX_INPUT_CHARS) {
       return yield* new DelegatedRunError({
@@ -1777,25 +1662,19 @@ const make = Effect.gen(function* () {
         message: "The delegated task is too large after mandatory safety instructions are added.",
       });
     }
-    const resolvedProviderInstanceId = primaryTarget.providerInstanceId;
-    const resolvedModel = primaryTarget.model;
-    const runId =
-      resolvedRequest?.allocatedRun?.id ??
-      DelegatedRunId.make(
-        yield* crypto.randomUUIDv4.pipe(
-          Effect.mapError(
-            () =>
-              new DelegatedRunError({
-                operation: "start",
-                message: "Could not allocate a delegated run identifier.",
-              }),
-          ),
+    const runId = DelegatedRunId.make(
+      yield* crypto.randomUUIDv4.pipe(
+        Effect.mapError(
+          () =>
+            new DelegatedRunError({
+              operation: "start",
+              message: "Could not allocate a delegated run identifier.",
+            }),
         ),
-      );
-    const providerThreadId = ThreadId.make(
-      resolvedRequest?.allocatedRun?.providerThreadId ?? `delegated-${runId}`,
+      ),
     );
-    const now = resolvedRequest?.allocatedRun?.createdAt ?? DateTime.formatIso(yield* DateTime.now);
+    const providerThreadId = ThreadId.make(`delegated-${runId}`);
+    const now = DateTime.formatIso(yield* DateTime.now);
     const requestHash = input.idempotencyKey
       ? DelegationRequestHash.make(
           Array.from(
@@ -1808,9 +1687,9 @@ const make = Effect.gen(function* () {
                       attachments,
                       interactionMode,
                       model: resolvedModel,
-                      options: primaryTarget.options,
+                      options: resolvedOptions,
                       parentThreadId: input.parentThreadId,
-                      provider: primaryTarget.provider,
+                      provider: input.provider,
                       providerInstanceId: resolvedProviderInstanceId,
                       task: input.task,
                       title: input.title,
@@ -1840,9 +1719,9 @@ const make = Effect.gen(function* () {
           ).join(""),
         )
       : undefined;
-    const candidateRun: DelegatedRun = resolvedRequest?.allocatedRun ?? {
+    const candidateRun: DelegatedRun = {
       id: runId,
-      provider: primaryTarget.provider,
+      provider: input.provider,
       providerInstanceId: resolvedProviderInstanceId,
       parentThreadId: input.parentThreadId,
       ...(input.parentTurnId ? { parentTurnId: input.parentTurnId } : {}),
@@ -1857,7 +1736,7 @@ const make = Effect.gen(function* () {
       ...(resolvedModel ? { model: resolvedModel, resolvedModel } : {}),
       ...(requestedModel ? { requestedModel } : {}),
       ...(requestedOptions ? { requestedOptions } : {}),
-      ...(primaryTarget.options ? { resolvedOptions: primaryTarget.options } : {}),
+      ...(resolvedOptions ? { resolvedOptions } : {}),
       ...(resolvedOptionDetails ? { resolvedOptionDetails } : {}),
       interactionMode,
       approvalPolicy,
@@ -1865,7 +1744,6 @@ const make = Effect.gen(function* () {
       runtimeMode,
       attachments,
       ...(profileId ? { profile: profileId } : {}),
-      ...(resolvedRequest?.resumeOfRunId ? { resumeOfRunId: resolvedRequest.resumeOfRunId } : {}),
       workspaceRoot: resolvedWorkspaceRoot,
       sequence: 0,
       dispatchState: "allocated",
@@ -1874,10 +1752,10 @@ const make = Effect.gen(function* () {
         {
           attemptId: DelegationAttemptId.make(`${runId}:1`),
           target: {
-            provider: primaryTarget.provider,
-            providerInstanceId: primaryTarget.providerInstanceId,
-            ...(primaryTarget.model ? { model: primaryTarget.model } : {}),
-            ...(primaryTarget.options ? { options: primaryTarget.options } : {}),
+            provider: input.provider,
+            providerInstanceId: resolvedProviderInstanceId,
+            ...(resolvedModel ? { model: resolvedModel } : {}),
+            ...(resolvedOptions ? { options: resolvedOptions } : {}),
           },
           dispatchState: "allocated",
           allocatedAt: now,
@@ -1888,31 +1766,25 @@ const make = Effect.gen(function* () {
       createdAt: now,
       updatedAt: now,
     };
-    const reservation = resolvedRequest?.allocatedRun
-      ? { kind: "allocated" as const, run: resolvedRequest.allocatedRun }
-      : yield* repository
-          .reserve({
-            run: candidateRun,
-            environmentId: serverConfig.stateDir,
-            canonicalWorkspace: resolvedWorkspaceRoot,
-            limits: {
-              maxConcurrentPerParent:
-                settings.mcp.router.maxConcurrentPerParent ?? MAX_CONCURRENT_RUNS_PER_PARENT,
-              maxConcurrentEnvironment: settings.mcp.router.maxConcurrentEnvironment,
-            },
-            ...(input.idempotencyKey && requestHash
-              ? { idempotency: { key: input.idempotencyKey, requestHash } }
-              : {}),
-          })
-          .pipe(
-            Effect.mapError(
-              (error) =>
-                new DelegatedRunError({
-                  operation: "start",
-                  message: error.message,
-                }),
-            ),
-          );
+    const reservation = yield* repository
+      .reserve({
+        run: candidateRun,
+        environmentId: serverConfig.stateDir,
+        canonicalWorkspace: resolvedWorkspaceRoot,
+        maxConcurrentPerParent: MAX_CONCURRENT_RUNS_PER_PARENT,
+        ...(input.idempotencyKey && requestHash
+          ? { idempotency: { key: input.idempotencyKey, requestHash } }
+          : {}),
+      })
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new DelegatedRunError({
+              operation: "start",
+              message: error.message,
+            }),
+        ),
+      );
     if (reservation.kind === "replay") {
       yield* projectRun(reservation.run);
       return reservation.run;
@@ -1931,7 +1803,7 @@ const make = Effect.gen(function* () {
       providerInstanceId: resolvedProviderInstanceId,
       ...(resolvedModel ? { model: resolvedModel } : {}),
       ...(requestedOptions ? { requestedOptions } : {}),
-      ...(primaryTarget.options ? { resolvedOptions: primaryTarget.options } : {}),
+      ...(resolvedOptions ? { resolvedOptions } : {}),
       ...(resolvedOptionDetails ? { resolvedOptionDetails } : {}),
       task: input.task,
       transcriptQuality: "live",
@@ -1944,288 +1816,186 @@ const make = Effect.gen(function* () {
       }),
     );
 
-    const timeoutMs = resolvedRequest?.timeoutMs ?? settings.mcp.router.defaultTimeoutMs;
-    const deadlineAt = Date.parse(run.allocatedAt ?? run.createdAt) + timeoutMs;
-    const deadlineRemainingMs = Math.max(0, deadlineAt - (yield* Clock.currentTimeMillis));
-    yield* Effect.sleep(deadlineRemainingMs).pipe(
-      Effect.andThen(
-        Effect.gen(function* () {
-          const current = yield* repository.get(runId);
-          if (!current || isTerminal(current)) return;
-          if (current.providerThreadId) {
-            const threadId = ThreadId.make(current.providerThreadId);
-            yield* providerService
-              .interruptTurn({
-                threadId,
-                ...(current.providerTurnId ? { turnId: TurnId.make(current.providerTurnId) } : {}),
-              })
-              .pipe(Effect.ignoreCause({ log: false }));
-            yield* providerService
-              .stopSession({ threadId })
-              .pipe(Effect.ignoreCause({ log: false }));
-          }
-          const expiredAt = DateTime.formatIso(yield* DateTime.now);
-          yield* updateRun(runId, (active) => ({
-            ...active,
-            status: "failed",
-            error: "Delegated run deadline exceeded.",
-            completedAt: expiredAt,
-            updatedAt: expiredAt,
-            attempts: active.attempts?.map((attempt, index, attempts) =>
-              index === attempts.length - 1
-                ? {
-                    ...attempt,
-                    terminalAt: expiredAt,
-                    failureReason: "Delegated run deadline exceeded.",
-                    failureReasonCode: "deadline_exceeded",
-                  }
-                : attempt,
-            ),
-            sequence: active.sequence + 1,
-          }));
-        }),
-      ),
-      Effect.forkIn(serviceScope),
-    );
-
     yield* Effect.gen(function* () {
-      const candidateKey = (target: ResolvedDelegatedRunTarget) =>
-        JSON.stringify([
-          target.provider,
-          target.providerInstanceId,
-          target.model ?? null,
-          target.options ?? null,
-        ]);
-      const targets = [primaryTarget, ...fallbackTargets].filter(
-        (target, index, all) =>
-          all.findIndex((candidate) => candidateKey(candidate) === candidateKey(target)) === index,
-      );
-      const fallbackEnabled =
-        resolvedRequest !== undefined && settings.mcp.router.fallback === "pre-dispatch";
-      const launchTargets = fallbackEnabled ? targets : targets.slice(0, 1);
-      let previousTarget: DelegationCandidateRef | undefined;
-
-      for (const [targetIndex, target] of launchTargets.entries()) {
-        const targetRef: DelegationCandidateRef = {
-          provider: target.provider,
-          providerInstanceId: target.providerInstanceId,
-          ...(target.model ? { model: target.model } : {}),
-          ...(target.options ? { options: target.options } : {}),
-        };
-        const targetSelection: ModelSelection | undefined = target.model
-          ? {
-              instanceId: target.providerInstanceId,
-              model: target.model,
-              ...(target.options ? { options: target.options } : {}),
-            }
-          : undefined;
-        const startingAt = DateTime.formatIso(yield* DateTime.now);
-        yield* updateRun(runId, (current) => ({
-          ...current,
-          provider: target.provider,
-          providerInstanceId: target.providerInstanceId,
-          ...(target.model
-            ? { model: target.model, resolvedModel: target.model }
-            : { model: undefined, resolvedModel: undefined }),
-          ...(target.options
-            ? { resolvedOptions: target.options }
-            : { resolvedOptions: undefined }),
-          ...(target.resolvedOptionDetails
-            ? { resolvedOptionDetails: target.resolvedOptionDetails }
-            : { resolvedOptionDetails: undefined }),
-          status: "starting",
-          dispatchState: "session_starting",
-          startedAt: current.startedAt ?? startingAt,
-          updatedAt: startingAt,
-          attempts:
-            targetIndex === 0
-              ? current.attempts?.map((attempt, index) =>
-                  index === 0
-                    ? { ...attempt, dispatchState: "session_starting" as const }
-                    : attempt,
-                )
-              : [
-                  ...(current.attempts ?? []),
-                  {
-                    attemptId: DelegationAttemptId.make(`${runId}:${targetIndex + 1}`),
-                    target: targetRef,
-                    ...(previousTarget ? { fallbackFrom: previousTarget } : {}),
-                    dispatchState: "session_starting" as const,
-                    allocatedAt: current.allocatedAt ?? current.createdAt,
-                  },
-                ],
-          sequence: current.sequence + 1,
-        }));
-        const activeBeforeStart = yield* repository.get(runId);
-        if (!activeBeforeStart || isTerminal(activeBeforeStart)) return;
-
-        const sessionOutcome = yield* providerService
-          .startSession(
-            providerThreadId,
-            {
-              threadId: providerThreadId,
-              provider: ProviderDriverKind.make(target.provider),
-              providerInstanceId: target.providerInstanceId,
-              cwd: resolvedWorkspaceRoot,
-              ...(targetSelection ? { modelSelection: targetSelection } : {}),
-              approvalPolicy,
-              sandboxMode,
-              runtimeMode,
-            },
-            { sessionKind: "delegated", ownerThreadId: input.parentThreadId },
-          )
-          .pipe(
-            Effect.map(() => ({ ok: true as const })),
-            Effect.catch((error) => Effect.succeed({ ok: false as const, error })),
-          );
-        if (!sessionOutcome.ok) {
-          const failedAt = DateTime.formatIso(yield* DateTime.now);
-          const hasFallback = targetIndex + 1 < launchTargets.length;
-          yield* updateRun(runId, (current) => ({
-            ...current,
-            ...(hasFallback
-              ? {}
-              : {
-                  status: "failed" as const,
-                  error: sessionOutcome.error.message,
-                  completedAt: failedAt,
-                }),
-            updatedAt: failedAt,
-            attempts: current.attempts?.map((attempt, index, attempts) =>
-              index === attempts.length - 1
-                ? {
-                    ...attempt,
-                    terminalAt: failedAt,
-                    failureReason: sessionOutcome.error.message,
-                  }
-                : attempt,
-            ),
-            sequence: current.sequence + 1,
-          }));
-          previousTarget = targetRef;
-          if (hasFallback) {
-            continue;
+      const targetSelection: ModelSelection | undefined = resolvedModel
+        ? {
+            instanceId: resolvedProviderInstanceId,
+            model: resolvedModel,
+            ...(resolvedOptions ? { options: resolvedOptions } : {}),
           }
-          yield* appendActiveSubagentTranscriptStatus({
-            transcriptId: runId,
-            kind: "run.failed",
-            summary: sessionOutcome.error.message,
-            createdAt: failedAt,
-            tone: "error",
-          });
-          return;
-        }
+        : undefined;
+      const startingAt = DateTime.formatIso(yield* DateTime.now);
+      yield* updateRun(runId, (current) => ({
+        ...current,
+        status: "starting",
+        dispatchState: "session_starting",
+        startedAt: current.startedAt ?? startingAt,
+        updatedAt: startingAt,
+        attempts: current.attempts?.map((attempt, index) =>
+          index === 0 ? { ...attempt, dispatchState: "session_starting" as const } : attempt,
+        ),
+        sequence: current.sequence + 1,
+      }));
+      const activeBeforeStart = yield* repository.get(runId);
+      if (!activeBeforeStart || isTerminal(activeBeforeStart)) return;
 
-        const sessionStartedAt = DateTime.formatIso(yield* DateTime.now);
-        const sessionStarted = yield* updateRun(runId, (current) => ({
-          ...current,
-          dispatchState: "session_started",
-          sessionStartedAt,
-          updatedAt: sessionStartedAt,
-          attempts: current.attempts?.map((attempt, index, attempts) =>
-            index === attempts.length - 1
-              ? {
-                  ...attempt,
-                  dispatchState: "session_started" as const,
-                  sessionStartedAt,
-                }
-              : attempt,
-          ),
-          sequence: current.sequence + 1,
-        }));
-        if (!sessionStarted || isTerminal(sessionStarted)) {
-          yield* providerService
-            .stopSession({ threadId: providerThreadId })
-            .pipe(Effect.ignoreCause({ log: false }));
-          return;
-        }
-
-        const dispatchStartedAt = DateTime.formatIso(yield* DateTime.now);
-        const dispatchStarted = yield* updateRun(runId, (current) => ({
-          ...current,
-          dispatchState: "dispatch_started",
-          dispatchStartedAt,
-          updatedAt: dispatchStartedAt,
-          attempts: current.attempts?.map((attempt, index, attempts) =>
-            index === attempts.length - 1
-              ? {
-                  ...attempt,
-                  dispatchState: "dispatch_started" as const,
-                  dispatchStartedAt,
-                }
-              : attempt,
-          ),
-          sequence: current.sequence + 1,
-        }));
-        if (!dispatchStarted || isTerminal(dispatchStarted)) {
-          yield* providerService
-            .stopSession({ threadId: providerThreadId })
-            .pipe(Effect.ignoreCause({ log: false }));
-          return;
-        }
-
-        const dispatchOutcome = yield* providerService
-          .sendTurn({
+      const sessionOutcome = yield* providerService
+        .startSession(
+          providerThreadId,
+          {
             threadId: providerThreadId,
-            input: task,
-            attachments,
-            interactionMode,
+            provider: ProviderDriverKind.make(input.provider),
+            providerInstanceId: resolvedProviderInstanceId,
+            cwd: resolvedWorkspaceRoot,
             ...(targetSelection ? { modelSelection: targetSelection } : {}),
-          })
-          .pipe(
-            Effect.map((turn) => ({ ok: true as const, turn })),
-            Effect.catch((error) => Effect.succeed({ ok: false as const, error })),
-          );
-        if (!dispatchOutcome.ok) {
-          const failedAt = DateTime.formatIso(yield* DateTime.now);
-          yield* updateRun(runId, (current) => ({
-            ...current,
-            status: "failed",
-            error: dispatchOutcome.error.message,
-            completedAt: failedAt,
-            updatedAt: failedAt,
-            attempts: current.attempts?.map((attempt, index, attempts) =>
-              index === attempts.length - 1
-                ? {
-                    ...attempt,
-                    terminalAt: failedAt,
-                    failureReason: dispatchOutcome.error.message,
-                  }
-                : attempt,
-            ),
-            sequence: current.sequence + 1,
-          }));
-          yield* appendActiveSubagentTranscriptStatus({
-            transcriptId: runId,
-            kind: "run.failed",
-            summary: dispatchOutcome.error.message,
-            createdAt: failedAt,
-            tone: "error",
-          });
-          return;
-        }
-
-        const acceptedAt = DateTime.formatIso(yield* DateTime.now);
+            approvalPolicy,
+            sandboxMode,
+            runtimeMode,
+          },
+          { sessionKind: "delegated", ownerThreadId: input.parentThreadId },
+        )
+        .pipe(
+          Effect.map(() => ({ ok: true as const })),
+          Effect.catch((error) => Effect.succeed({ ok: false as const, error })),
+        );
+      if (!sessionOutcome.ok) {
+        const failedAt = DateTime.formatIso(yield* DateTime.now);
         yield* updateRun(runId, (current) => ({
           ...current,
-          status: "running",
-          dispatchState: "turn_accepted",
-          providerTurnId: dispatchOutcome.turn.turnId,
-          turnAcceptedAt: acceptedAt,
-          updatedAt: acceptedAt,
+          status: "failed" as const,
+          error: sessionOutcome.error.message,
+          completedAt: failedAt,
+          updatedAt: failedAt,
           attempts: current.attempts?.map((attempt, index, attempts) =>
             index === attempts.length - 1
               ? {
                   ...attempt,
-                  dispatchState: "turn_accepted" as const,
-                  turnAcceptedAt: acceptedAt,
+                  terminalAt: failedAt,
+                  failureReason: sessionOutcome.error.message,
                 }
               : attempt,
           ),
           sequence: current.sequence + 1,
         }));
+        yield* appendActiveSubagentTranscriptStatus({
+          transcriptId: runId,
+          kind: "run.failed",
+          summary: sessionOutcome.error.message,
+          createdAt: failedAt,
+          tone: "error",
+        });
         return;
       }
+
+      const sessionStartedAt = DateTime.formatIso(yield* DateTime.now);
+      const sessionStarted = yield* updateRun(runId, (current) => ({
+        ...current,
+        dispatchState: "session_started",
+        sessionStartedAt,
+        updatedAt: sessionStartedAt,
+        attempts: current.attempts?.map((attempt, index, attempts) =>
+          index === attempts.length - 1
+            ? {
+                ...attempt,
+                dispatchState: "session_started" as const,
+                sessionStartedAt,
+              }
+            : attempt,
+        ),
+        sequence: current.sequence + 1,
+      }));
+      if (!sessionStarted || isTerminal(sessionStarted)) {
+        yield* providerService
+          .stopSession({ threadId: providerThreadId })
+          .pipe(Effect.ignoreCause({ log: false }));
+        return;
+      }
+
+      const dispatchStartedAt = DateTime.formatIso(yield* DateTime.now);
+      const dispatchStarted = yield* updateRun(runId, (current) => ({
+        ...current,
+        dispatchState: "dispatch_started",
+        dispatchStartedAt,
+        updatedAt: dispatchStartedAt,
+        attempts: current.attempts?.map((attempt, index, attempts) =>
+          index === attempts.length - 1
+            ? {
+                ...attempt,
+                dispatchState: "dispatch_started" as const,
+                dispatchStartedAt,
+              }
+            : attempt,
+        ),
+        sequence: current.sequence + 1,
+      }));
+      if (!dispatchStarted || isTerminal(dispatchStarted)) {
+        yield* providerService
+          .stopSession({ threadId: providerThreadId })
+          .pipe(Effect.ignoreCause({ log: false }));
+        return;
+      }
+
+      const dispatchOutcome = yield* providerService
+        .sendTurn({
+          threadId: providerThreadId,
+          input: task,
+          attachments,
+          interactionMode,
+          ...(targetSelection ? { modelSelection: targetSelection } : {}),
+        })
+        .pipe(
+          Effect.map((turn) => ({ ok: true as const, turn })),
+          Effect.catch((error) => Effect.succeed({ ok: false as const, error })),
+        );
+      if (!dispatchOutcome.ok) {
+        const failedAt = DateTime.formatIso(yield* DateTime.now);
+        yield* updateRun(runId, (current) => ({
+          ...current,
+          status: "failed",
+          error: dispatchOutcome.error.message,
+          completedAt: failedAt,
+          updatedAt: failedAt,
+          attempts: current.attempts?.map((attempt, index, attempts) =>
+            index === attempts.length - 1
+              ? {
+                  ...attempt,
+                  terminalAt: failedAt,
+                  failureReason: dispatchOutcome.error.message,
+                }
+              : attempt,
+          ),
+          sequence: current.sequence + 1,
+        }));
+        yield* appendActiveSubagentTranscriptStatus({
+          transcriptId: runId,
+          kind: "run.failed",
+          summary: dispatchOutcome.error.message,
+          createdAt: failedAt,
+          tone: "error",
+        });
+        return;
+      }
+
+      const acceptedAt = DateTime.formatIso(yield* DateTime.now);
+      yield* updateRun(runId, (current) => ({
+        ...current,
+        status: "running",
+        dispatchState: "turn_accepted",
+        providerTurnId: dispatchOutcome.turn.turnId,
+        turnAcceptedAt: acceptedAt,
+        updatedAt: acceptedAt,
+        attempts: current.attempts?.map((attempt, index, attempts) =>
+          index === attempts.length - 1
+            ? {
+                ...attempt,
+                dispatchState: "turn_accepted" as const,
+                turnAcceptedAt: acceptedAt,
+              }
+            : attempt,
+        ),
+        sequence: current.sequence + 1,
+      }));
+      return;
     }).pipe(
       Effect.catch((cause) =>
         Effect.gen(function* () {
@@ -2257,66 +2027,6 @@ const make = Effect.gen(function* () {
       return yield* startInternal(input);
     },
   );
-  const startResolved: DelegatedRunServiceShape["startResolved"] = Effect.fn(
-    "DelegatedRunService.startResolved",
-  )(function* (input) {
-    return yield* startInternal(input);
-  });
-  const startAllocated: DelegatedRunServiceShape["startAllocated"] = Effect.fn(
-    "DelegatedRunService.startAllocated",
-  )(function* (input) {
-    const decision = input.run.routeDecision;
-    if (!decision) {
-      return yield* new DelegatedRunError({
-        operation: "start",
-        message: "An allocated routed run must contain its immutable route decision.",
-        runId: input.run.id,
-      });
-    }
-    const resolvedTarget = (target: DelegationCandidateRef): ResolvedDelegatedRunTarget => ({
-      provider: target.provider,
-      providerInstanceId: target.providerInstanceId,
-      ...(target.model === undefined ? {} : { model: target.model }),
-      ...(target.options === undefined ? {} : { options: target.options }),
-    });
-    const launched = yield* Effect.result(
-      startInternal({
-        target: resolvedTarget(decision.selected),
-        fallbackTargets: (input.fallbackTargets ?? []).map(resolvedTarget),
-        parentThreadId: input.run.parentThreadId,
-        task: input.task,
-        title: input.run.title,
-        workspaceRoot: input.run.workspaceRoot,
-        interactionMode: input.run.interactionMode ?? "default",
-        attachments: input.run.attachments ?? [],
-        executionPolicy: {
-          workspaceAccess: input.run.sandboxMode === "read-only" ? "read-only" : "workspace-write",
-          approvalPolicy: input.run.approvalPolicy ?? "never",
-          sandboxMode: input.run.sandboxMode ?? "workspace-write",
-          runtimeMode: input.run.runtimeMode ?? "auto-accept-edits",
-        },
-        ...(input.run.requestedModel === undefined
-          ? {}
-          : { requestedModel: input.run.requestedModel }),
-        ...(input.run.requestedOptions === undefined
-          ? {}
-          : { requestedOptions: input.run.requestedOptions }),
-        timeoutMs: input.timeoutMs,
-        allocatedRun: input.run,
-      }),
-    );
-    if (Result.isSuccess(launched)) return launched.success;
-    const failedAt = DateTime.formatIso(yield* DateTime.now);
-    const failed = yield* updateRun(input.run.id, (current) => ({
-      ...current,
-      status: "failed",
-      error: launched.failure.message,
-      completedAt: failedAt,
-      updatedAt: failedAt,
-      sequence: current.sequence + 1,
-    }));
-    return failed ?? input.run;
-  });
 
   const capabilities: DelegatedRunServiceShape["capabilities"] = Effect.fn(
     "DelegatedRunService.capabilities",
@@ -2351,8 +2061,6 @@ const make = Effect.gen(function* () {
 
   return DelegatedRunService.of({
     start,
-    startResolved,
-    startAllocated,
     reconcileParentDelivery,
     capabilities,
     get: Effect.fn("DelegatedRunService.get")(function* (runId) {
@@ -2509,4 +2217,4 @@ const withActiveService = <A, E, R>(
       }),
   );
 
-export const __testing = { make, withActiveService };
+export const __testing = { make, withActiveService, delegatedTaskInput };

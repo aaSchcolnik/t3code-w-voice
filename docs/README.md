@@ -13,7 +13,7 @@
 - [Background service (Linux)](./user/background-service.md)
 - Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md)
 - [Project skills and knowledge](./user/project-skills-and-knowledge.md)
-- [Subagents and routing](./user/subagents-and-routing.md)
+- [Subagents](./user/subagents.md)
 - [Native provider subagents](./user/native-subagents.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)

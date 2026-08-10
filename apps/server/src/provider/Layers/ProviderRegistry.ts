@@ -42,11 +42,7 @@ import * as Semaphore from "effect/Semaphore";
 
 import { ServerConfig } from "../../config.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
-import {
-  ProviderRegistry,
-  type DelegatedProviderCandidate,
-  type ProviderRegistryShape,
-} from "../Services/ProviderRegistry.ts";
+import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
 import {
   hydrateCachedProvider,
   isCachedProviderCorrelated,
@@ -56,10 +52,6 @@ import {
   writeProviderStatusCache,
 } from "../providerStatusCache.ts";
 import type { ProviderInstance } from "../ProviderDriver.ts";
-import {
-  UNSUPPORTED_PROVIDER_DELEGATION_CAPABILITIES,
-  type ProviderAdapterCapabilities,
-} from "../Services/ProviderAdapter.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import type { ProviderSnapshotSource } from "../builtInProviderCatalog.ts";
 
@@ -199,45 +191,6 @@ const correlateSnapshotWithSource = (
  */
 const snapshotInstanceKey = (provider: ServerProvider): ProviderInstanceId => {
   return provider.instanceId;
-};
-
-export const enumerateDelegatedProviderCandidates = (input: {
-  readonly providers: ReadonlyArray<ServerProvider>;
-  readonly instances: ReadonlyArray<{
-    readonly instanceId: ProviderInstanceId;
-    readonly driverKind: ProviderDriverKind;
-    readonly adapter: {
-      readonly provider: ProviderDriverKind;
-      readonly capabilities: ProviderAdapterCapabilities;
-    };
-  }>;
-}): ReadonlyArray<DelegatedProviderCandidate> => {
-  const instancesById = new Map(
-    input.instances.map((instance) => [instance.instanceId, instance] as const),
-  );
-
-  return input.providers.flatMap((snapshot) => {
-    if (snapshot.availability === "unavailable" || !snapshot.enabled || !snapshot.installed) {
-      return [];
-    }
-    const instance = instancesById.get(snapshot.instanceId);
-    const capabilities =
-      instance?.adapter.capabilities.delegation ?? UNSUPPORTED_PROVIDER_DELEGATION_CAPABILITIES;
-    if (
-      instance === undefined ||
-      instance.driverKind !== snapshot.driver ||
-      instance.adapter.provider !== snapshot.driver ||
-      !capabilities.delegatedExecution
-    ) {
-      return [];
-    }
-    return [
-      {
-        snapshot,
-        capabilities,
-      },
-    ];
-  });
 };
 
 // Project a live `ProviderInstance` into the aggregator's consumption
@@ -753,10 +706,6 @@ export const ProviderRegistryLive = Layer.effect(
 
     return {
       getProviders: Ref.get(providersRef),
-      getDelegatedCandidates: Effect.all({
-        providers: Ref.get(providersRef),
-        instances: instanceRegistry.listInstances,
-      }).pipe(Effect.map(enumerateDelegatedProviderCandidates)),
       refresh: (provider?: ProviderDriverKind) =>
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
       refreshInstance: (instanceId: ProviderInstanceId) =>

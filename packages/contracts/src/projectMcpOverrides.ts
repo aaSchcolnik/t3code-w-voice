@@ -1,7 +1,6 @@
 import * as Schema from "effect/Schema";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { DelegationRouterSettingsOverride } from "./delegationRouter.ts";
 import { ProviderOptionSelections } from "./model.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
@@ -47,7 +46,6 @@ export const ProjectMcpOverrides = Schema.Struct({
   codexAgent: Schema.optional(Schema.Boolean),
   cursorAgent: Schema.optional(Schema.Boolean),
   claudeAgent: Schema.optional(Schema.Boolean),
-  router: Schema.optional(DelegationRouterSettingsOverride),
   skills: Schema.optional(ProjectSkillOverrides),
   engine: Schema.optional(
     Schema.Struct({

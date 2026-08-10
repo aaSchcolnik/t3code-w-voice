@@ -1,6 +1,5 @@
 import {
   DelegationAttemptId,
-  DelegationRouteDecisionId,
   ProviderDriverKind,
   ProviderInstanceId,
   SubagentRunId,
@@ -17,12 +16,11 @@ import {
   SUBAGENT_RUNS_SUBSCRIPTION_OPTIONS,
   applySubagentRunEvent,
   buildSubagentInputAnswers,
-  resolveSubagentRouteDiagnostics,
+  resolveSubagentRunDiagnostics,
   setSubagentInputCustomAnswer,
   subagentRespondInput,
   subagentPhaseLabel,
   toggleSubagentInputOption,
-  withProjectRouterSetting,
 } from "./subagents.ts";
 
 const run = {
@@ -45,15 +43,6 @@ const run = {
     canRespond: false,
     canResume: false,
     transcriptQuality: "none",
-  },
-  route: {
-    decisionId: DelegationRouteDecisionId.make("decision-1"),
-    policyVersion: 3,
-    role: "scout",
-    provider: "codex",
-    providerInstanceId: ProviderInstanceId.make("codex"),
-    model: "gpt-5.6",
-    explanation: "Selected the first eligible scout.",
   },
   dispatchState: "session_starting",
   createdAt: "2026-07-29T10:00:00.000Z",
@@ -148,38 +137,9 @@ describe("subagent environment state", () => {
 
   it("presents only diagnostics returned by the server", () => {
     expect(
-      resolveSubagentRouteDiagnostics(run, {
+      resolveSubagentRunDiagnostics({
         runId: run.id,
         source: "delegated",
-        routeDecision: {
-          decisionId: run.route.decisionId,
-          policyVersion: 3,
-          mode: "suggested",
-          taskKind: "research",
-          role: "scout",
-          selected: {
-            provider: "codex",
-            providerInstanceId: ProviderInstanceId.make("codex"),
-            model: "gpt-5.6",
-          },
-          candidates: [
-            {
-              candidate: {
-                provider: "cursor",
-                providerInstanceId: ProviderInstanceId.make("cursor"),
-              },
-              eligible: false,
-              reasonCodes: ["provider_unavailable"],
-            },
-          ],
-          fallbackChain: [
-            {
-              provider: "cursor",
-              providerInstanceId: ProviderInstanceId.make("cursor"),
-            },
-          ],
-          explanation: "Selected the first eligible scout.",
-        },
         attempts: [
           {
             attemptId: DelegationAttemptId.make("attempt-1"),
@@ -193,31 +153,7 @@ describe("subagent environment state", () => {
         ],
       }),
     ).toMatchObject({
-      explanation: "Selected the first eligible scout.",
-      policyVersion: 3,
-      candidates: [
-        {
-          target: "cursor",
-          eligible: false,
-          reasons: ["Provider unavailable"],
-        },
-      ],
-      fallbackChain: ["cursor"],
       attempts: [{ target: "codex", phase: "Dispatch started" }],
     });
-  });
-
-  it("keeps project router overrides sparse when inheriting", () => {
-    expect(withProjectRouterSetting({ preview: false }, "mode", "proactive")).toEqual({
-      preview: false,
-      router: { mode: "proactive" },
-    });
-    expect(
-      withProjectRouterSetting(
-        { preview: false, router: { mode: "proactive" } },
-        "mode",
-        undefined,
-      ),
-    ).toEqual({ preview: false });
   });
 });

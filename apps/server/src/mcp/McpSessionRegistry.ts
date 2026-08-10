@@ -168,7 +168,6 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     if (effectiveMcp.preview) capabilities.add("preview");
     if (sessionKind === "delegated") return capabilities;
 
-    capabilities.add("delegation-router");
     if (
       effectiveMcp.codexAgent &&
       providerAvailable("codex") &&
@@ -333,7 +332,6 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providerInstanceId: scope.providerInstanceId,
           ...(parentProviderDriver === undefined ? {} : { providerDriver: parentProviderDriver }),
           ...(parentNativeSubagentTracking ? { nativeSubagentTracking: true } : {}),
-          delegationMode: effectiveMcp.router.mode,
           capabilities: scope.capabilities,
           protocolProfile: protocolProfileForProvider(parentProviderDriver),
           endpoint,

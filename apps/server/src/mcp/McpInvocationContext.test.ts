@@ -47,7 +47,6 @@ it.effect("fails closed for every delegated-start and engine/skill capability ro
     providerSessionId: "provider-session-1",
     providerInstanceId: ProviderInstanceId.make("codex"),
     capabilities: new Set([
-      "delegation-router",
       "codex-agent",
       "cursor-agent",
       "claude-agent",

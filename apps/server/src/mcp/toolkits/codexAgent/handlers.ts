@@ -9,7 +9,6 @@ import {
   startActiveDelegatedRun,
 } from "../../../orchestration/DelegatedRunService.ts";
 import { CodexAgentToolkit } from "./tools.ts";
-import { startCompatibilityDelegation } from "../delegationRouter/handlers.ts";
 
 const requireCapability = McpInvocationContext.requireMcpCapability("codex-agent").pipe(
   Effect.mapError(
@@ -43,28 +42,9 @@ export const CodexAgentToolkitHandlersLive = CodexAgentToolkit.toLayer({
   codex_start: (input) =>
     Effect.gen(function* () {
       const scope = yield* requireCapability;
-      if (scope.effectiveMcp?.router.mode === "off") {
-        return yield* new DelegatedRunError({
-          operation: "start",
-          message: "Delegation is disabled by the current project settings.",
-        });
-      }
-      if (input.profile === undefined) {
-        return yield* startCompatibilityDelegation(scope, "codex", {
-          ...input,
-        }).pipe(
-          Effect.mapError(
-            (error) =>
-              new DelegatedRunError({
-                operation: "start",
-                message: error.message,
-              }),
-          ),
-        );
-      }
-      const { idempotencyKey, ...legacyInput } = input;
+      const { idempotencyKey, ...startInput } = input;
       return yield* startActiveDelegatedRun({
-        ...legacyInput,
+        ...startInput,
         ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
         provider: "codex",
         parentThreadId: McpInvocationContext.mcpOwnerThreadId(scope),

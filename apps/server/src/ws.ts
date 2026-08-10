@@ -125,7 +125,6 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
-import * as UsageService from "./usage/UsageService.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as AzureDevOpsCli from "./sourceControl/AzureDevOpsCli.ts";
@@ -1841,10 +1840,6 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverGetProcessDiagnostics]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetProcessDiagnostics, processDiagnostics.read, {
             "rpc.aggregate": "server",
-          }),
-        [WS_METHODS.usageRead]: (input) =>
-          observeRpcEffect(WS_METHODS.usageRead, usageService.read(input), {
-            "rpc.aggregate": "usage",
           }),
         [WS_METHODS.serverGetProcessResourceHistory]: (input) =>
           observeRpcEffect(

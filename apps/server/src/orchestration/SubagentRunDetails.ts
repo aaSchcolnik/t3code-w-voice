@@ -21,7 +21,7 @@ export const getOwnedSubagentRunDetails = Effect.fn(
   dependencies: SubagentRunDetailsDependencies,
 ): Effect.fn.Return<SubagentRunDetails, SubagentRunError> {
   const projected = yield* dependencies.subagentRuns.getOwned(input.rootThreadId, input.runId);
-  if (projected.source === "native") {
+  if (projected.source === "native" || projected.runKind === "workflow") {
     return {
       runId: projected.id,
       source: projected.source,
@@ -50,8 +50,6 @@ export const getOwnedSubagentRunDetails = Effect.fn(
     runId: projected.id,
     source: projected.source,
     attempts: durable.attempts ?? [],
-    ...(durable.routeGroupId === undefined ? {} : { routeGroupId: durable.routeGroupId }),
-    ...(durable.routeDecision === undefined ? {} : { routeDecision: durable.routeDecision }),
     ...(durable.pendingQuestions === undefined
       ? {}
       : { pendingQuestions: durable.pendingQuestions }),

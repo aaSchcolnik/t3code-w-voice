@@ -179,11 +179,7 @@ it.effect("recomputes capabilities from settings at call time after credential i
       providerInstanceId: ProviderInstanceId.make("claudeAgent"),
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
-    expect([...(yield* registry.resolve(token))!.capabilities]).toEqual([
-      "preview",
-      "delegation-router",
-      "codex-agent",
-    ]);
+    expect([...(yield* registry.resolve(token))!.capabilities]).toEqual(["preview", "codex-agent"]);
 
     yield* settings.updateSettings({
       mcp: {
@@ -191,7 +187,7 @@ it.effect("recomputes capabilities from settings at call time after credential i
         codexAgent: false,
       },
     });
-    expect([...(yield* registry.resolve(token))!.capabilities]).toEqual(["delegation-router"]);
+    expect([...(yield* registry.resolve(token))!.capabilities]).toEqual([]);
   }).pipe(
     Effect.provide(
       Layer.mergeAll(
@@ -264,7 +260,7 @@ it.effect("grants MCP capabilities from settings and provider availability", () 
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
-    expect([...resolved!.capabilities]).toEqual(["delegation-router", "codex-agent"]);
+    expect([...resolved!.capabilities]).toEqual(["codex-agent"]);
   }),
 );
 
@@ -281,7 +277,7 @@ it.effect("withholds Claude delegation from a Claude parent thread", () =>
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
-    expect([...resolved!.capabilities]).toEqual(["delegation-router", "codex-agent"]);
+    expect([...resolved!.capabilities]).toEqual(["codex-agent"]);
     expect(resolved!.providerDriver).toBe("claudeAgent");
   }),
 );
@@ -296,9 +292,9 @@ it.effect("exposes only cross-provider delegation when native tracking is enable
       cursorAgent: true,
     };
     const expectations = [
-      ["claudeAgent", ["delegation-router", "codex-agent", "cursor-agent"]],
-      ["codex", ["delegation-router", "cursor-agent", "claude-agent"]],
-      ["cursor", ["delegation-router", "codex-agent", "claude-agent"]],
+      ["claudeAgent", ["codex-agent", "cursor-agent"]],
+      ["codex", ["cursor-agent", "claude-agent"]],
+      ["cursor", ["codex-agent", "claude-agent"]],
     ] as const;
 
     for (const [driver, expected] of expectations) {
@@ -333,12 +329,7 @@ it.effect("restores the same-provider MCP path when a native tracking flag is di
     });
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
-    expect([...resolved!.capabilities]).toEqual([
-      "delegation-router",
-      "codex-agent",
-      "cursor-agent",
-      "claude-agent",
-    ]);
+    expect([...resolved!.capabilities]).toEqual(["codex-agent", "cursor-agent", "claude-agent"]);
   }),
 );
 
@@ -357,7 +348,6 @@ it.effect("grants enabled engine abilities and the shared knowledge capability",
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
     expect([...resolved!.capabilities]).toEqual([
-      "delegation-router",
       "engine-planning",
       "engine-consensus",
       "engine-quality",

@@ -6,7 +6,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CircleDashedIcon,
-  RouteIcon,
+  ActivityIcon,
   ScrollTextIcon,
 } from "lucide-react";
 import {
@@ -38,7 +38,6 @@ import {
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SubagentHeader } from "./SubagentHeader";
 import { SubagentTimeline } from "./SubagentTimeline";
-import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "../ui/field";
 import { Spinner } from "../ui/spinner";
@@ -47,14 +46,14 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   hasDetailedSubagentTranscript,
   isActiveSubagentStatus,
-  resolveSubagentRouteDiagnostics,
+  resolveSubagentRunDiagnostics,
   subagentSummaryResult,
   subagentPhaseLabel,
 } from "./subagentRunPresentation";
 import {
-  updateRouteDetailsCollapse,
-  type RouteDetailsCollapseState,
-} from "./subagentRouteCollapse";
+  updateDiagnosticsCollapse,
+  type DiagnosticsCollapseState,
+} from "./subagentDiagnosticsCollapse";
 
 interface SubagentTranscriptPanelProps {
   environmentId: EnvironmentId;
@@ -69,7 +68,7 @@ interface SubagentTranscriptPanelProps {
   onBack: () => void;
 }
 
-export function SubagentRouteDetails({
+export function SubagentRunDiagnostics({
   run,
   details,
   collapsed = false,
@@ -80,36 +79,23 @@ export function SubagentRouteDetails({
   collapsed?: boolean;
   onToggle?: (() => void) | undefined;
 }) {
-  const diagnostics = resolveSubagentRouteDiagnostics(run, details);
+  const diagnostics = resolveSubagentRunDiagnostics(run, details);
   if (!diagnostics) return null;
 
-  const model = run.resolvedModel ?? run.route?.model ?? run.requestedModel;
-  const detailsId = `subagent-route-details-${run.id}`;
+  const detailsId = `subagent-run-diagnostics-${run.id}`;
   return (
-    <section aria-label="Delegation route details" className="border-b border-border/60 px-4 py-3">
+    <section aria-label="Delegated run diagnostics" className="border-b border-border/60 px-4 py-3">
       <div className="mx-auto flex max-w-2xl flex-col gap-3">
         <button
           type="button"
           className="-m-1 flex min-w-0 items-center gap-2 rounded-md p-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
           aria-controls={detailsId}
           aria-expanded={!collapsed}
-          aria-label={`${collapsed ? "Expand" : "Collapse"} delegation route details`}
+          aria-label={`${collapsed ? "Expand" : "Collapse"} delegated run diagnostics`}
           onClick={onToggle}
         >
-          <RouteIcon className="size-4 text-muted-foreground" aria-hidden />
-          <h2 className="text-xs font-medium text-foreground">Delegation route</h2>
-          {run.route ? (
-            <>
-              <Badge variant="secondary">{run.route.role === "scout" ? "Scout" : "Worker"}</Badge>
-              <Badge variant="outline">{run.route.providerInstanceId}</Badge>
-              {model ? <Badge variant="outline">{model}</Badge> : null}
-            </>
-          ) : null}
-          {diagnostics.policyVersion !== null ? (
-            <span className="text-[10px] tabular-nums text-muted-foreground">
-              Policy v{diagnostics.policyVersion}
-            </span>
-          ) : null}
+          <ActivityIcon className="size-4 text-muted-foreground" aria-hidden />
+          <h2 className="text-xs font-medium text-foreground">Run diagnostics</h2>
           <span className="ml-auto text-[10px] font-medium text-muted-foreground">
             {collapsed ? "Show" : "Hide"}
           </span>
@@ -121,11 +107,6 @@ export function SubagentRouteDetails({
         </button>
         {!collapsed ? (
           <div id={detailsId} className="flex flex-col gap-3">
-            {diagnostics.explanation ? (
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {diagnostics.explanation}
-              </p>
-            ) : null}
             {diagnostics.grouping.length > 0 ? (
               <dl className="grid gap-2 text-xs sm:grid-cols-2">
                 {diagnostics.grouping.map((item) => (
@@ -141,39 +122,6 @@ export function SubagentRouteDetails({
                 ))}
               </dl>
             ) : null}
-            {diagnostics.candidates.length > 0 ? (
-              <div className="flex flex-col gap-1.5">
-                <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Candidate diagnostics
-                </h3>
-                {diagnostics.candidates.map((candidate) => (
-                  <div
-                    key={`${candidate.target}:${candidate.eligible}:${candidate.reasons.join(":")}`}
-                    className="flex flex-wrap items-baseline gap-2 text-xs"
-                  >
-                    <Badge variant={candidate.eligible ? "success" : "secondary"}>
-                      {candidate.eligible ? "Eligible" : "Excluded"}
-                    </Badge>
-                    <span className="font-mono text-[11px] text-foreground">
-                      {candidate.target}
-                    </span>
-                    {candidate.reasons.length > 0 ? (
-                      <span className="text-muted-foreground">{candidate.reasons.join(" · ")}</span>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {diagnostics.fallbackChain.length > 0 ? (
-              <div className="flex flex-col gap-1">
-                <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Fallback chain
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  {diagnostics.fallbackChain.join(" → ")}
-                </p>
-              </div>
-            ) : null}
             {diagnostics.attempts.length > 0 ? (
               <div className="flex flex-col gap-1.5">
                 <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
@@ -184,7 +132,6 @@ export function SubagentRouteDetails({
                     <span className="font-mono text-[11px] text-foreground">{attempt.target}</span>
                     {" · "}
                     {attempt.phase}
-                    {attempt.fallbackFrom ? ` · fallback from ${attempt.fallbackFrom}` : ""}
                     {attempt.failure ? ` · ${attempt.failure}` : ""}
                   </div>
                 ))}
@@ -435,7 +382,7 @@ export function SubagentTranscriptPanel({
   onBack,
 }: SubagentTranscriptPanelProps) {
   const [cancelling, setCancelling] = useState(false);
-  const [routeCollapse, setRouteCollapse] = useState<RouteDetailsCollapseState>({
+  const [diagnosticsCollapse, setDiagnosticsCollapse] = useState<DiagnosticsCollapseState>({
     manual: false,
     automatic: false,
   });
@@ -462,15 +409,15 @@ export function SubagentTranscriptPanel({
     [environmentId, run.capabilities.transcriptQuality, run.id, threadId],
   );
   useEffect(() => {
-    setRouteCollapse((current) => updateRouteDetailsCollapse(current, { type: "reset" }));
+    setDiagnosticsCollapse((current) => updateDiagnosticsCollapse(current, { type: "reset" }));
   }, [run.id]);
-  const routeCollapsed = routeCollapse.manual || routeCollapse.automatic;
-  const toggleRoute = useCallback(() => {
-    setRouteCollapse((current) => updateRouteDetailsCollapse(current, { type: "toggle" }));
+  const diagnosticsCollapsed = diagnosticsCollapse.manual || diagnosticsCollapse.automatic;
+  const toggleDiagnostics = useCallback(() => {
+    setDiagnosticsCollapse((current) => updateDiagnosticsCollapse(current, { type: "toggle" }));
   }, []);
   const onUserScrollPositionChange = useCallback((atTop: boolean) => {
-    setRouteCollapse((current) =>
-      updateRouteDetailsCollapse(current, { type: "user-scroll", atTop }),
+    setDiagnosticsCollapse((current) =>
+      updateDiagnosticsCollapse(current, { type: "user-scroll", atTop }),
     );
   }, []);
 
@@ -514,11 +461,11 @@ export function SubagentTranscriptPanel({
       <div className="flex min-h-0 flex-1 flex-col">
         {header}
         {inputResponse}
-        <SubagentRouteDetails
+        <SubagentRunDiagnostics
           run={run}
           details={details}
-          collapsed={routeCollapsed}
-          onToggle={toggleRoute}
+          collapsed={diagnosticsCollapsed}
+          onToggle={toggleDiagnostics}
         />
         <RunSummary run={run} onUserScrollPositionChange={onUserScrollPositionChange} />
       </div>
@@ -529,11 +476,11 @@ export function SubagentTranscriptPanel({
     <div className="flex min-h-0 flex-1 flex-col">
       {header}
       {inputResponse}
-      <SubagentRouteDetails
+      <SubagentRunDiagnostics
         run={run}
         details={details}
-        collapsed={routeCollapsed}
-        onToggle={toggleRoute}
+        collapsed={diagnosticsCollapsed}
+        onToggle={toggleDiagnostics}
       />
       <SubagentTranscriptBody
         atom={transcriptAtom}

@@ -42,12 +42,6 @@ export const claudeAgentHandlers = ClaudeAgentToolkit.of({
   claude_start: (input) =>
     Effect.gen(function* () {
       const scope = yield* requireCapability;
-      if (scope.effectiveMcp?.router.mode === "off") {
-        return yield* new DelegatedRunError({
-          operation: "start",
-          message: "Delegation is disabled by the current project settings.",
-        });
-      }
       const { idempotencyKey, ...startInput } = input;
       return yield* startActiveDelegatedRun({
         ...startInput,

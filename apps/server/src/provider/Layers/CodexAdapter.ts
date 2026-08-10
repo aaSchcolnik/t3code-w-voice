@@ -43,10 +43,6 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
-import type {
-  ProviderDelegationCapabilities,
-  ProviderInstructionDelivery,
-} from "../Services/ProviderAdapter.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   McpSessionInstructionBuilderService,
@@ -88,22 +84,6 @@ const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
 const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
 
 const PROVIDER = ProviderDriverKind.make("codex");
-export const CODEX_INSTRUCTION_DELIVERY = {
-  supported: true,
-  channel: "developer",
-} as const satisfies ProviderInstructionDelivery;
-export const CODEX_DELEGATION_CAPABILITIES = {
-  delegatedExecution: true,
-  cancellation: true,
-  structuredQuestions: true,
-  attachments: true,
-  enforcedReadOnlyWorkspace: true,
-  workspaceWriteSandboxContainment: true,
-  instructionDelivery: CODEX_INSTRUCTION_DELIVERY,
-  providerThreadResume: true,
-  definitelyNotAcceptedDispatchOutcome: "unsupported",
-  usageReporting: "correlated",
-} as const satisfies ProviderDelegationCapabilities;
 
 export function buildCodexSkillConfigArgs(
   settings: SkillToggleSettings,
@@ -2226,7 +2206,6 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
-      delegation: CODEX_DELEGATION_CAPABILITIES,
     },
     startSession,
     sendTurn,

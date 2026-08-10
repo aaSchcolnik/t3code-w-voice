@@ -110,6 +110,7 @@ function RightPanelEmptyState(props: {
       available: true,
       disabledReason: null,
       onClick: props.onAddSubagents,
+      badgeCount: 0,
     },
     {
       label: "Browser",

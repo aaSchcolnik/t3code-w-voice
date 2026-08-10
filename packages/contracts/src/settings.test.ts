@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
 import { EngineConsensusInput } from "./knowledge.ts";
-import { DEFAULT_DELEGATION_ROUTER_TIMEOUT_MS } from "./delegationRouter.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
@@ -429,34 +428,17 @@ describe("ServerSettings MCP engine", () => {
     });
   });
 
-  it("hydrates router defaults for settings persisted before routing existed", () => {
-    expect(decodeServerSettings({}).mcp.router).toEqual({
-      mode: "off",
-      maxBatchSize: 4,
-      maxConcurrentPerParent: 4,
-      maxConcurrentEnvironment: 8,
-      defaultTimeoutMs: DEFAULT_DELEGATION_ROUTER_TIMEOUT_MS,
-      diversity: "prefer",
-      fallback: "pre-dispatch",
-      explanation: "summary",
-    });
-  });
-
   it("round-trips partial engine patches", () => {
     expect(
       decodeServerSettingsPatch({ mcp: { engine: { planning: true, typescript: true } } }),
     ).toEqual({ mcp: { engine: { planning: true, typescript: true } } });
   });
 
-  it("round-trips sparse router patches without a per-turn limit", () => {
+  it("normalizes obsolete router settings out of patches", () => {
     const patch = decodeServerSettingsPatch({
       mcp: { router: { mode: "off", maxBatchSize: 2, fallback: "none" } },
     });
-
-    expect(patch).toEqual({
-      mcp: { router: { mode: "off", maxBatchSize: 2, fallback: "none" } },
-    });
-    expect(patch.mcp?.router).not.toHaveProperty("maxRunsPerTurn");
+    expect(patch).toEqual({ mcp: {} });
   });
 
   it("round-trips custom delegation chains and workflow overrides", () => {
@@ -556,36 +538,8 @@ describe("per-project MCP settings", () => {
     expect(decodeProjectMcpOverrides({})).toEqual({});
   });
 
-  it("decodes and resolves sparse router overrides", () => {
-    expect(
-      decodeProjectMcpOverrides({
-        router: { mode: "off", maxConcurrentEnvironment: 2 },
-      }),
-    ).toEqual({ router: { mode: "off", maxConcurrentEnvironment: 2 } });
-
-    const global = decodeServerSettings({
-      mcp: {
-        router: {
-          mode: "proactive",
-          maxBatchSize: 3,
-          maxConcurrentPerParent: 2,
-          maxConcurrentEnvironment: 6,
-          defaultTimeoutMs: 60_000,
-          diversity: "off",
-          fallback: "none",
-          explanation: "full",
-        },
-      },
-    }).mcp;
-    const effective = resolveEffectiveMcpSettings(global, {
-      router: { mode: "off", diversity: "prefer" },
-    });
-
-    expect(effective.router).toEqual({
-      ...global.router,
-      mode: "off",
-      diversity: "prefer",
-    });
+  it("normalizes obsolete router settings out of project overrides", () => {
+    expect(decodeProjectMcpOverrides({ router: { mode: "off" } })).toEqual({});
   });
 
   it("resolves sparse booleans, role replacement, and per-workflow overrides", () => {

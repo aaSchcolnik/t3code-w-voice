@@ -2,7 +2,7 @@ import type { SubagentRun } from "@t3tools/contracts";
 import { memo } from "react";
 
 import type { ProviderInstanceEntry } from "../../providerInstances";
-import { resolveSubagentMetadata, resolveSubagentRouteMetadata } from "./subagentRunPresentation";
+import { resolveSubagentMetadata } from "./subagentRunPresentation";
 
 export const SubagentMetadataLine = memo(function SubagentMetadataLine({
   run,
@@ -11,9 +11,7 @@ export const SubagentMetadataLine = memo(function SubagentMetadataLine({
   readonly run: SubagentRun;
   readonly provider?: Pick<ProviderInstanceEntry, "instanceId" | "models"> | undefined;
 }) {
-  const routeMetadata = resolveSubagentRouteMetadata(run);
-  const executionMetadata = resolveSubagentMetadata(run, provider);
-  const metadata = [...routeMetadata, ...executionMetadata].filter(
+  const metadata = resolveSubagentMetadata(run, provider).filter(
     (value, index, values) => values.indexOf(value) === index,
   );
   if (metadata.length === 0) return null;
