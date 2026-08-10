@@ -175,6 +175,12 @@ const config: ExpoConfig = {
   updates: {
     enabled: true,
     url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    // EAS Build injects the profile channel automatically, but local Xcode/AltStore
+    // builds do not. Embed the equivalent header so every binary can request OTA
+    // updates for its own app variant.
+    requestHeaders: {
+      "expo-channel-name": APP_VARIANT,
+    },
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
