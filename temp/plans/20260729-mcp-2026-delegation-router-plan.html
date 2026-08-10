@@ -1,0 +1,1839 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MCP 2026 and provider-neutral delegation</title>
+    <style>
+      /* ════════════════════════════════════════════════════════════════
+     ContentSnare styled-plan template — Anthropic design language.
+     ALL colors come from the variables below. NEVER hardcode hex in
+     content or SVGs — use the svg classes (.cl .ol .oa .fl .sl .wh
+     .ln .lc .lo .da .lane) or fill="var(--…)" so night mode keeps
+     working. Authoring guide: .agents/shared/report/plan-style-guide.md
+     ════════════════════════════════════════════════════════════════ */
+      :root,
+      [data-theme="light"] {
+        --ivory: #faf9f5; /* page background */
+        --paper: #ffffff; /* card/panel background */
+        --slate: #141413; /* primary text */
+        --ink: #141413; /* always-dark surface (code blocks, BE boxes) */
+        --clay: #d97757; /* primary accent */
+        --clay-d: #b85c3e; /* darker accent (text on light) */
+        --oat: #e3dacc; /* warm secondary fill */
+        --olive: #788c5d; /* success/positive accent */
+        --g100: #f0eee6;
+        --g200: #e6e3da;
+        --g300: #d1cfc5;
+        --g500: #87867f;
+        --g700: #3d3d3a;
+        --callout-clay-bg: #fbf3ef;
+        --callout-olive-bg: #f3f5ef;
+        --sev-hi-bg: #f6e3db;
+        --sev-hi-fg: #b85c3e;
+        --sev-lo-bg: #edf1e6;
+        --sev-lo-fg: #788c5d;
+        --code-fg: #e8e6dd;
+        --code-comment: #87867f;
+        --code-key: #e8b68c;
+        --code-str: #a8c087;
+        --code-fn: #e09579;
+        --shadow-c: rgba(20, 20, 19, 0.1);
+        --serif: ui-serif, Georgia, "Times New Roman", Times, serif;
+        --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        --mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      }
+      [data-theme="dark"] {
+        --ivory: #1b1a17;
+        --paper: #232220;
+        --slate: #e8e6dd;
+        --ink: #0f0f0d;
+        --clay: #e08b69;
+        --clay-d: #eca98d;
+        --oat: #574e3d;
+        --olive: #93a878;
+        --g100: #26251f;
+        --g200: #31302a;
+        --g300: #46453d;
+        --g500: #8b8a82;
+        --g700: #c5c3b8;
+        --callout-clay-bg: #332a24;
+        --callout-olive-bg: #282c21;
+        --sev-hi-bg: #3d2b22;
+        --sev-hi-fg: #eca98d;
+        --sev-lo-bg: #2a3122;
+        --sev-lo-fg: #a4b98a;
+        --shadow-c: rgba(0, 0, 0, 0.45);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--ivory);
+        color: var(--slate);
+        font-family: var(--sans);
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        transition:
+          background 180ms ease,
+          color 180ms ease;
+      }
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 0 32px 140px;
+      }
+
+      /* ── toolbar (font size + night mode) ── */
+      .toolbar {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 100;
+        display: flex;
+        gap: 6px;
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 999px;
+        padding: 5px;
+        box-shadow: 0 4px 16px var(--shadow-c);
+      }
+      .toolbar button {
+        width: 34px;
+        height: 34px;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--g700);
+        font-family: var(--sans);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition:
+          background 120ms,
+          color 120ms;
+      }
+      .toolbar button:hover {
+        background: var(--g100);
+        color: var(--clay-d);
+      }
+      .toolbar .sep {
+        width: 1.5px;
+        background: var(--g200);
+        margin: 4px 2px;
+      }
+      @media print {
+        .toolbar {
+          display: none;
+        }
+      }
+
+      /* ── masthead ─────────────────────────── */
+      header.masthead {
+        padding: 80px 0 56px;
+        border-bottom: 1.5px solid var(--g300);
+        margin-bottom: 12px;
+      }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--g500);
+        margin-bottom: 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .eyebrow::before {
+        content: "";
+        width: 24px;
+        height: 1.5px;
+        background: var(--clay);
+      }
+      h1 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: clamp(38px, 5.4vw, 58px);
+        line-height: 1.06;
+        letter-spacing: -0.018em;
+        margin: 0 0 8px;
+        max-width: 18ch;
+      }
+      h1 em {
+        font-style: italic;
+        color: var(--clay);
+      }
+      .intro {
+        font-size: 16.5px;
+        color: var(--g700);
+        margin: 22px 0 0;
+        max-width: 640px;
+      }
+      .intro a {
+        color: var(--clay);
+        text-decoration-color: var(--oat);
+        text-underline-offset: 3px;
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 48px;
+        align-items: center;
+      }
+      @media (max-width: 880px) {
+        .hero-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .hero-fig {
+        border-radius: 14px;
+        border: 1.5px solid var(--g300);
+        background: var(--paper);
+        padding: 20px;
+        box-shadow: 0 12px 32px var(--shadow-c);
+      }
+      .hero-fig svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      /* ── toc pills ────────────────────────── */
+      nav.toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 26px 0 0;
+      }
+      nav.toc a {
+        font-size: 12.5px;
+        padding: 7px 14px;
+        border: 1.5px solid var(--g300);
+        border-radius: 999px;
+        text-decoration: none;
+        color: var(--g700);
+        background: var(--paper);
+        transition:
+          border-color 120ms,
+          color 120ms;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+      nav.toc a .n {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--g500);
+      }
+      nav.toc a:hover {
+        border-color: var(--slate);
+        color: var(--slate);
+      }
+      nav.toc a:hover .n {
+        color: var(--clay);
+      }
+
+      /* ── meta strip ───────────────────────── */
+      .meta-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 26px;
+      }
+      .meta-strip .chip {
+        font-family: var(--mono);
+        font-size: 11px;
+        background: var(--g100);
+        border: 1px solid var(--g200);
+        padding: 5px 11px;
+        border-radius: 999px;
+        color: var(--g700);
+      }
+      .meta-strip .chip b {
+        color: var(--slate);
+        font-weight: 600;
+      }
+
+      /* ── section ──────────────────────────── */
+      section {
+        margin-top: 76px;
+        scroll-margin-top: 28px;
+      }
+      .sec-head {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        margin-bottom: 10px;
+      }
+      .sec-head .idx {
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--clay);
+        font-weight: 600;
+        width: 34px;
+        flex-shrink: 0;
+      }
+      .sec-head h2 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: 27px;
+        margin: 0;
+        letter-spacing: -0.012em;
+      }
+      .sec-intro {
+        font-size: 14.5px;
+        color: var(--g700);
+        max-width: 720px;
+        margin: 0 0 24px 50px;
+      }
+      .sec-body {
+        margin-left: 50px;
+      }
+      @media (max-width: 640px) {
+        .sec-intro,
+        .sec-body {
+          margin-left: 0;
+        }
+      }
+      h3 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: 19px;
+        letter-spacing: -0.008em;
+        margin: 34px 0 10px;
+      }
+      .prose {
+        font-size: 14.5px;
+        color: var(--g700);
+        max-width: 720px;
+      }
+
+      /* ── callout ──────────────────────────── */
+      .callout {
+        border: 1.5px solid var(--clay);
+        background: var(--callout-clay-bg);
+        border-radius: 14px;
+        padding: 18px 22px;
+        display: flex;
+        gap: 16px;
+        align-items: flex-start;
+        margin: 18px 0;
+      }
+      .callout .badge {
+        flex-shrink: 0;
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        background: var(--clay);
+        color: #fff;
+        padding: 3px 9px;
+        border-radius: 999px;
+        margin-top: 3px;
+      }
+      .callout.olive {
+        border-color: var(--olive);
+        background: var(--callout-olive-bg);
+      }
+      .callout.olive .badge {
+        background: var(--olive);
+      }
+      .callout p {
+        margin: 0;
+        font-size: 14.5px;
+        color: var(--g700);
+      }
+      .callout p b,
+      .callout p strong {
+        color: var(--slate);
+      }
+
+      /* ── figure panel ─────────────────────── */
+      .panel {
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 14px;
+        padding: 26px;
+        margin: 18px 0;
+      }
+      .panel figcaption,
+      .figcap {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--g500);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--g100);
+      }
+      .panel svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      /* SVG shared classes — the agent's pen. Theme-aware via variables. */
+      svg .st {
+        stroke: var(--g500);
+        fill: none;
+        stroke-width: 2;
+      }
+      svg .fl {
+        fill: var(--g300);
+      }
+      svg .cl {
+        fill: var(--clay);
+      }
+      svg .ol {
+        fill: var(--olive);
+      }
+      svg .oa {
+        fill: var(--oat);
+        stroke: var(--g500);
+        stroke-width: 2;
+      }
+      svg .sl {
+        fill: var(--ink);
+      } /* always-dark box; pair with .w text */
+      svg .wh {
+        fill: var(--paper);
+        stroke: var(--g500);
+        stroke-width: 2;
+      }
+      svg .ln {
+        stroke: var(--g500);
+        stroke-width: 2;
+        fill: none;
+        stroke-linecap: round;
+      }
+      svg .lc {
+        stroke: var(--clay);
+        stroke-width: 2;
+        fill: none;
+        stroke-linecap: round;
+      }
+      svg .lo {
+        stroke: var(--olive);
+        stroke-width: 2;
+        fill: none;
+        stroke-linecap: round;
+      }
+      svg .da {
+        stroke-dasharray: 5 5;
+      }
+      svg .lane {
+        fill: var(--g100);
+      } /* swimlane backgrounds */
+      svg text {
+        font-family: var(--sans);
+        font-size: 11px;
+        fill: var(--g700);
+      }
+      svg text.m {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        fill: var(--g500);
+      }
+      svg text.t {
+        font-size: 12px;
+        font-weight: 600;
+        fill: var(--slate);
+      }
+      svg text.w {
+        fill: #fff;
+        font-weight: 600;
+      } /* on .cl/.ol/.sl shapes only */
+      svg text.dim {
+        fill: var(--g500);
+      } /* secondary text inside .sl: use fill #C9C7BE alternative */
+      svg text.onink {
+        fill: #c9c7be;
+      } /* muted text on .sl ink boxes (both themes) */
+
+      /* ── cards grid (options / decisions) ─── */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(316px, 1fr));
+        gap: 20px;
+      }
+      .card {
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 14px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .card .thumb {
+        height: 132px;
+        background: var(--g100);
+        border-bottom: 1.5px solid var(--g200);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      .card .thumb svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+      .card .body {
+        padding: 18px 20px 16px;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+      }
+      .card .title {
+        font-family: var(--serif);
+        font-size: 19px;
+        font-weight: 500;
+        line-height: 1.22;
+        margin-bottom: 7px;
+        letter-spacing: -0.008em;
+      }
+      .card .desc {
+        font-size: 13.5px;
+        color: var(--g700);
+        line-height: 1.5;
+        flex: 1;
+      }
+      .card .verdict {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--g500);
+        border-top: 1px solid var(--g100);
+        padding-top: 11px;
+        margin-top: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .card .verdict .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--g300);
+        flex-shrink: 0;
+      }
+      .card.pick {
+        border-color: var(--olive);
+        box-shadow: 0 8px 24px var(--shadow-c);
+      }
+      .card.pick .verdict {
+        color: var(--olive);
+        font-weight: 600;
+      }
+      .card.pick .verdict .dot {
+        background: var(--olive);
+      }
+      .card.reject .verdict .dot {
+        background: var(--clay);
+      }
+      .card.reject .verdict {
+        color: var(--clay-d);
+      }
+      .card.later .verdict .dot {
+        background: var(--oat);
+      }
+
+      /* ── tables ───────────────────────────── */
+      .tbl-wrap {
+        border: 1.5px solid var(--g300);
+        border-radius: 14px;
+        overflow: hidden;
+        margin: 18px 0;
+        background: var(--paper);
+      }
+      .tbl-wrap table {
+        margin: 0;
+        border: none;
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+      }
+      th {
+        text-align: left;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--g500);
+        font-weight: 600;
+        padding: 12px 16px;
+        background: var(--g100);
+        border-bottom: 1.5px solid var(--g200);
+      }
+      td {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--g100);
+        vertical-align: top;
+        color: var(--g700);
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      td b,
+      td strong {
+        color: var(--slate);
+      }
+      td code,
+      p code,
+      li code {
+        font-family: var(--mono);
+        font-size: 0.86em;
+        background: var(--g100);
+        border: 1px solid var(--g200);
+        padding: 1px 5px;
+        border-radius: 5px;
+        color: var(--g700);
+        word-break: break-word;
+      }
+      .sev {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 2px 8px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .sev.hi {
+        background: var(--sev-hi-bg);
+        color: var(--sev-hi-fg);
+      }
+      .sev.med {
+        background: var(--g100);
+        color: var(--g700);
+        border: 1px solid var(--g200);
+      }
+      .sev.lo {
+        background: var(--sev-lo-bg);
+        color: var(--sev-lo-fg);
+      }
+
+      /* ── code ─────────────────────────────── */
+      pre {
+        background: var(--ink);
+        color: var(--code-fg);
+        border: 1.5px solid var(--g300);
+        border-radius: 14px;
+        padding: 20px 24px;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        line-height: 1.6;
+        overflow-x: auto;
+        margin: 18px 0;
+      }
+      pre .c {
+        color: var(--code-comment);
+      }
+      pre .k {
+        color: var(--code-key);
+      }
+      pre .s {
+        color: var(--code-str);
+      }
+      pre .f {
+        color: var(--code-fn);
+      }
+      pre .hl {
+        background: rgba(217, 119, 87, 0.18);
+        border-radius: 3px;
+      }
+
+      /* ── timeline / phases ────────────────── */
+      .phases {
+        position: relative;
+        margin: 24px 0 6px;
+        padding-left: 30px;
+      }
+      .phases::before {
+        content: "";
+        position: absolute;
+        left: 9px;
+        top: 8px;
+        bottom: 8px;
+        width: 2px;
+        background: var(--g300);
+      }
+      .phase {
+        position: relative;
+        padding: 0 0 34px;
+      }
+      .phase:last-child {
+        padding-bottom: 0;
+      }
+      .phase::before {
+        content: "";
+        position: absolute;
+        left: -29px;
+        top: 4px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--paper);
+        border: 2.5px solid var(--clay);
+      }
+      .phase.olive::before {
+        border-color: var(--olive);
+      }
+      .phase.gray::before {
+        border-color: var(--g300);
+      }
+      .phase .ph-head {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .phase .ph-head h4 {
+        font-family: var(--serif);
+        font-size: 18px;
+        font-weight: 500;
+        margin: 0;
+      }
+      .phase .ph-head .tag {
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        background: var(--g100);
+        border: 1px solid var(--g200);
+        color: var(--g500);
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+      .phase p {
+        font-size: 14px;
+        color: var(--g700);
+        margin: 8px 0 0;
+        max-width: 700px;
+      }
+      .phase ul {
+        margin: 10px 0 0;
+        padding-left: 20px;
+        font-size: 13.5px;
+        color: var(--g700);
+      }
+      .phase ul li {
+        margin-bottom: 5px;
+      }
+      .phase ul li::marker {
+        color: var(--clay);
+      }
+
+      /* ── file tree ────────────────────────── */
+      .tree {
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.85;
+        background: var(--paper);
+        border: 1.5px solid var(--g300);
+        border-radius: 14px;
+        padding: 20px 24px;
+        margin: 18px 0;
+        overflow-x: auto;
+        white-space: pre;
+        color: var(--g700);
+      }
+      .tree .dir {
+        color: var(--g500);
+      }
+      .tree .new {
+        color: var(--clay-d);
+        font-weight: 600;
+      }
+      .tree .mod {
+        color: var(--olive);
+        font-weight: 600;
+      }
+      .tree .lgd {
+        color: var(--g500);
+        font-size: 11px;
+      }
+
+      ul.checks {
+        padding-left: 20px;
+        font-size: 14px;
+        color: var(--g700);
+      }
+      ul.checks li {
+        margin-bottom: 7px;
+      }
+      ul.checks li::marker {
+        color: var(--olive);
+      }
+
+      /* ── footer ───────────────────────────── */
+      footer {
+        margin-top: 100px;
+        border-top: 1.5px solid var(--g300);
+        padding-top: 36px;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 20px;
+        flex-wrap: wrap;
+        font-size: 13px;
+        color: var(--g500);
+      }
+      footer .k {
+        font-family: var(--serif);
+        font-style: italic;
+        color: var(--g700);
+        font-size: 15px;
+      }
+      footer a {
+        color: var(--clay);
+        text-decoration-color: var(--oat);
+        text-underline-offset: 3px;
+      }
+      footer code {
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar" role="toolbar" aria-label="Display options">
+      <button id="font-dec" title="Smaller text" aria-label="Decrease text size">A&minus;</button>
+      <button id="font-inc" title="Larger text" aria-label="Increase text size">A+</button>
+      <span class="sep"></span>
+      <button id="theme-toggle" title="Toggle night mode" aria-label="Toggle night mode">
+        &#9789;
+      </button>
+    </div>
+
+    <div class="wrap" id="wrap">
+      <!-- ════════════════════════ masthead ════════════════════════ -->
+      <header class="masthead">
+        <div class="hero-grid">
+          <div>
+            <div class="eyebrow">T3 Code · implementation plan · 2026-07-29</div>
+            <h1>MCP 2026 and <em>provider-neutral delegation</em></h1>
+            <p class="intro">
+              Keep MCP as T3 Code’s agent-facing control plane, keep the existing delegated-run
+              runtime, and add a deterministic provider-neutral router above it. The parent agent
+              decomposes work; T3 Code selects eligible provider instances and models, records why,
+              and preserves legacy provider behavior while adopting stable MCP 2026.
+            </p>
+            <nav class="toc">
+              <a href="#decision">Decision <span class="n">01</span></a>
+              <a href="#current-architecture">Current architecture <span class="n">02</span></a>
+              <a href="#mcp-2026-migration">MCP 2026 migration <span class="n">03</span></a>
+              <a href="#delegation-router">Delegation router <span class="n">04</span></a>
+              <a href="#skills-and-knowledge">Skills and knowledge <span class="n">05</span></a>
+              <a href="#implementation-chunks">Implementation chunks <span class="n">06</span></a>
+              <a href="#test-bed">Test bed <span class="n">07</span></a>
+              <a href="#risks-and-invariants">Risks and invariants <span class="n">08</span></a>
+              <a href="#rollout-and-sources">Rollout and sources <span class="n">09</span></a>
+            </nav>
+            <div class="meta-strip">
+              <span class="chip">protocol <b>MCP 2026-07-28</b></span>
+              <span class="chip">scope <b>server + providers + clients</b></span>
+              <span class="chip">chunks <b>13</b></span>
+              <span class="chip">CLI <b>excluded</b></span>
+            </div>
+          </div>
+          <div class="hero-fig" aria-hidden="true">
+            <svg viewBox="0 0 320 240">
+              <rect class="wh" x="18" y="91" width="76" height="58" rx="10" />
+              <text class="t" x="56" y="116" text-anchor="middle">Parent</text>
+              <text class="m" x="56" y="133" text-anchor="middle">decomposes</text>
+              <line class="lc" x1="94" y1="120" x2="126" y2="120" />
+              <path class="lc" d="M120 114 l8 6 l-8 6" fill="none" />
+              <rect class="cl" x="128" y="78" width="78" height="84" rx="12" />
+              <text class="w" x="167" y="111" text-anchor="middle">T3 router</text>
+              <text class="w" x="167" y="130" text-anchor="middle">routes + reserves</text>
+              <line class="lo" x1="206" y1="98" x2="238" y2="56" />
+              <path class="lo" d="M230 59 l9 -4 l-1 10" fill="none" />
+              <line class="lo" x1="206" y1="120" x2="238" y2="120" />
+              <path class="lo" d="M230 114 l8 6 l-8 6" fill="none" />
+              <line class="lo" x1="206" y1="142" x2="238" y2="184" />
+              <path class="lo" d="M238 175 l1 10 l-9 -4" fill="none" />
+              <rect class="oa" x="240" y="30" width="64" height="48" rx="9" />
+              <text class="t" x="272" y="51" text-anchor="middle">Claude</text>
+              <text class="m" x="272" y="66" text-anchor="middle">eligible lane</text>
+              <rect class="oa" x="240" y="96" width="64" height="48" rx="9" />
+              <text class="t" x="272" y="117" text-anchor="middle">Codex</text>
+              <text class="m" x="272" y="132" text-anchor="middle">eligible lane</text>
+              <rect class="oa" x="240" y="162" width="64" height="48" rx="9" />
+              <text class="t" x="272" y="183" text-anchor="middle">Cursor</text>
+              <text class="m" x="272" y="198" text-anchor="middle">eligible lane</text>
+              <text class="m" x="160" y="229" text-anchor="middle">
+                agent decides what · server decides where
+              </text>
+            </svg>
+          </div>
+        </div>
+      </header>
+
+      <!-- ════════════════════════ 01 Decision ════════════════════════ -->
+      <section id="decision">
+        <div class="sec-head">
+          <span class="idx">01</span>
+          <h2>Decision</h2>
+        </div>
+        <p class="sec-intro">
+          The pivot is architectural, not a protocol replacement: preserve the working execution
+          core and remove provider choice from prompt choreography.
+        </p>
+        <div class="sec-body">
+          <div class="callout olive">
+            <span class="badge">Decision</span>
+            <p>
+              <strong>MCP stays.</strong> It is already the cross-provider control plane for typed
+              tools, scoped authorization, remote access, and project context. Provider CLIs remain
+              execution adapters; no T3 CLI is needed.
+            </p>
+          </div>
+          <div class="callout">
+            <span class="badge">Scope</span>
+            <p>
+              <strong>Ship three independent tracks:</strong> provider-neutral delegation,
+              progressive skill/knowledge discovery, and MCP 2026 compatibility. The router does not
+              wait for the protocol migration. MCP Tasks remains an optional fourth projection.
+            </p>
+          </div>
+          <div class="grid">
+            <article class="card pick">
+              <div class="thumb">
+                <svg viewBox="0 0 120 80">
+                  <rect class="wh" x="4" y="26" width="28" height="28" rx="6" />
+                  <line class="lo" x1="32" y1="40" x2="49" y2="40" />
+                  <rect class="ol" x="50" y="18" width="30" height="44" rx="7" />
+                  <line class="lo" x1="80" y1="29" x2="92" y2="18" />
+                  <line class="lo" x1="80" y1="40" x2="96" y2="40" />
+                  <line class="lo" x1="80" y1="51" x2="92" y2="62" />
+                  <circle class="cl" cx="101" cy="15" r="7" />
+                  <circle class="cl" cx="104" cy="40" r="7" />
+                  <circle class="cl" cx="101" cy="65" r="7" />
+                </svg>
+              </div>
+              <div class="body">
+                <div class="title">Unified router over existing runs</div>
+                <div class="desc">
+                  The parent supplies bounded lanes. A deterministic server policy selects and
+                  records provider/model assignments, then launches through
+                  <code>DelegatedRunService</code>.
+                </div>
+                <div class="verdict"><span class="dot"></span>Chosen</div>
+              </div>
+            </article>
+            <article class="card reject">
+              <div class="thumb">
+                <svg viewBox="0 0 120 80">
+                  <rect class="wh" x="8" y="18" width="42" height="44" rx="7" />
+                  <rect class="wh" x="70" y="18" width="42" height="44" rx="7" />
+                  <line class="lc da" x1="50" y1="40" x2="70" y2="40" />
+                  <path class="lc" d="M57 28 l12 12 l-12 12" />
+                </svg>
+              </div>
+              <div class="body">
+                <div class="title">Replace MCP with a CLI</div>
+                <div class="desc">
+                  Would recreate authentication, discovery, remote transport, schemas, and lifecycle
+                  while leaving provider selection unsolved.
+                </div>
+                <div class="verdict"><span class="dot"></span>Rejected</div>
+              </div>
+            </article>
+            <article class="card reject">
+              <div class="thumb">
+                <svg viewBox="0 0 120 80">
+                  <rect class="sl" x="9" y="22" width="42" height="36" rx="7" />
+                  <text class="w" x="30" y="44" text-anchor="middle">LLM</text>
+                  <line class="lc" x1="51" y1="40" x2="70" y2="40" />
+                  <rect class="oa" x="71" y="16" width="40" height="48" rx="7" />
+                  <text class="t" x="91" y="38" text-anchor="middle">router</text>
+                  <text class="m" x="91" y="52" text-anchor="middle">LLM</text>
+                </svg>
+              </div>
+              <div class="body">
+                <div class="title">Use another LLM as router</div>
+                <div class="desc">
+                  Adds cost, latency, nondeterminism, and another failure dependency before a
+                  measurable deterministic baseline exists.
+                </div>
+                <div class="verdict"><span class="dot"></span>Deferred</div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════ 02 Current architecture ════════════════════════ -->
+      <section id="current-architecture">
+        <div class="sec-head">
+          <span class="idx">02</span>
+          <h2>Current architecture</h2>
+        </div>
+        <p class="sec-intro">
+          T3 Code already performs real cross-provider delegation. The weak point is how the parent
+          discovers and selects that capability—not how provider processes are launched.
+        </p>
+        <div class="sec-body">
+          <figure class="panel">
+            <svg viewBox="0 0 920 310">
+              <rect class="lane" x="10" y="14" width="900" height="74" rx="10" />
+              <text class="m" x="26" y="34">PARENT AGENT</text>
+              <rect class="lane" x="10" y="100" width="900" height="88" rx="10" />
+              <text class="m" x="26" y="120">T3 SERVER</text>
+              <rect class="lane" x="10" y="200" width="900" height="96" rx="10" />
+              <text class="m" x="26" y="220">PROVIDER RUNTIMES</text>
+              <rect class="wh" x="130" y="35" width="180" height="38" rx="8" />
+              <text class="t" x="220" y="58" text-anchor="middle">engine_* returns Markdown</text>
+              <rect class="oa" x="382" y="35" width="170" height="38" rx="8" />
+              <text class="t" x="467" y="58" text-anchor="middle">provider-specific start</text>
+              <line class="lc" x1="310" y1="54" x2="382" y2="54" />
+              <path class="lc" d="M374 48 l8 6 l-8 6" />
+              <line class="lc" x1="467" y1="73" x2="467" y2="132" />
+              <path class="lc" d="M461 124 l6 8 l6 -8" />
+              <rect class="cl" x="332" y="132" width="270" height="42" rx="9" />
+              <text class="w" x="467" y="157" text-anchor="middle">
+                DelegatedRunService + projections
+              </text>
+              <line class="lo" x1="400" y1="174" x2="250" y2="236" />
+              <path class="lo" d="M258 226 l-9 10 l13 1" />
+              <line class="lo" x1="467" y1="174" x2="467" y2="236" />
+              <path class="lo" d="M461 228 l6 8 l6 -8" />
+              <line class="lo" x1="534" y1="174" x2="684" y2="236" />
+              <path class="lo" d="M672 237 l13 -1 l-9 -10" />
+              <rect class="sl" x="170" y="236" width="160" height="42" rx="8" />
+              <text class="w" x="250" y="261" text-anchor="middle">Claude Agent SDK</text>
+              <rect class="sl" x="387" y="236" width="160" height="42" rx="8" />
+              <text class="w" x="467" y="261" text-anchor="middle">Codex app-server</text>
+              <rect class="sl" x="604" y="236" width="160" height="42" rx="8" />
+              <text class="w" x="684" y="261" text-anchor="middle">Cursor ACP</text>
+              <text class="m" x="650" y="59">today: the model chooses this branch</text>
+            </svg>
+            <figcaption>
+              Fig. 2.1 — Current call graph: MCP is the control plane; provider adapters are the
+              execution transports.
+            </figcaption>
+          </figure>
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Surface</th>
+                  <th>Works today</th>
+                  <th>Gap</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>MCP transport</strong></td>
+                  <td>Bearer-scoped project tools at <code>/mcp</code></td>
+                  <td>Effect is pinned to 2025-06-18 and tools are statically listed</td>
+                </tr>
+                <tr>
+                  <td><strong>Delegated runs</strong></td>
+                  <td>Launch, stream, transcript, cancel, input, wake</td>
+                  <td>No server-side provider-neutral route decision</td>
+                </tr>
+                <tr>
+                  <td><strong>Engine skills</strong></td>
+                  <td>DB-backed versions, project overrides, hydrated workflows</td>
+                  <td>Prompt-heavy catalog and concrete provider instructions</td>
+                </tr>
+                <tr>
+                  <td><strong>Clients</strong></td>
+                  <td>Web/desktop normalized subagent panel and workflows</td>
+                  <td>Mobile lacks subagent and MCP settings surfaces</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════ 03 MCP 2026 migration ════════════════════════ -->
+      <section id="mcp-2026-migration">
+        <div class="sec-head">
+          <span class="idx">03</span>
+          <h2>MCP 2026 migration</h2>
+        </div>
+        <p class="sec-intro">
+          Stable MCP 2026 can be introduced at one URL without forcing every provider client to
+          upgrade on the same day.
+        </p>
+        <div class="sec-body">
+          <div class="callout">
+            <span class="badge">Correction</span>
+            <p>
+              <strong><code>2026-07-28</code> is stable.</strong> It was released July 28. T3’s
+              installed Effect layer still hard-pins 2025-06-18, so compatibility work is real even
+              though the protocol is no longer an RC.
+            </p>
+          </div>
+          <figure class="panel">
+            <svg viewBox="0 0 920 250">
+              <rect class="wh" x="32" y="83" width="130" height="60" rx="10" />
+              <text class="t" x="97" y="108" text-anchor="middle">POST /mcp</text>
+              <text class="m" x="97" y="127" text-anchor="middle">same configured URL</text>
+              <line class="lc" x1="162" y1="113" x2="242" y2="113" />
+              <path class="lc" d="M234 107 l8 6 l-8 6" />
+              <rect class="cl" x="244" y="65" width="176" height="96" rx="12" />
+              <text class="w" x="332" y="101" text-anchor="middle">Protocol gateway</text>
+              <text class="w" x="332" y="122" text-anchor="middle">isLegacyRequest</text>
+              <text class="w" x="332" y="143" text-anchor="middle">auth context preserved</text>
+              <line class="ln" x1="420" y1="91" x2="550" y2="52" />
+              <path class="ln" d="M539 50 l12 1 l-8 9" />
+              <line class="lo" x1="420" y1="135" x2="550" y2="178" />
+              <path class="lo" d="M542 169 l9 10 l-12 1" />
+              <rect class="oa" x="552" y="24" width="260" height="66" rx="10" />
+              <text class="t" x="682" y="52" text-anchor="middle">Legacy Effect handler</text>
+              <text class="m" x="682" y="72" text-anchor="middle">
+                initialize · session ID · DELETE
+              </text>
+              <rect class="ol" x="552" y="154" width="260" height="66" rx="10" />
+              <text class="w" x="682" y="182" text-anchor="middle">Official SDK v2 handler</text>
+              <text class="w" x="682" y="202" text-anchor="middle">
+                discover · stateless · cache hints
+              </text>
+              <text class="m" x="454" y="72">2025-era</text>
+              <text class="m" x="454" y="168">2026-era</text>
+            </svg>
+            <figcaption>
+              Fig. 3.1 — Production migration boundary: one endpoint, two protocol-era handlers, one
+              shared tool domain.
+            </figcaption>
+          </figure>
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>2026 feature</th>
+                  <th>T3 implementation consequence</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Stateless core</strong></td>
+                  <td>
+                    Remove MCP protocol-session dependency from modern calls; retain bearer-scoped
+                    application ownership
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <strong><code>server/discover</code></strong>
+                  </td>
+                  <td>Advertise versions, compact capabilities, extensions, and catalog policy</td>
+                </tr>
+                <tr>
+                  <td><strong>Standard headers</strong></td>
+                  <td>Validate protocol version, method, name, and mirrored parameters</td>
+                </tr>
+                <tr>
+                  <td><strong>Cache hints</strong></td>
+                  <td>
+                    Start with private <code>ttlMs: 0</code>; enable positive TTL only after
+                    invalidation is proven
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Tasks extension</strong></td>
+                  <td>
+                    Optional later adapter; reference implementation remains experimental and is not
+                    router-critical
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════ 04 Delegation router ════════════════════════ -->
+      <section id="delegation-router">
+        <div class="sec-head">
+          <span class="idx">04</span>
+          <h2>Delegation router</h2>
+        </div>
+        <p class="sec-intro">
+          The parent remains responsible for semantic decomposition and synthesis. The server owns
+          eligibility, provider/model selection, admission, diversity, and an auditable explanation.
+        </p>
+        <div class="sec-body">
+          <pre><span class="c">// Parent describes independent tasks; it does not choose a provider.</span>
+<span class="f">delegate_start</span>({
+  <span class="k">tasks</span>: [
+    { <span class="k">laneId</span>: <span class="s">"protocol"</span>, <span class="k">role</span>: <span class="s">"scout"</span>, <span class="k">task</span>: <span class="s">"Verify migration semantics"</span> },
+    { <span class="k">laneId</span>: <span class="s">"runtime"</span>, <span class="k">role</span>: <span class="s">"scout"</span>, <span class="k">task</span>: <span class="s">"Audit restart and fallback safety"</span> }
+  ]
+})</pre>
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Stage</th>
+                  <th>Rule</th>
+                  <th>Persisted evidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1 · resolve</td>
+                  <td>Skill override → workflow override → project/global role chain → defaults</td>
+                  <td>policy source, role, policy version</td>
+                </tr>
+                <tr>
+                  <td>2 · filter</td>
+                  <td>Availability, model, attachments, questions, resume, recursion</td>
+                  <td>stable rejection reason codes</td>
+                </tr>
+                <tr>
+                  <td>3 · select</td>
+                  <td>
+                    First eligible target in configured order; no invented cross-provider score
+                  </td>
+                  <td>chain position and exact target</td>
+                </tr>
+                <tr>
+                  <td>4 · diversify</td>
+                  <td>
+                    When preferred, choose the first eligible unused provider without overriding
+                    constraints
+                  </td>
+                  <td>diversity policy and assignment</td>
+                </tr>
+                <tr>
+                  <td>5 · reserve</td>
+                  <td>Batch capacity and idempotency are atomic before any child starts</td>
+                  <td>repository revision and workflow ID</td>
+                </tr>
+                <tr>
+                  <td>6 · dispatch</td>
+                  <td>Fallback only before acknowledged turn acceptance</td>
+                  <td>attempt, fallback source, dispatch state</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout olive">
+            <span class="badge">Proactive</span>
+            <p>
+              Proactive mode means the main agent is instructed to notice independent lanes and call
+              the router. It does <strong>not</strong> mean the server secretly spawns work before
+              the agent has decomposed it.
+            </p>
+          </div>
+          <h3>Canonical tools</h3>
+          <ul class="checks">
+            <li>
+              <code>delegate_start</code> — jointly route and reserve one to four bounded tasks.
+            </li>
+            <li><code>delegate_cancel</code> — cancel a batch or child with ownership checks.</li>
+            <li><code>delegate_respond</code> — answer provider-neutral pending input.</li>
+            <li>
+              <code>delegate_capabilities</code> — optional read-only diagnostics for settings and
+              route explanations.
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ════════════════════════ 05 Skills and knowledge ════════════════════════ -->
+      <section id="skills-and-knowledge">
+        <div class="sec-head">
+          <span class="idx">05</span>
+          <h2>Skills and knowledge</h2>
+        </div>
+        <p class="sec-intro">
+          Standards, workflows, and reusable architecture knowledge have different urgency. Treating
+          all three as one injected catalog wastes context and weakens selection.
+        </p>
+        <div class="sec-body">
+          <figure class="panel">
+            <svg viewBox="0 0 920 250">
+              <rect class="lane" x="18" y="18" width="884" height="56" rx="10" />
+              <text class="m" x="34" y="39">ALWAYS IN CONTEXT</text>
+              <rect class="ol" x="240" y="30" width="440" height="32" rx="16" />
+              <text class="w" x="460" y="51" text-anchor="middle">
+                compact project policy + delegation heuristic + catalog revision
+              </text>
+              <rect class="lane" x="18" y="88" width="884" height="64" rx="10" />
+              <text class="m" x="34" y="110">DISCOVERY</text>
+              <rect class="wh" x="190" y="102" width="220" height="36" rx="8" />
+              <text class="t" x="300" y="125" text-anchor="middle">skill_search</text>
+              <rect class="wh" x="510" y="102" width="220" height="36" rx="8" />
+              <text class="t" x="620" y="125" text-anchor="middle">knowledge_search</text>
+              <rect class="lane" x="18" y="166" width="884" height="66" rx="10" />
+              <text class="m" x="34" y="188">ON DEMAND</text>
+              <rect class="oa" x="190" y="179" width="220" height="36" rx="8" />
+              <text class="t" x="300" y="202" text-anchor="middle">full skill workflow</text>
+              <rect class="oa" x="510" y="179" width="220" height="36" rx="8" />
+              <text class="t" x="620" y="202" text-anchor="middle">
+                evidence + reusable entities
+              </text>
+              <line class="lo" x1="300" y1="138" x2="300" y2="179" />
+              <path class="lo" d="M294 171 l6 8 l6 -8" />
+              <line class="lo" x1="620" y1="138" x2="620" y2="179" />
+              <path class="lo" d="M614 171 l6 8 l6 -8" />
+            </svg>
+            <figcaption>
+              Fig. 5.1 — Progressive context: mandatory policy is small; skill bodies and project
+              evidence are retrieved only after relevance is established.
+            </figcaption>
+          </figure>
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Layer</th>
+                  <th>Contents</th>
+                  <th>Owner</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Instruction capsule</strong></td>
+                  <td>Non-negotiable standards, workspace/Git boundary, delegation heuristic</td>
+                  <td><code>ProjectInstructionCapsuleService</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Skill catalog</strong></td>
+                  <td>Searchable title, description, triggers, scope, enabled state</td>
+                  <td>Skill repository + <code>skill_search</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Knowledge index</strong></td>
+                  <td>
+                    Rules, lessons, capabilities, services, components, contracts, evidence paths
+                  </td>
+                  <td><code>knowledge_search</code></td>
+                </tr>
+                <tr>
+                  <td><strong>Tool catalog</strong></td>
+                  <td>
+                    Capability-filtered modern list with private scope, revision, and initial
+                    <code>ttlMs: 0</code>
+                  </td>
+                  <td><code>McpToolCatalogService</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════ 06 Implementation chunks ════════════════════════ -->
+      <section id="implementation-chunks">
+        <div class="sec-head">
+          <span class="idx">06</span>
+          <h2>Implementation chunks</h2>
+        </div>
+        <p class="sec-intro">
+          Three independently shippable tracks are split into reviewable chunks: delegation/router,
+          progressive knowledge, and protocol compatibility. Tasks stays behind a separate optional
+          gate.
+        </p>
+        <div class="sec-body">
+          <div class="phases">
+            <div class="phase">
+              <div class="ph-head">
+                <h4>0 · Protocol harness</h4>
+                <span class="tag">foundation</span>
+              </div>
+              <p>
+                Pin stable conformance fixtures and verify all five provider clients. Decide Effect
+                upgrade versus the narrow official-SDK v2 modern handler.
+              </p>
+              <ul>
+                <li><code>mcp/protocol/McpProtocolProfile.ts</code></li>
+                <li>Effect dependency, patch, and vendored subtree gate</li>
+              </ul>
+            </div>
+            <div class="phase">
+              <div class="ph-head">
+                <h4>1–3 · Contracts, capabilities, pure router</h4>
+                <span class="tag">track A</span>
+              </div>
+              <p>
+                Add backward-compatible schemas, adapter-declared delegation capabilities,
+                configured ordered-chain selection, and a versioned evaluation corpus.
+              </p>
+              <ul>
+                <li><code>packages/contracts/src/delegationRouter.ts</code></li>
+                <li><code>provider/DelegationRouter.ts</code></li>
+                <li><code>provider/fixtures/delegation-routing-cases.json</code></li>
+              </ul>
+            </div>
+            <div class="phase">
+              <div class="ph-head">
+                <h4>4–5 · Repository and safe dispatch</h4>
+                <span class="tag">track A</span>
+              </div>
+              <p>
+                Put the versioned JSON aggregate behind a repository, add idempotency and atomic
+                admission, then split session/turn acceptance so fallback has a provable boundary.
+              </p>
+              <ul>
+                <li><code>orchestration/DelegatedRunRepository.ts</code></li>
+                <li><code>orchestration/DelegatedRunService.ts</code></li>
+              </ul>
+            </div>
+            <div class="phase olive">
+              <div class="ph-head">
+                <h4>6–7 · Coordinator and unified tools</h4>
+                <span class="tag">track A outcome</span>
+              </div>
+              <p>
+                Jointly route one to four tasks, atomically preflight them, launch persisted
+                siblings independently, and expose provider-neutral lifecycle tools.
+              </p>
+              <ul>
+                <li><code>DelegationCoordinator.ts</code></li>
+                <li><code>mcp/toolkits/delegationRouter/</code></li>
+              </ul>
+            </div>
+            <div class="phase">
+              <div class="ph-head">
+                <h4>8 · One-endpoint MCP 2026 gateway</h4>
+                <span class="tag">track B</span>
+              </div>
+              <p>
+                Independently route legacy requests to the sessionful Effect handler and modern
+                requests to strict SDK v2 serving on the same <code>/mcp</code> URL.
+              </p>
+            </div>
+            <div class="phase gray">
+              <div class="ph-head">
+                <h4>8B · Tasks extension</h4>
+                <span class="tag">optional gate</span>
+              </div>
+              <p>
+                Only after extension maturity and real provider-client support: map one delegation
+                batch to one Task and persist exactly one delivery mode—Task result or parent wake.
+                Never make this a routing prerequisite.
+              </p>
+            </div>
+            <div class="phase">
+              <div class="ph-head">
+                <h4>9 · Compact skills and knowledge</h4>
+                <span class="tag">track C</span>
+              </div>
+              <p>
+                Independently add capability-filtered catalogs, search, and bounded hydration.
+                Inject policy only through legitimate system/developer channels; document adapters
+                without one.
+              </p>
+            </div>
+            <div class="phase">
+              <div class="ph-head">
+                <h4>10–11 · Web/desktop and mobile</h4>
+                <span class="tag">multi-surface</span>
+              </div>
+              <p>
+                Configure global/project policy, explain routes in existing subagent views, then add
+                mobile observation before mobile configuration.
+              </p>
+            </div>
+            <div class="phase olive">
+              <div class="ph-head">
+                <h4>12 · Shadow evaluation and rollout</h4>
+                <span class="tag">release gate</span>
+              </div>
+              <p>
+                Measure decisions without launching, then move through suggested and opt-in
+                proactive behavior. Default proactive remains a later metrics-gated decision.
+              </p>
+            </div>
+          </div>
+          <div class="tree">
+            <span class="dir">packages/contracts/src/</span> ├──
+            <span class="new">delegationRouter.ts</span> ├── <span class="mod">settings.ts</span> ·
+            <span class="mod">projectMcpOverrides.ts</span> ├──
+            <span class="mod">delegatedRun.ts</span> · <span class="mod">subagent.ts</span>
+            <span class="dir">apps/server/src/</span>
+            ├── <span class="new">provider/DelegationRouter.ts</span> ├──
+            <span class="new">provider/DelegationRouterService.ts</span> ├──
+            <span class="new">orchestration/DelegationCoordinator.ts</span> ├──
+            <span class="new">orchestration/DelegatedRunRepository.ts</span> ├──
+            <span class="mod">orchestration/DelegatedRunService.ts</span> ├──
+            <span class="new">mcp/protocol/Mcp2026TransportAdapter.ts</span> ├──
+            <span class="new">mcp/McpToolCatalogService.ts</span> └──
+            <span class="new">mcp/toolkits/delegationRouter/</span>
+            <span class="dir">apps/web/src/components/</span>
+            └── <span class="mod">settings/McpSettings.tsx</span> ·
+            <span class="mod">SubagentsPanel.tsx</span>
+            <span class="dir">apps/mobile/src/features/</span>
+            └── <span class="new">subagents/</span> · <span class="new">settings/router</span>
+            <span class="lgd">new = clay · modified = olive</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════════════ 07 Test bed ════════════════════════ -->
+      <section id="test-bed">
+        <div class="sec-head">
+          <span class="idx">07</span>
+          <h2>Test bed</h2>
+        </div>
+        <p class="sec-intro">
+          The proof strategy is focused: pure policy fixtures first, then lifecycle races and
+          protocol conformance, then one integrated pass per client surface.
+        </p>
+        <div class="sec-body">
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Bed</th>
+                  <th>Primary files</th>
+                  <th>Must prove</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Contracts</strong></td>
+                  <td>
+                    <code>settings.test.ts</code>, <code>delegatedRun.test.ts</code>,
+                    <code>subagent.test.ts</code>
+                  </td>
+                  <td>Old persisted settings/runs decode; optional route metadata round-trips</td>
+                </tr>
+                <tr>
+                  <td><strong>Pure router</strong></td>
+                  <td><code>DelegationRouter.test.ts</code> + JSON corpus</td>
+                  <td>
+                    Eligibility, reason codes, ordered chains, diversity preference, policy version
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Run lifecycle</strong></td>
+                  <td><code>DelegatedRunService.test.ts</code></td>
+                  <td>
+                    Atomic limits, idempotency, fallback boundary, late events, no automatic restart
+                    replay
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>MCP</strong></td>
+                  <td><code>McpHttpServer.test.ts</code>, protocol fixtures</td>
+                  <td>Both eras at one URL, auth isolation, discovery, headers, cache policy</td>
+                </tr>
+                <tr>
+                  <td><strong>Providers</strong></td>
+                  <td>Codex, Claude, Cursor, Grok, OpenCode adapter tests</td>
+                  <td>
+                    Endpoint/auth, instruction capsule, model/options, cancel/questions/resume
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Clients</strong></td>
+                  <td>settings, subagent state/panel/presentation, mobile state</td>
+                  <td>
+                    Inheritance, route explanation, reconnect replay, remote cancellation/input
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>Evaluation corpus requirements</h3>
+          <ul class="checks">
+            <li>
+              Research, planning, implementation, debugging, tests, review, docs, knowledge scans.
+            </li>
+            <li>Attachments, structured input, read-only and workspace-write requirements.</li>
+            <li>
+              One provider, multiple providers, multiple instances of one driver, and unavailable
+              models.
+            </li>
+            <li>Explicit provider constraints and delegated-child recursion attempts.</li>
+            <li>
+              Assert selection and rejection invariants; avoid brittle snapshots of incidental
+              totals.
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ════════════════════════ 08 Risks and invariants ════════════════════════ -->
+      <section id="risks-and-invariants">
+        <div class="sec-head">
+          <span class="idx">08</span>
+          <h2>Risks and invariants</h2>
+        </div>
+        <p class="sec-intro">
+          The dangerous failures are duplicate work, unsafe replay, hidden constraint violations,
+          and inconsistent state across provider and client boundaries.
+        </p>
+        <div class="sec-body">
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Risk</th>
+                  <th>Invariant / mitigation</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="sev hi">High</span></td>
+                  <td>Provider accepted a turn but T3 retries elsewhere</td>
+                  <td>
+                    No fallback after acknowledged or ambiguous dispatch; never replay task text on
+                    restart
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="sev hi">High</span></td>
+                  <td>Concurrent starts exceed four-run limit</td>
+                  <td>Reserve batch and environment capacity atomically before launch</td>
+                </tr>
+                <tr>
+                  <td><span class="sev hi">High</span></td>
+                  <td>Task/run accessed by another thread</td>
+                  <td>
+                    Ownership is environment + parent thread and survives only same-owner bearer
+                    rotation
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="sev med">Medium</span></td>
+                  <td>Provider diversity violates intended priority</td>
+                  <td>
+                    Choose only among eligible configured candidates; never override hard
+                    constraints or disabled providers
+                  </td>
+                </tr>
+                <tr>
+                  <td><span class="sev med">Medium</span></td>
+                  <td>Catalog advertises tools the session cannot call</td>
+                  <td>Request-scoped listing plus unchanged call-time authorization</td>
+                </tr>
+                <tr>
+                  <td><span class="sev med">Medium</span></td>
+                  <td>Final-looking text appears while run is active</td>
+                  <td>Only provider lifecycle events set terminal state</td>
+                </tr>
+                <tr>
+                  <td><span class="sev med">Medium</span></td>
+                  <td>Settings change after bearer issuance</td>
+                  <td>Router reloads effective global/project policy at call time</td>
+                </tr>
+                <tr>
+                  <td><span class="sev lo">Low</span></td>
+                  <td>Tasks extension is not ready</td>
+                  <td>Keep it optional; parent wake and normalized streams remain primary</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">
+            <span class="badge">Observed</span>
+            <p>
+              The Kimi K3 run failed at provider startup, and the Claude planning run returned only
+              an opening status line. Those are not missing footnotes—they are evidence that launch
+              acknowledgement, terminal truth, fallback safety, and result completeness need
+              explicit contracts.
+            </p>
+          </div>
+          <ul class="checks">
+            <li>
+              No recursive routed delegation; use explicit session kind instead of a thread-name
+              prefix.
+            </li>
+            <li>No silent violation of explicit provider/model constraints.</li>
+            <li>No invisible partial batch.</li>
+            <li>No reinterpretation of a persisted route under a newer policy.</li>
+            <li>No fake token budget where usage correlation is incomplete.</li>
+            <li>No permanent dual implementation; legacy removal has measured gates.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ════════════════════════ 09 Rollout and sources ════════════════════════ -->
+      <section id="rollout-and-sources">
+        <div class="sec-head">
+          <span class="idx">09</span>
+          <h2>Rollout and sources</h2>
+        </div>
+        <p class="sec-intro">
+          Ship the deterministic foundation first, observe it in shadow mode, and only then increase
+          the parent agent’s proactive behavior or retire compatibility tools.
+        </p>
+        <div class="sec-body">
+          <div class="phases">
+            <div class="phase gray">
+              <div class="ph-head">
+                <h4>Shadow</h4>
+                <span class="tag">no launches</span>
+              </div>
+              <p>
+                Compute decisions against the corpus and live eligible requests. Measure exclusion
+                reasons, candidate spread, and user constraints without changing execution.
+              </p>
+            </div>
+            <div class="phase">
+              <div class="ph-head">
+                <h4>Suggested</h4>
+                <span class="tag">first release</span>
+              </div>
+              <p>
+                Expose <code>delegate_start</code>. Keep provider-specific tools available as
+                compatibility aliases.
+              </p>
+            </div>
+            <div class="phase">
+              <div class="ph-head">
+                <h4>Opt-in proactive</h4>
+                <span class="tag">agent prompted</span>
+              </div>
+              <p>
+                Inject the compact decomposition heuristic. The parent calls the router; the server
+                still never spawns secretly.
+              </p>
+            </div>
+            <div class="phase olive">
+              <div class="ph-head">
+                <h4>Default proactive</h4>
+                <span class="tag">later decision</span>
+              </div>
+              <p>
+                Consider only after route success, cancellation, fallback, diversity, and override
+                rates meet published thresholds.
+              </p>
+            </div>
+            <div class="phase gray">
+              <div class="ph-head">
+                <h4>Deprecation</h4>
+                <span class="tag">measured adoption</span>
+              </div>
+              <p>
+                Retire provider-specific start tools and the legacy MCP branch separately. Enable
+                Tasks only through its own extension gate.
+              </p>
+            </div>
+          </div>
+          <h3>Primary sources</h3>
+          <ul class="checks">
+            <li>
+              <a
+                href="https://github.com/modelcontextprotocol/modelcontextprotocol/releases/tag/2026-07-28"
+                >Stable MCP 2026-07-28 release</a
+              >
+            </li>
+            <li>
+              <a
+                href="https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/migration/support-2026-07-28.md"
+                >Official TypeScript SDK v2 migration guide</a
+              >
+            </li>
+            <li>
+              <a href="https://modelcontextprotocol.io/extensions/tasks/overview"
+                >Tasks extension overview</a
+              >
+              and
+              <a href="https://github.com/modelcontextprotocol/ext-tasks"
+                >reference maturity status</a
+              >
+            </li>
+            <li>
+              <a href="https://www.anthropic.com/engineering/advanced-tool-use"
+                >Anthropic advanced tool use</a
+              >
+              and
+              <a href="https://www.anthropic.com/engineering/code-execution-with-mcp"
+                >code execution with MCP</a
+              >
+            </li>
+            <li>
+              <a href="https://developers.openai.com/plugins/concepts/skills">OpenAI skills</a> and
+              <a href="https://learn.chatgpt.com/docs/extend/mcp?surface=cli">OpenAI MCP support</a>
+            </li>
+          </ul>
+          <div class="callout olive">
+            <span class="badge">Detail</span>
+            <p>
+              The canonical Markdown contains the complete file-by-file chunk definitions, schemas,
+              state mapping, edge-case matrix, and documentation deliverables.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <span class="k"
+          >T3 Code · MCP 2026 and provider-neutral delegation implementation plan.</span
+        >
+        <span
+          >Canonical Markdown:
+          <a href="../../docs/reference/mcp-2026-delegation-router-implementation-plan.md"
+            >docs/reference/mcp-2026-delegation-router-implementation-plan.md</a
+          ></span
+        >
+      </footer>
+    </div>
+
+    <script>
+      (function () {
+        "use strict";
+        var THEME_KEY = "csplan:theme";
+        var ZOOM_KEY = "csplan:zoom";
+        var ZOOM_MIN = 0.7,
+          ZOOM_MAX = 1.5,
+          ZOOM_STEP = 0.1;
+
+        function store(key, value) {
+          try {
+            localStorage.setItem(key, value);
+          } catch (e) {}
+        }
+        function read(key) {
+          try {
+            return localStorage.getItem(key);
+          } catch (e) {
+            return null;
+          }
+        }
+
+        // ── night mode ──
+        var themeBtn = document.getElementById("theme-toggle");
+        function setTheme(theme) {
+          document.documentElement.setAttribute("data-theme", theme);
+          themeBtn.innerHTML = theme === "dark" ? "&#9788;" : "&#9789;"; /* sun : moon */
+          store(THEME_KEY, theme);
+        }
+        setTheme(read(THEME_KEY) === "dark" ? "dark" : "light");
+        themeBtn.addEventListener("click", function () {
+          setTheme(
+            document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark",
+          );
+        });
+
+        // ── text size (CSS zoom keeps figures and layout proportional) ──
+        var wrap = document.getElementById("wrap");
+        var zoom = parseFloat(read(ZOOM_KEY)) || 1;
+        function applyZoom() {
+          zoom = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)) * 10) / 10;
+          wrap.style.zoom = zoom;
+          store(ZOOM_KEY, String(zoom));
+        }
+        applyZoom();
+        document.getElementById("font-inc").addEventListener("click", function () {
+          zoom += ZOOM_STEP;
+          applyZoom();
+        });
+        document.getElementById("font-dec").addEventListener("click", function () {
+          zoom -= ZOOM_STEP;
+          applyZoom();
+        });
+      })();
+    </script>
+  </body>
+</html>
