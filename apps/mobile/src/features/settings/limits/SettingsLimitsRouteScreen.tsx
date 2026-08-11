@@ -26,7 +26,6 @@ import { useEnvironmentQuery } from "../../../state/query";
 import { serverEnvironment } from "../../../state/server";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import { useSavedRemoteConnections } from "../../../state/use-remote-environment-registry";
-import { useClerkSettingsSheetDetent } from "../../cloud/ClerkSettingsSheetDetent";
 import { SettingsSection } from "../components/SettingsSection";
 import { UsageProviderCard } from "./UsageProviderCard";
 import {
@@ -43,7 +42,6 @@ export function SettingsLimitsRouteScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
-  const { expand } = useClerkSettingsSheetDetent();
   const iconColor = useThemeColor("--color-icon");
   const mutedIconColor = useThemeColor("--color-icon-subtle");
   const dangerColor = useThemeColor("--color-danger-foreground");
@@ -111,10 +109,9 @@ export function SettingsLimitsRouteScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      expand();
       setNowMs(Date.now());
       refresh();
-    }, [expand, refresh]),
+    }, [refresh]),
   );
 
   useEffect(() => {

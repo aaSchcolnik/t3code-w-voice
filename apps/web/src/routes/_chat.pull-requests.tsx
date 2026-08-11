@@ -1145,6 +1145,7 @@ function PullRequestsRouteView() {
             onAddTerminal={() => undefined}
             onAddDiff={() => undefined}
             onAddFiles={() => undefined}
+            onAddSubagents={() => undefined}
             onAddPullRequest={() => undefined}
             onAddAgents={() => undefined}
             browserAvailable={false}
