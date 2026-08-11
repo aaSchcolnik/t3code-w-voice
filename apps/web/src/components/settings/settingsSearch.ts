@@ -3,6 +3,7 @@ export type SettingsPath =
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/providers"
+  | "/settings/limits"
   | "/settings/mcp"
   | "/settings/skills"
   | "/settings/knowledge"
@@ -27,6 +28,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/providers": "Providers",
+  "/settings/limits": "Limits",
   "/settings/mcp": "MCP",
   "/settings/skills": "Skills",
   "/settings/knowledge": "Knowledge",

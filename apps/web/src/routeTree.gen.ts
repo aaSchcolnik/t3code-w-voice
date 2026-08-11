@@ -20,6 +20,7 @@ import { Route as SettingsSourceControlRouteImport } from './routes/settings.sou
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsMcpRouteImport } from './routes/settings.mcp'
+import { Route as SettingsLimitsRouteImport } from './routes/settings.limits'
 import { Route as SettingsKnowledgeRouteImport } from './routes/settings.knowledge'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
@@ -84,6 +85,11 @@ const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
 const SettingsMcpRoute = SettingsMcpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsLimitsRoute = SettingsLimitsRouteImport.update({
+  id: '/limits',
+  path: '/limits',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsKnowledgeRoute = SettingsKnowledgeRouteImport.update({
@@ -158,6 +164,7 @@ export interface FileRoutesByFullPath {
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/knowledge': typeof SettingsKnowledgeRoute
+  '/settings/limits': typeof SettingsLimitsRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/skills': typeof SettingsSkillsRoute
@@ -180,6 +187,7 @@ export interface FileRoutesByTo {
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/knowledge': typeof SettingsKnowledgeRoute
+  '/settings/limits': typeof SettingsLimitsRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/skills': typeof SettingsSkillsRoute
@@ -205,6 +213,7 @@ export interface FileRoutesById {
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/knowledge': typeof SettingsKnowledgeRoute
+  '/settings/limits': typeof SettingsLimitsRoute
   '/settings/mcp': typeof SettingsMcpRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/skills': typeof SettingsSkillsRoute
@@ -231,6 +240,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/keybindings'
     | '/settings/knowledge'
+    | '/settings/limits'
     | '/settings/mcp'
     | '/settings/providers'
     | '/settings/skills'
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/keybindings'
     | '/settings/knowledge'
+    | '/settings/limits'
     | '/settings/mcp'
     | '/settings/providers'
     | '/settings/skills'
@@ -277,6 +288,7 @@ export interface FileRouteTypes {
     | '/settings/general'
     | '/settings/keybindings'
     | '/settings/knowledge'
+    | '/settings/limits'
     | '/settings/mcp'
     | '/settings/providers'
     | '/settings/skills'
@@ -374,6 +386,13 @@ declare module '@tanstack/react-router' {
       path: '/mcp'
       fullPath: '/settings/mcp'
       preLoaderRoute: typeof SettingsMcpRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/limits': {
+      id: '/settings/limits'
+      path: '/limits'
+      fullPath: '/settings/limits'
+      preLoaderRoute: typeof SettingsLimitsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/knowledge': {
@@ -478,6 +497,7 @@ interface SettingsRouteChildren {
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsKnowledgeRoute: typeof SettingsKnowledgeRoute
+  SettingsLimitsRoute: typeof SettingsLimitsRoute
   SettingsMcpRoute: typeof SettingsMcpRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
@@ -493,6 +513,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsKnowledgeRoute: SettingsKnowledgeRoute,
+  SettingsLimitsRoute: SettingsLimitsRoute,
   SettingsMcpRoute: SettingsMcpRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,

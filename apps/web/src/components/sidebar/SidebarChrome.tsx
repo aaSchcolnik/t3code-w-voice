@@ -1,4 +1,4 @@
-import { ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { GaugeIcon, SettingsIcon } from "lucide-react";
 import { memo, useCallback } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 
@@ -118,11 +118,11 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     void navigate({ to: "/settings" });
   }, [isMobile, navigate, setOpenMobile]);
 
-  const handleUsageClick = useCallback(() => {
+  const handleLimitsClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
     }
-    void navigate({ to: "/usage" });
+    void navigate({ to: "/settings/limits" });
   }, [isMobile, navigate, setOpenMobile]);
 
   return (
@@ -131,9 +131,9 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       <SidebarUpdatePill />
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton onClick={handleUsageClick}>
-            <ChartNoAxesColumnIcon />
-            <span>Usage</span>
+          <SidebarMenuButton onClick={handleLimitsClick}>
+            <GaugeIcon />
+            <span>Limits</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
         <SidebarMenuItem>

@@ -693,6 +693,15 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:process-diagnostics",
       tag: WS_METHODS.serverGetProcessDiagnostics,
     }),
+    subscriptionLimits: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:subscription-limits",
+      tag: WS_METHODS.usageRead,
+      staleTimeMs: 5 * 60_000,
+    }),
+    subscriptionLimitsRefresh: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:subscription-limits:refresh",
+      tag: WS_METHODS.usageRead,
+    }),
     processResourceHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:process-resource-history",
       tag: WS_METHODS.serverGetProcessResourceHistory,
