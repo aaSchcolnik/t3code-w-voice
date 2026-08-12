@@ -13,6 +13,8 @@ This document covers the unified release workflow for stable and nightly desktop
   - manual `workflow_dispatch` for either channel
 - Runs quality gates first: lint, typecheck, test.
 - Reads the shared production T3 Connect relay URL and Clerk client configuration before packaging clients.
+- Refuses to package a Nightly desktop artifact when any public T3 Connect value is missing, so a
+  clean-checkout build cannot silently ship without the sign-in UI.
 - Builds four artifacts in parallel for both channels:
   - macOS `arm64` DMG
   - macOS `x64` DMG

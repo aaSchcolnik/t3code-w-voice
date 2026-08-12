@@ -47,13 +47,13 @@ function ConfiguredT3ConnectSidebarSignIn() {
   const { isLoaded, isSignedIn } = useAuth();
   const { authPrompt, openAuthPrompt } = useT3ConnectAuthPrompt();
 
-  if (!isLoaded || isSignedIn) return null;
+  if (isLoaded && isSignedIn) return null;
 
   return (
     <>
       <SidebarMenu>
         <SidebarMenuItem>
-          <SidebarMenuButton onClick={openAuthPrompt}>
+          <SidebarMenuButton aria-busy={!isLoaded} disabled={!isLoaded} onClick={openAuthPrompt}>
             <LogInIcon />
             <span>Sign in to T3 Connect</span>
           </SidebarMenuButton>

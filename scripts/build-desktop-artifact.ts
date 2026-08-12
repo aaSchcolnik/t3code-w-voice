@@ -17,7 +17,7 @@ import {
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
-import { loadRepoEnv } from "./lib/public-config.ts";
+import { loadRepoEnv, resolvePublicConfig } from "./lib/public-config.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -456,6 +456,39 @@ export class DesktopBuildNoArtifactsProducedError extends Schema.TaggedErrorClas
 ) {
   override get message(): string {
     return `Build completed but no files were produced in ${this.distPath}`;
+  }
+}
+
+const REQUIRED_T3_CONNECT_PUBLIC_CONFIG = [
+  ["clerkPublishableKey", "T3CODE_CLERK_PUBLISHABLE_KEY"],
+  ["clerkJwtTemplate", "T3CODE_CLERK_JWT_TEMPLATE"],
+  ["clerkCliOAuthClientId", "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID"],
+  ["relayUrl", "T3CODE_RELAY_URL"],
+] as const;
+
+export class MissingT3ConnectPublicConfigError extends Schema.TaggedErrorClass<MissingT3ConnectPublicConfigError>()(
+  "MissingT3ConnectPublicConfigError",
+  {
+    missingVariables: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    return `Nightly desktop builds require T3 Connect public configuration: ${this.missingVariables.join(", ")}`;
+  }
+}
+
+export function assertNightlyT3ConnectPublicConfig(
+  version: string,
+  env: Readonly<Record<string, string | undefined>>,
+): void {
+  if (resolveDesktopUpdateChannel(version) !== "nightly") return;
+
+  const config = resolvePublicConfig(env);
+  const missingVariables = REQUIRED_T3_CONNECT_PUBLIC_CONFIG.flatMap(([property, variable]) =>
+    config[property] ? [] : [variable],
+  );
+  if (missingVariables.length > 0) {
+    throw new MissingT3ConnectPublicConfigError({ missingVariables });
   }
 }
 
@@ -2156,6 +2189,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   });
 
   const appVersion = options.version ?? serverPackageJson.version;
+  yield* Effect.try({
+    try: () => assertNightlyT3ConnectPublicConfig(appVersion, loadRepoEnv({ repoRoot })),
+    catch: (cause) => cause as MissingT3ConnectPublicConfigError,
+  });
   const iconAssets = resolveDesktopBuildIconAssets(appVersion);
   const commitHash = yield* resolveGitCommitHash(repoRoot);
   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;

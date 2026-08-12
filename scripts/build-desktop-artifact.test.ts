@@ -24,6 +24,7 @@ import {
   InvalidMacPasskeyRpDomainError,
   InvalidMacPasskeyPublishableKeyError,
   InvalidMockUpdateServerPortError,
+  MissingT3ConnectPublicConfigError,
   UnsupportedDesktopBuildArchitectureError,
   isMacPasskeySigningConfigurationError,
   LinuxIconResizeError,
@@ -50,6 +51,7 @@ import {
   resolveMockUpdateServerUrl,
   resolvePackageManagerUserAgent,
   assertDesktopNotificationAssets,
+  assertNightlyT3ConnectPublicConfig,
   stageLinuxIconSize,
   STAGE_INSTALL_ARGS,
   WINDOWS_ASAR_UNPACK,
@@ -103,6 +105,39 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("switches desktop packaging product names to nightly for nightly builds", () => {
     assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (Alpha)");
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "T3 Code (Nightly)");
+  });
+
+  it("rejects Nightly artifacts that would omit T3 Connect login", () => {
+    let error: unknown;
+    try {
+      assertNightlyT3ConnectPublicConfig("0.0.34-nightly.20260812.1076", {
+        T3CODE_CLERK_PUBLISHABLE_KEY: "pk_test_example",
+      });
+    } catch (cause) {
+      error = cause;
+    }
+
+    assert.instanceOf(error, MissingT3ConnectPublicConfigError);
+    assert.deepStrictEqual(error.missingVariables, [
+      "T3CODE_CLERK_JWT_TEMPLATE",
+      "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID",
+      "T3CODE_RELAY_URL",
+    ]);
+  });
+
+  it("accepts complete T3 Connect configuration for Nightly artifacts", () => {
+    assert.doesNotThrow(() =>
+      assertNightlyT3ConnectPublicConfig("0.0.34-nightly.20260812.1076", {
+        T3CODE_CLERK_PUBLISHABLE_KEY: "pk_test_example",
+        T3CODE_CLERK_JWT_TEMPLATE: "t3-relay",
+        T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_example",
+        T3CODE_RELAY_URL: "https://relay.example.test",
+      }),
+    );
+  });
+
+  it("keeps unconfigured local non-Nightly artifact builds available", () => {
+    assert.doesNotThrow(() => assertNightlyT3ConnectPublicConfig("0.0.34", {}));
   });
 
   it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
