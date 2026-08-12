@@ -175,6 +175,7 @@ function RightPanelEmptyState(props: {
       label: "Subagents",
       description: "Follow delegated agents and their latest updates.",
       icon: UsersRound,
+      shortcut: null,
       available: true,
       disabledReason: null,
       onClick: props.onAddSubagents,
@@ -270,7 +271,7 @@ function RightPanelEmptyState(props: {
         if (editable && (editable.textContent ?? "").trim().length > 0) return;
       }
       const action = shortcutActionsRef.current.find(
-        (candidate) => candidate.shortcut.toLowerCase() === event.key.toLowerCase(),
+        (candidate) => candidate.shortcut?.toLowerCase() === event.key.toLowerCase(),
       );
       if (!action) return;
       event.preventDefault();
@@ -345,7 +346,7 @@ function RightPanelEmptyState(props: {
       tabIndex={0}
       onKeyDown={handleKeyDown}
       aria-label="Open a surface"
-      data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
+      data-surface-launcher-keys={availableActions.map((action) => action.shortcut ?? "").join("")}
       className={cn(
         "flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 pt-6 outline-none",
         // The panel topbar sits above this container; matching bottom padding
@@ -379,7 +380,9 @@ function RightPanelEmptyState(props: {
                   isHighlighted(action) && highlightedCardClass,
                 )}
               >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
+                {action.shortcut ? (
+                  <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
+                ) : null}
                 <span className="flex items-center gap-2 pe-8">
                   {actionIcon(action)}
                   <span className="font-medium text-sm">{action.label}</span>
@@ -396,7 +399,9 @@ function RightPanelEmptyState(props: {
                   cardShellClass,
                 )}
               >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
+                {action.shortcut ? (
+                  <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
+                ) : null}
                 <span className="flex items-center gap-2 pe-8">
                   {actionIcon(action)}
                   <span className="font-medium text-sm">{action.label}</span>
