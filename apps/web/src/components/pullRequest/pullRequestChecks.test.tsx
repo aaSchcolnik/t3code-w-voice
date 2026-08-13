@@ -6,6 +6,7 @@ import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import type { EnvironmentPullRequestEntry } from "./pullRequestList.logic";
 import { PullRequestRow } from "./PullRequestRow";
 import { pullRequestChecksState } from "./pullRequestPresentation";
+import { PopoverTrigger } from "../ui/popover";
 
 function check(status: PullRequestCheck["status"]): PullRequestCheck {
   return { name: `check-${status}`, status, description: null, url: null };
@@ -81,5 +82,16 @@ describe("PullRequestRow checks indicator", () => {
   it("shows the indicator only for a row the host reported a rollup for", () => {
     expect(indicators(row({ checksState: "failing" }))).toBe(1);
     expect(indicators(row({}))).toBe(0);
+  });
+});
+
+describe("PullRequestChecksPopover", () => {
+  it("marks its span trigger as non-native", () => {
+    const tree = PullRequestChecksPopover({ checksState: "passing", checks: [] });
+    const trigger = flatten(tree).find(
+      (element) => (element as { type?: unknown }).type === PopoverTrigger,
+    );
+
+    expect(trigger?.props).toMatchObject({ nativeButton: false });
   });
 });
