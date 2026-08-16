@@ -15,6 +15,7 @@ import {
   syncDocumentElectronPlatformClasses,
   syncDocumentWindowControlsOverlayClass,
 } from "./lib/windowControlsOverlay";
+import { syncStandaloneViewportShift } from "./lib/standaloneViewportGap";
 import { AppRoot } from "./AppRoot";
 import { clerkAppearance } from "./components/clerk/clerkAppearance";
 
@@ -27,6 +28,8 @@ if (isElectron) {
   syncDocumentElectronPlatformClasses(navigator.platform);
   syncDocumentWindowControlsOverlayClass();
 }
+// No-op outside iOS/iPadOS home-screen web apps.
+syncStandaloneViewportShift();
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 

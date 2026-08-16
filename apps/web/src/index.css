@@ -1629,6 +1629,23 @@ body {
   padding-right: var(--desktop-window-right-resize-inset);
 }
 
+/* iPadOS home-screen web apps can lay the page out against a viewport that is
+   one status bar shorter than the web view and anchored to the top of the
+   screen: content (including position:fixed chrome like the sidebar) slides
+   under the status bar, and a dead band of page background shows at the
+   bottom. env() cannot express that misalignment, so the runtime measures the
+   gap (standaloneViewportGap.ts) and the whole body shifts down to realign —
+   a transform, so fixed descendants and portals move with it. The env() top
+   padding is dropped while shifted: the shift already clears the status bar,
+   and WebKit still reports the inset it failed to apply. */
+html.standalone-viewport-shift body {
+  transform: translateY(var(--standalone-viewport-gap, 0px));
+}
+
+html.standalone-viewport-shift #root {
+  padding-top: 0;
+}
+
 .electron-windows {
   --desktop-window-right-resize-inset: 6px;
 }
