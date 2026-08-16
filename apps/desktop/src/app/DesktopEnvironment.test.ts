@@ -41,6 +41,7 @@ describe("DesktopEnvironment", () => {
         {},
         {
           T3CODE_HOME: " /tmp/t3 ",
+          T3CODE_DESKTOP_USER_DATA_DIR: " /tmp/t3-electron ",
           T3CODE_COMMIT_HASH: " 0123456789abcdef ",
           T3CODE_PORT: "4949",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
@@ -52,6 +53,10 @@ describe("DesktopEnvironment", () => {
 
       assert.equal(environment.isDevelopment, true);
       assert.equal(environment.appDataDirectory, "/Users/alice/Library/Application Support");
+      assert.deepEqual(
+        environment.desktopUserDataDirectoryOverride,
+        Option.some("/tmp/t3-electron"),
+      );
       assert.equal(environment.baseDir, "/tmp/t3");
       assert.equal(environment.stateDir, "/tmp/t3/userdata");
       assert.equal(environment.desktopSettingsPath, "/tmp/t3/userdata/desktop-settings.json");

@@ -144,6 +144,31 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
+  it.effect("uses an explicit desktop user-data directory without probing live state", () => {
+    const probeError = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "exists",
+      description: "live state must not be inspected",
+      pathOrDescriptor: "/Users/alice/Library/Application Support/T3 Code (Alpha)",
+    });
+
+    return withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        const userDataPath = yield* identity.resolveUserDataPath;
+
+        assert.equal(userDataPath, "/tmp/t3-isolated-user-data");
+      }),
+      {
+        environment: {
+          env: { T3CODE_DESKTOP_USER_DATA_DIR: " /tmp/t3-isolated-user-data " },
+        },
+        legacyPathProbeError: probeError,
+      },
+    );
+  });
+
   it.effect("keeps using the legacy userData path when it already exists", () =>
     withIdentity(
       Effect.gen(function* () {
