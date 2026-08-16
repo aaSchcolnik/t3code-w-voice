@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "T3 Code",
   "short_name": "T3 Code",
   "description": "T3 Code — agentic coding workspace",
@@ -17,6 +18,11 @@
     {
       "src": "/pwa-icon-512.png",
       "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
       "type": "image/png"
     },
     {
