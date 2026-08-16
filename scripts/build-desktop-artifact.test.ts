@@ -948,33 +948,29 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         yield* stageDesktopDmgBackground(stageResourcesDir, "nightly", false).pipe(
           Effect.provide(iconResizeSpawnerLayer(commands, [0, 0])),
         );
+        const quickLookOutputDir = commands[0]?.args[4] ?? "";
 
         assert.deepStrictEqual(
           commands.map((command) => [command.command, ...command.args]),
           [
+            ["qlmanage", "-t", "-s", "1080", "-o", quickLookOutputDir, sourcePath],
             [
               "sips",
-              "-s",
-              "format",
-              "png",
-              "-z",
-              "380",
-              "540",
-              sourcePath,
+              "-c",
+              "760",
+              "1080",
+              path.join(quickLookOutputDir, "dmg-background-nightly.svg.png"),
               "--out",
-              path.join(dmgDir, "dmg-background-nightly.png"),
+              path.join(dmgDir, "dmg-background-nightly@2x.png"),
             ],
             [
               "sips",
-              "-s",
-              "format",
-              "png",
               "-z",
-              "760",
-              "1080",
-              sourcePath,
-              "--out",
+              "380",
+              "540",
               path.join(dmgDir, "dmg-background-nightly@2x.png"),
+              "--out",
+              path.join(dmgDir, "dmg-background-nightly.png"),
             ],
           ],
         );

@@ -2195,25 +2195,27 @@ export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(
     return yield* new DesktopDmgBackgroundSourceMissingError({ channel, sourcePath });
   }
 
-  for (const output of [
-    { suffix: "", width: 540, height: 380 },
-    { suffix: "@2x", width: 1080, height: 760 },
-  ] as const) {
-    const targetPath = path.join(
-      stageResourcesDir,
-      "dmg",
-      `dmg-background-${channel}${output.suffix}.png`,
-    );
-    yield* runCommand(
-      ChildProcess.make(
-        {},
-      )`sips -s format png -z ${output.height} ${output.width} ${sourcePath} --out ${targetPath}`,
-      {
-        label: `sips ${channel} DMG background${output.suffix || "@1x"}`,
-        verbose,
-      },
-    );
-  }
+  const tmpRoot = yield* fs.makeTempDirectoryScoped({
+    prefix: "t3code-dmg-background-raster-",
+  });
+  const quickLookPng = path.join(tmpRoot, `${path.basename(sourcePath)}.png`);
+  const standardPath = path.join(stageResourcesDir, "dmg", `dmg-background-${channel}.png`);
+  const retinaPath = path.join(stageResourcesDir, "dmg", `dmg-background-${channel}@2x.png`);
+
+  // sips cannot decode SVG. Quick Look provides the macOS-native rasterizer and
+  // pads its thumbnail to a square, so crop the centered 540:380 canvas first.
+  yield* runCommand(ChildProcess.make({})`qlmanage -t -s 1080 -o ${tmpRoot} ${sourcePath}`, {
+    label: `qlmanage ${channel} DMG background`,
+    verbose,
+  });
+  yield* runCommand(ChildProcess.make({})`sips -c 760 1080 ${quickLookPng} --out ${retinaPath}`, {
+    label: `sips crop ${channel} DMG background@2x`,
+    verbose,
+  });
+  yield* runCommand(ChildProcess.make({})`sips -z 380 540 ${retinaPath} --out ${standardPath}`, {
+    label: `sips resize ${channel} DMG background@1x`,
+    verbose,
+  });
 });
 
 function stageLinuxIcons(stageResourcesDir: string, sourcePng: string, verbose: boolean) {
