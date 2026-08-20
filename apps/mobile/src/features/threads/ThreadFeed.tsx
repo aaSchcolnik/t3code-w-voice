@@ -2,6 +2,13 @@ import * as Haptics from "expo-haptics";
 import { KeyboardAwareLegendList } from "@legendapp/list/keyboard";
 import { type LegendListRef } from "@legendapp/list/react-native";
 import type { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
+import {
+  terminalCommandCopyText,
+  terminalCommandDisplayLines,
+  terminalCommandLines,
+  terminalCommandPlainText,
+  terminalCommandStatusText,
+} from "@t3tools/client-runtime/terminal-command-text";
 import { CHAT_LIST_ANCHOR_OFFSET, resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { formatElapsed } from "@t3tools/shared/orchestrationTiming";
 import { SymbolView } from "../../components/AppSymbol";
@@ -856,6 +863,47 @@ function renderFeedEntry(
 
   if (entry.type === "message") {
     const { message } = entry;
+    if (message.terminalCommand) {
+      const record = message.terminalCommand;
+      const output = terminalCommandPlainText(record.excerpt);
+      const commandLines = terminalCommandLines(record.command);
+      const visibleCommandLines = terminalCommandDisplayLines(record.command, 4);
+      const hiddenCommandLineCount = commandLines.length - visibleCommandLines.length;
+      const active = record.status === "queued" || record.status === "running";
+      return (
+        <View className="mb-4 overflow-hidden rounded-2xl border border-emerald-500/30 bg-black">
+          <View className="border-b border-white/10 px-3 py-2">
+            {visibleCommandLines.map((line) => (
+              <Text className="font-mono text-xs text-emerald-300" key={line.key} numberOfLines={1}>
+                $ {line.text}
+              </Text>
+            ))}
+            {hiddenCommandLineCount > 0 ? (
+              <Text className="font-mono text-[10px] text-neutral-400">
+                +{hiddenCommandLineCount} more
+              </Text>
+            ) : null}
+          </View>
+          <Text selectable className="px-3 py-3 font-mono text-xs leading-5 text-neutral-200">
+            {output || (record.status === "queued" ? "Waiting to run…" : "Running…")}
+          </Text>
+          <View className="min-h-8 flex-row items-center justify-between border-t border-white/10 py-0.5 pr-1.5 pl-3">
+            <Text className="font-mono text-[10px] text-neutral-400">
+              {terminalCommandStatusText(record)}
+            </Text>
+            {!active ? (
+              <CopyTextButton
+                accessibilityLabel="Copy terminal command and output"
+                text={terminalCommandCopyText(record)}
+                tintColor={iconSubtleColor}
+                buttonSize={28}
+                iconSize={14}
+              />
+            ) : null}
+          </View>
+        </View>
+      );
+    }
     const isUser = message.role === "user";
     const styles = isUser ? markdownStyles.user : markdownStyles.assistant;
     const timestampLabel = formatMessageTime(isUser ? message.createdAt : message.updatedAt);

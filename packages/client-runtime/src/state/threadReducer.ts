@@ -289,6 +289,12 @@ export function applyThreadDetailEvent(
         ...(event.payload.attachments !== undefined
           ? { attachments: event.payload.attachments }
           : {}),
+        ...(event.payload.systemEvent !== undefined
+          ? { systemEvent: event.payload.systemEvent }
+          : {}),
+        ...(event.payload.terminalCommand !== undefined
+          ? { terminalCommand: event.payload.terminalCommand }
+          : {}),
         turnId: event.payload.turnId,
         streaming: event.payload.streaming,
         createdAt: event.payload.createdAt,
@@ -312,6 +318,12 @@ export function applyThreadDetailEvent(
                   ...(message.streaming ? {} : { updatedAt: message.updatedAt }),
                   ...(message.attachments !== undefined
                     ? { attachments: message.attachments }
+                    : {}),
+                  ...(message.systemEvent !== undefined
+                    ? { systemEvent: message.systemEvent }
+                    : {}),
+                  ...(message.terminalCommand !== undefined
+                    ? { terminalCommand: message.terminalCommand }
                     : {}),
                 },
           )
@@ -658,12 +670,12 @@ function retainMessagesAfterRevert(
   // Keep messages that belong to a retained turn, plus system messages and
   // messages without a turn binding (pre-turn-0 user messages).
   return Arr.filter(messages, (message) => {
-    if (message.role === "system") {
-      return true;
-    }
-    if (message.turnId === null) {
-      return true;
-    }
+    if (message.role === "system") return true;
+    if (message.turnId === null) return true;
     return retainedTurnIds.has(message.turnId);
-  });
+  }).map((message) =>
+    message.terminalCommand && message.terminalCommand.consumedAt === null
+      ? { ...message, terminalCommand: { ...message.terminalCommand, stale: true } }
+      : message,
+  );
 }

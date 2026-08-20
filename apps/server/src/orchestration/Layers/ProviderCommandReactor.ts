@@ -2,7 +2,7 @@ import {
   type ChatAttachment,
   CommandId,
   EventId,
-  type MessageId,
+  MessageId,
   type ModelSelection,
   type OrchestrationEvent,
   ProviderDriverKind,
@@ -12,11 +12,13 @@ import {
   type ProviderSession,
   type RuntimeMode,
   type TurnId,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
 } from "@t3tools/contracts";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -47,6 +49,7 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import { formatPendingTerminalCommandContext } from "../../terminal/terminalCommandContext.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -56,6 +59,7 @@ type ProviderIntentEvent = Extract<
     type:
       | "thread.meta-updated"
       | "thread.runtime-mode-set"
+      | "thread.message-sent"
       | "thread.turn-start-requested"
       | "thread.turn-interrupt-requested"
       | "thread.approval-response-requested"
@@ -774,7 +778,21 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    const terminalContext = formatPendingTerminalCommandContext(thread.messages);
+    const providerText =
+      terminalContext.text.length > 0
+        ? `${terminalContext.text}\n\n${input.messageText}`
+        : input.messageText;
+    if (providerText.length > PROVIDER_SEND_TURN_MAX_INPUT_CHARS) {
+      return yield* new ProviderAdapterRequestError({
+        provider: providerErrorLabel(thread.session?.providerName ?? undefined),
+        method: "thread.turn.start",
+        detail: `The message plus pending terminal output exceeds the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS.toLocaleString("en-US")}-character provider limit. Shorten the message by ${(
+          providerText.length - PROVIDER_SEND_TURN_MAX_INPUT_CHARS
+        ).toLocaleString("en-US")} characters and try again.`,
+      });
+    }
+    const normalizedInput = toNonEmptyProviderInput(providerText);
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()
@@ -810,7 +828,26 @@ const make = Effect.gen(function* () {
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
+      terminalContextRecords: terminalContext.records,
     };
+  });
+
+  const markTerminalCommandsConsumed = Effect.fnUntraced(function* (
+    threadId: ThreadId,
+    records: ReturnType<typeof formatPendingTerminalCommandContext>["records"],
+  ) {
+    if (records.length === 0) return;
+    const consumedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
+    for (const { messageId, record } of records) {
+      yield* orchestrationEngine.dispatch({
+        type: "thread.terminal-command.upsert",
+        commandId: yield* serverCommandId("terminal-command-consumed"),
+        threadId,
+        messageId: MessageId.make(messageId),
+        terminalCommand: { ...record, consumedAt },
+        createdAt: consumedAt,
+      });
+    }
   });
 
   const maybeGenerateAndRenameWorktreeBranchForFirstTurn = Effect.fn(
@@ -1214,16 +1251,27 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    yield* providerService.sendTurn(sendTurnRequest.value).pipe(
+    const { terminalContextRecords, ...providerRequest } = sendTurnRequest.value;
+    yield* providerService.sendTurn(providerRequest).pipe(
       Effect.flatMap((started) =>
-        message.role === "system" && message.systemEvent !== undefined
-          ? appendProviderTurnStartAcceptedActivity({
+        markTerminalCommandsConsumed(event.payload.threadId, terminalContextRecords).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("provider command reactor failed to mark terminal context consumed", {
               threadId: event.payload.threadId,
-              messageId: event.payload.messageId,
-              turnId: started.turnId,
-              createdAt: event.payload.createdAt,
-            })
-          : Effect.void,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+          Effect.andThen(
+            message.role === "system" && message.systemEvent !== undefined
+              ? appendProviderTurnStartAcceptedActivity({
+                  threadId: event.payload.threadId,
+                  messageId: event.payload.messageId,
+                  turnId: started.turnId,
+                  createdAt: event.payload.createdAt,
+                })
+              : Effect.void,
+          ),
+        ),
       ),
       Effect.catchCause(recoverTurnStartFailure),
       Effect.forkScoped,
@@ -1400,6 +1448,18 @@ const make = Effect.gen(function* () {
         );
         return;
       }
+      case "thread.message-sent": {
+        const terminalCommand = event.payload.terminalCommand;
+        if (
+          !terminalCommand ||
+          terminalCommand.status === "queued" ||
+          terminalCommand.status === "running"
+        ) {
+          return;
+        }
+        yield* vcsStatusBroadcaster.refreshLocalStatus(terminalCommand.cwd).pipe(Effect.ignore);
+        return;
+      }
       case "thread.turn-start-requested":
         yield* processTurnStartRequested(event);
         return;
@@ -1449,6 +1509,7 @@ const make = Effect.gen(function* () {
       if (
         (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
         event.type === "thread.runtime-mode-set" ||
+        (event.type === "thread.message-sent" && event.payload.terminalCommand !== undefined) ||
         event.type === "thread.turn-start-requested" ||
         event.type === "thread.turn-interrupt-requested" ||
         event.type === "thread.approval-response-requested" ||

@@ -5,7 +5,11 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
-import { ChatAttachment, OrchestrationSystemEvent } from "@t3tools/contracts";
+import {
+  ChatAttachment,
+  OrchestrationSystemEvent,
+  TerminalCommandRecord,
+} from "@t3tools/contracts";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
@@ -22,6 +26,7 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
     isStreaming: Schema.Number,
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
     systemEvent: Schema.NullOr(Schema.fromJsonString(OrchestrationSystemEvent)),
+    terminalCommand: Schema.NullOr(Schema.fromJsonString(TerminalCommandRecord)),
   }),
 );
 
@@ -39,6 +44,7 @@ function toProjectionThreadMessage(
     updatedAt: row.updatedAt,
     ...(row.attachments !== null ? { attachments: row.attachments } : {}),
     ...(row.systemEvent !== null ? { systemEvent: row.systemEvent } : {}),
+    ...(row.terminalCommand !== null ? { terminalCommand: row.terminalCommand } : {}),
   };
 }
 
@@ -52,6 +58,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
         row.attachments !== undefined ? JSON.stringify(row.attachments) : null;
       const nextSystemEventJson =
         row.systemEvent !== undefined ? JSON.stringify(row.systemEvent) : null;
+      const nextTerminalCommandJson =
+        row.terminalCommand !== undefined ? JSON.stringify(row.terminalCommand) : null;
       return sql`
         INSERT INTO projection_thread_messages (
           message_id,
@@ -61,6 +69,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json,
           system_event_json,
+          terminal_command_json,
           is_streaming,
           created_at,
           updated_at
@@ -87,6 +96,14 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
               WHERE message_id = ${row.messageId}
             )
           ),
+          COALESCE(
+            ${nextTerminalCommandJson},
+            (
+              SELECT terminal_command_json
+              FROM projection_thread_messages
+              WHERE message_id = ${row.messageId}
+            )
+          ),
           ${row.isStreaming ? 1 : 0},
           ${row.createdAt},
           ${row.updatedAt}
@@ -104,6 +121,10 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           system_event_json = COALESCE(
             excluded.system_event_json,
             projection_thread_messages.system_event_json
+          ),
+          terminal_command_json = COALESCE(
+            excluded.terminal_command_json,
+            projection_thread_messages.terminal_command_json
           ),
           is_streaming = excluded.is_streaming,
           created_at = excluded.created_at,
@@ -125,6 +146,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           system_event_json AS "systemEvent",
+          terminal_command_json AS "terminalCommand",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -147,6 +169,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           system_event_json AS "systemEvent",
+          terminal_command_json AS "terminalCommand",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"

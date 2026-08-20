@@ -167,6 +167,14 @@ export function terminalContentOriginY(
   return padding + Math.max(0, slack);
 }
 
+export function terminalContentRowCount(
+  scrollbar: GhosttyScrollbar | null,
+  cursorY: number,
+): number {
+  if (scrollbar) return Math.max(1, scrollbar.total);
+  return Math.max(1, cursorY + 1);
+}
+
 export interface TerminalScrollbarGeometry {
   readonly thumbHeight: number;
   readonly thumbTop: number;
@@ -464,6 +472,8 @@ export interface GhosttySelectionPosition {
 export interface GhosttyTerminalSurfaceOptions {
   readonly theme: GhosttyTheme;
   readonly font?: GhosttyTerminalFont;
+  /** Display-only surface: selection, copy, links, resize, and scroll stay enabled. */
+  readonly readonly?: boolean;
   readonly onData: (data: string) => void;
   readonly onResize: (cols: number, rows: number) => void;
   readonly onSelectionChange: () => void;
@@ -684,6 +694,18 @@ export class GhosttyTerminalSurface {
     this.core.setTheme(theme);
     this.forceFullRender = true;
     this.requestRender();
+  }
+
+  /** CSS pixel height a mount needs to show `rows` grid rows plus the surface padding. */
+  contentHeightForRows(rows: number): number {
+    return rows * this.metrics.height + CONTENT_PADDING * 2;
+  }
+
+  /** Rows occupied after Ghostty applies terminal-width wrapping. */
+  contentRowCount(): number {
+    if (this.disposed) return 1;
+    const scrollbar = this.core.scrollbarState();
+    return terminalContentRowCount(scrollbar, scrollbar ? -1 : this.core.snapshot().cursorY);
   }
 
   async setFont(font: GhosttyTerminalFont): Promise<void> {
@@ -989,6 +1011,10 @@ export class GhosttyTerminalSurface {
       this.suppressedKeyCodes.add(event.code);
       return;
     }
+    if (this.options.readonly === true) {
+      event.preventDefault();
+      return;
+    }
     if (isTerminalPasteShortcut(event)) {
       this.suppressedKeyCodes.add(event.code);
       const clipboard = navigator.clipboard;
@@ -1026,6 +1052,7 @@ export class GhosttyTerminalSurface {
   };
 
   private readonly onKeyUp = (event: KeyboardEvent) => {
+    if (this.options.readonly === true) return;
     this.updateLinkModifier(event);
     if (this.suppressedKeyCodes.delete(event.code)) return;
     if (event.isComposing || this.composing || event.key === "Process" || event.keyCode === 229) {
@@ -1479,11 +1506,13 @@ export class GhosttyTerminalSurface {
     this.input.addEventListener("keyup", this.onKeyUp);
     this.input.addEventListener("focus", this.onFocus);
     this.input.addEventListener("blur", this.onBlur);
-    this.input.addEventListener("input", this.onInput);
-    this.input.addEventListener("paste", this.onPaste);
+    if (this.options.readonly !== true) {
+      this.input.addEventListener("input", this.onInput);
+      this.input.addEventListener("paste", this.onPaste);
+      this.input.addEventListener("compositionstart", this.onCompositionStart);
+      this.input.addEventListener("compositionend", this.onCompositionEnd);
+    }
     this.input.addEventListener("copy", this.onCopyEvent);
-    this.input.addEventListener("compositionstart", this.onCompositionStart);
-    this.input.addEventListener("compositionend", this.onCompositionEnd);
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
     this.canvas.addEventListener("pointermove", this.onPointerMove);
     this.canvas.addEventListener("pointerleave", this.onPointerLeave);
@@ -1624,7 +1653,7 @@ export class GhosttyTerminalSurface {
       padding: CONTENT_PADDING,
       originY: this.originY,
       forceFull: this.forceFullRender,
-      cursorOn: this.cursorOn,
+      cursorOn: this.options.readonly === true ? false : this.cursorOn,
       previousCursorY: this.renderedCursorY,
       focused: this.focused,
       hoveredLinkRange: this.hoveredLink?.range ?? null,
@@ -1634,7 +1663,10 @@ export class GhosttyTerminalSurface {
     });
     this.positionInput();
     this.renderedCursorY =
-      this.cursorOn && this.snapshot.cursorVisible && this.snapshot.cursorY >= 0
+      this.options.readonly !== true &&
+      this.cursorOn &&
+      this.snapshot.cursorVisible &&
+      this.snapshot.cursorY >= 0
         ? this.snapshot.cursorY
         : null;
     if (this.scrollbarDirty) {
@@ -1657,6 +1689,7 @@ export class GhosttyTerminalSurface {
   }
 
   private blinkEnabled(): boolean {
+    if (this.options.readonly === true) return false;
     const snapshot = this.snapshot;
     if (!snapshot) return false;
     return shouldBlinkTerminalCursor({
@@ -1668,6 +1701,7 @@ export class GhosttyTerminalSurface {
   }
 
   private positionInput(): void {
+    if (this.options.readonly === true) return;
     const snapshot = this.snapshot;
     if (!snapshot || !snapshot.cursorVisible || snapshot.cursorX < 0 || snapshot.cursorY < 0) {
       return;

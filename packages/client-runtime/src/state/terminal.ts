@@ -1,4 +1,9 @@
-import { type TerminalSummary, WS_METHODS } from "@t3tools/contracts";
+import {
+  type TerminalCommandRecord,
+  type TerminalExecStreamEvent,
+  type TerminalSummary,
+  WS_METHODS,
+} from "@t3tools/contracts";
 import * as Stream from "effect/Stream";
 import { Atom } from "effect/unstable/reactivity";
 
@@ -89,6 +94,69 @@ export function createTerminalEnvironmentAtoms<R, E>(
       scheduler: lifecycleScheduler,
       concurrency: lifecycleConcurrency,
     }),
+    execAttach: createEnvironmentSubscriptionAtomFamily(runtime, {
+      label: "environment-data:terminal-command:attach",
+      subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalExecAttach>) =>
+        subscribe(WS_METHODS.terminalExecAttach, input).pipe(
+          Stream.scan(EMPTY_TERMINAL_COMMAND_STREAM_STATE, applyTerminalCommandStreamEvent),
+        ),
+    }),
+    execStart: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal-command:start",
+      tag: WS_METHODS.terminalExecStart,
+      scheduler: lifecycleScheduler,
+      concurrency: { mode: "serial", key: terminalThreadKey },
+    }),
+    execCancel: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal-command:cancel",
+      tag: WS_METHODS.terminalExecCancel,
+      scheduler: lifecycleScheduler,
+      concurrency: { mode: "serial", key: terminalThreadKey },
+    }),
+    execReadOutput: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:terminal-command:read-output",
+      tag: WS_METHODS.terminalExecReadOutput,
+    }),
+  };
+}
+
+export interface TerminalCommandStreamState {
+  readonly record: TerminalCommandRecord | null;
+  readonly output: string;
+  readonly sequence: number;
+  readonly needsResync: boolean;
+}
+
+export const EMPTY_TERMINAL_COMMAND_STREAM_STATE: TerminalCommandStreamState = {
+  record: null,
+  output: "",
+  sequence: 0,
+  needsResync: false,
+};
+
+export function applyTerminalCommandStreamEvent(
+  state: TerminalCommandStreamState,
+  event: TerminalExecStreamEvent,
+): TerminalCommandStreamState {
+  if (event.type === "snapshot") {
+    return {
+      record: event.record,
+      output: event.tail,
+      sequence: event.sequence,
+      needsResync: false,
+    };
+  }
+  if (event.sequence <= state.sequence) return state;
+  if (event.sequence !== state.sequence + 1) {
+    return { ...state, needsResync: true, sequence: event.sequence };
+  }
+  if (event.type === "status") {
+    return { ...state, record: event.record, sequence: event.sequence };
+  }
+  return {
+    ...state,
+    output: `${state.output}${event.data}`,
+    sequence: event.sequence,
   };
 }
 

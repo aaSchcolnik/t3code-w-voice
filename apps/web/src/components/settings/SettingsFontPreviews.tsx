@@ -1,7 +1,7 @@
 import { preloadPatchFile } from "@pierre/diffs/ssr";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "../ComposerPromptEditor";
-import { terminalThemeFromApp } from "../ThreadTerminalDrawer";
+import { terminalThemeFromApp } from "../../terminal/ghostty/theme";
 import { useTheme } from "../../hooks/useTheme";
 import { resolveDiffThemeName, type DiffThemeName } from "../../lib/diffRendering";
 import { GhosttyTerminalSurface } from "~/terminal/ghostty/surface";

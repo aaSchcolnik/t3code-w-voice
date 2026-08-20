@@ -7,12 +7,46 @@ import {
   TerminalClearInput,
   TerminalCloseInput,
   TerminalEvent,
+  TerminalExecStartInput,
   TerminalOpenInput,
   TerminalResizeInput,
   TerminalSessionSnapshot,
   TerminalThreadInput,
   TerminalWriteInput,
 } from "./terminal.ts";
+
+describe("TerminalExecStartInput", () => {
+  it("accepts an idempotent execution request without a timeout", () => {
+    expect(
+      decodes(TerminalExecStartInput, {
+        threadId: "thread-1",
+        executionId: "exec-1",
+        messageId: "message-1",
+        command: "npm test",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects commands and timeouts beyond the server bounds", () => {
+    expect(
+      decodes(TerminalExecStartInput, {
+        threadId: "thread-1",
+        executionId: "exec-1",
+        messageId: "message-1",
+        command: "x".repeat(32_769),
+      }),
+    ).toBe(false);
+    expect(
+      decodes(TerminalExecStartInput, {
+        threadId: "thread-1",
+        executionId: "exec-1",
+        messageId: "message-1",
+        command: "npm test",
+        timeoutMs: 86_400_001,
+      }),
+    ).toBe(false);
+  });
+});
 
 function decodeSync<S extends Schema.Top>(schema: S, input: unknown): Schema.Schema.Type<S> {
   return Schema.decodeUnknownSync(schema as never)(input) as Schema.Schema.Type<S>;

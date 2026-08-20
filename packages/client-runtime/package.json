@@ -151,6 +151,10 @@
       "types": "./src/state/usage.ts",
       "default": "./src/state/usage.ts"
     },
+    "./terminal-command-text": {
+      "types": "./src/terminalCommandText.ts",
+      "default": "./src/terminalCommandText.ts"
+    },
     "./state/thread-search": {
       "types": "./src/state/threadSearch.ts",
       "default": "./src/state/threadSearch.ts"

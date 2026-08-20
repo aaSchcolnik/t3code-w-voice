@@ -149,7 +149,13 @@ function retainThreadMessagesAfterRevert(
     }
   }
 
-  return messages.filter((message) => retainedMessageIds.has(message.id));
+  return messages
+    .filter((message) => retainedMessageIds.has(message.id))
+    .map((message) =>
+      message.terminalCommand && message.terminalCommand.consumedAt === null
+        ? { ...message, terminalCommand: { ...message.terminalCommand, stale: true } }
+        : message,
+    );
 }
 
 function retainThreadActivitiesAfterRevert(
@@ -533,6 +539,9 @@ export function projectEvent(
             text: payload.text,
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
             ...(payload.systemEvent !== undefined ? { systemEvent: payload.systemEvent } : {}),
+            ...(payload.terminalCommand !== undefined
+              ? { terminalCommand: payload.terminalCommand }
+              : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
             createdAt: payload.createdAt,
@@ -561,6 +570,9 @@ export function projectEvent(
                       : {}),
                     ...(message.systemEvent !== undefined
                       ? { systemEvent: message.systemEvent }
+                      : {}),
+                    ...(message.terminalCommand !== undefined
+                      ? { terminalCommand: message.terminalCommand }
                       : {}),
                   }
                 : entry,

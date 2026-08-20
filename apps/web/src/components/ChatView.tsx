@@ -1231,6 +1231,9 @@ function ChatViewContent(props: ChatViewProps) {
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
+  const startTerminalCommand = useAtomCommand(terminalEnvironment.execStart, {
+    reportFailure: false,
+  });
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
@@ -5074,6 +5077,18 @@ function ChatViewContent(props: ChatViewProps) {
       notifyDirectAnnotationAttached();
       return;
     }
+    const activeTerminalCommand = activeThread.messages.find(
+      (message) =>
+        message.terminalCommand?.status === "queued" ||
+        message.terminalCommand?.status === "running",
+    );
+    if (activeTerminalCommand) {
+      setThreadError(
+        activeThread.id,
+        "Wait for the terminal command to finish or cancel it before starting an agent turn.",
+      );
+      return;
+    }
     if (activeEnvironmentUnavailable) {
       toastManager.add(
         stackedThreadToast({
@@ -5512,6 +5527,45 @@ function ChatViewContent(props: ChatViewProps) {
       resetLocalDispatch();
     }
   };
+
+  const onRunTerminalCommand = useCallback(
+    async (command: string) => {
+      if (!activeThread || routeKind !== "server") return;
+      const result = await startTerminalCommand({
+        environmentId,
+        input: {
+          threadId: activeThread.id,
+          executionId: newMessageId(),
+          messageId: newMessageId(),
+          command,
+        },
+      });
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setThreadError(
+            activeThread.id,
+            error instanceof Error ? error.message : "Failed to start terminal command.",
+          );
+        }
+        return;
+      }
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      setThreadError(activeThread.id, null);
+    },
+    [
+      activeThread,
+      clearComposerDraftContent,
+      composerDraftTarget,
+      environmentId,
+      promptRef,
+      routeKind,
+      setThreadError,
+      startTerminalCommand,
+    ],
+  );
 
   const onInterrupt = async () => {
     if (!activeThread) return;
@@ -6590,7 +6644,17 @@ function ChatViewContent(props: ChatViewProps) {
                             phase={phase}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}
-                            sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
+                            sendDisabledReason={
+                              threadDetailLoading
+                                ? "Messages loading"
+                                : activeThread?.messages.some(
+                                      (message) =>
+                                        message.terminalCommand?.status === "queued" ||
+                                        message.terminalCommand?.status === "running",
+                                    )
+                                  ? "Terminal command running"
+                                  : null
+                            }
                             isPreparingWorktree={isPreparingWorktree}
                             environmentUnavailable={activeEnvironmentUnavailableState}
                             activePendingApproval={activePendingApproval}
@@ -6624,6 +6688,7 @@ function ChatViewContent(props: ChatViewProps) {
                             composerTerminalContextsRef={composerTerminalContextsRef}
                             composerElementContextsRef={composerElementContextsRef}
                             onSend={onSend}
+                            onRunTerminalCommand={(command) => void onRunTerminalCommand(command)}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onRespondToApproval={onRespondToApproval}

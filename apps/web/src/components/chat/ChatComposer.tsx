@@ -40,8 +40,10 @@ import {
   collapseExpandedComposerCursor,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
+  isTerminalCommandDraft,
   replaceTextRange,
   shouldSubmitComposerOnEnter,
+  terminalCommandFromDraft,
 } from "../../composer-logic";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
 import { createKnowledgeScanDraftSeed } from "../../session-logic";
@@ -604,6 +606,7 @@ export interface ChatComposerProps {
 
   // Callbacks
   onSend: (e?: { preventDefault: () => void }) => void;
+  onRunTerminalCommand: (command: string) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
   onRespondToApproval: (
@@ -687,6 +690,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerTerminalContextsRef,
     composerElementContextsRef,
     onSend,
+    onRunTerminalCommand,
     onInterrupt,
     onImplementPlanInNewThread,
     onRespondToApproval,
@@ -704,7 +708,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setThreadError,
     onExpandImage,
   } = props;
-  const isSendDisabled = sendDisabledReason !== null;
   const voiceAvailability = useVoiceAvailability(environmentId);
 
   // ------------------------------------------------------------------
@@ -717,6 +720,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerElementContexts = composerDraft.elementContexts;
   const composerPreviewAnnotations = composerDraft.previewAnnotations;
   const composerReviewComments = composerDraft.reviewComments;
+  const isTerminalMode = isTerminalCommandDraft(prompt);
+  const isSendDisabled = sendDisabledReason !== null && !isTerminalMode;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -2026,6 +2031,36 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }) => {
+      if (isTerminalMode) {
+        event?.preventDefault();
+        const command = terminalCommandFromDraft(promptRef.current);
+        const plainTextOnly =
+          composerImages.length === 0 &&
+          composerTerminalContexts.length === 0 &&
+          composerElementContexts.length === 0 &&
+          composerPreviewAnnotations.length === 0 &&
+          composerReviewComments.length === 0;
+        const blockedReason =
+          routeKind !== "server"
+            ? "Send the first agent message before running a terminal command."
+            : phase === "running"
+              ? "Interrupt the active agent turn before running a terminal command."
+              : activePendingApproval !== null || pendingUserInputs.length > 0
+                ? "Resolve the pending request before running a terminal command."
+                : !plainTextOnly
+                  ? "Terminal mode accepts plain text only. Remove attachments and context chips."
+                  : command.trim().length === 0
+                    ? "Type a command after !."
+                    : null;
+        if (blockedReason) {
+          setComposerSubmissionError(blockedReason);
+          return;
+        }
+        setComposerSubmissionError(null);
+        onRunTerminalCommand(command);
+        if (shouldBlurMobileComposerOnSubmit()) blurMobileComposerAfterSend();
+        return;
+      }
       if (noProviderAvailable || isSendDisabled) {
         event?.preventDefault();
         return;
@@ -2064,11 +2099,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [
       activeThreadId,
       activePendingProgress,
+      activePendingApproval,
       blurMobileComposerAfterSend,
+      composerElementContexts.length,
+      composerImages.length,
+      composerPreviewAnnotations.length,
+      composerReviewComments.length,
+      composerTerminalContexts.length,
       isSendDisabled,
+      isTerminalMode,
       noProviderAvailable,
       onSend,
+      onRunTerminalCommand,
+      pendingUserInputs.length,
+      phase,
       promptRef,
+      routeKind,
       shouldBlurMobileComposerOnSubmit,
     ],
   );
@@ -2121,9 +2167,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Callbacks: command key
   // ------------------------------------------------------------------
   const onComposerCommandKey = (
-    key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
+    key: "ArrowDown" | "ArrowUp" | "Enter" | "Escape" | "Tab",
     event: KeyboardEvent,
   ) => {
+    if (key === "Escape" && isTerminalMode) {
+      const nextPrompt = promptRef.current.slice(1);
+      promptRef.current = nextPrompt;
+      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      const nextCursor = Math.max(0, composerCursor - 1);
+      setComposerCursor(nextCursor);
+      setComposerTrigger(null);
+      window.requestAnimationFrame(() => composerEditorRef.current?.focusAt(nextCursor));
+      return true;
+    }
     if (key === "Tab" && event.shiftKey) {
       if (!planModeUiEnabled) return false;
       toggleInteractionMode();
@@ -2536,6 +2592,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   const addComposerImages = async (files: File[]) => {
     if (!activeThreadId || files.length === 0) return;
+    if (isTerminalMode) {
+      toastManager.add({
+        type: "error",
+        title: "Terminal mode accepts plain text only.",
+      });
+      return;
+    }
     if (pendingUserInputs.length > 0) {
       toastManager.add({
         type: "error",
@@ -2649,6 +2712,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isConnecting ||
       isComposerApprovalState ||
       pendingUserInputs.length > 0 ||
+      isTerminalMode ||
       projectSelectionRequired
     ) {
       return false;
@@ -2795,7 +2859,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         );
       },
       addTerminalContext: (selection: TerminalContextSelection) => {
-        if (!activeThread) return;
+        if (!activeThread || isTerminalMode) return;
         const snapshot = composerEditorRef.current?.readSnapshot() ?? {
           value: promptRef.current,
           cursor: composerCursor,
@@ -2871,6 +2935,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       focusComposer,
       isConnecting,
       isComposerApprovalState,
+      isTerminalMode,
       pendingUserInputs.length,
       projectSelectionRequired,
       applyPromptReplacement,
@@ -2944,9 +3009,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           </div>
         ) : null}
         <div
+          data-terminal-command-mode={isTerminalMode ? "true" : "false"}
           className={cn(
             "group rounded-[22px] p-px transition-colors duration-200",
-            composerProviderState.composerFrameClassName,
+            isTerminalMode
+              ? "terminal-command-frame"
+              : composerProviderState.composerFrameClassName,
           )}
           onDragEnterCapture={composerMentionDragHandlers.onDragEnter}
           onDragOverCapture={composerMentionDragHandlers.onDragOver}
@@ -3161,6 +3229,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 menuOpen={isStashMenuOpen}
                 onToggleMenu={toggleStashMenu}
               />
+
+              {isTerminalMode && !isComposerCollapsedMobile ? (
+                <div className="mb-2 inline-flex items-center rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                  terminal mode · enter runs · esc exits
+                </div>
+              ) : null}
 
               {isStashMenuOpen && !composerMenuOpen && !isComposerApprovalState && (
                 <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
@@ -3519,7 +3593,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     promptHasText={prompt.trim().length > 0}
                     isSendBusy={isSendBusy}
-                    sendDisabledReason={sendDisabledReason}
+                    sendDisabledReason={isTerminalMode ? null : sendDisabledReason}
                     isConnecting={isConnecting}
                     isEnvironmentUnavailable={
                       environmentUnavailable !== null ||

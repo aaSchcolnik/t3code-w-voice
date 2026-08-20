@@ -1,5 +1,5 @@
-import { memo, useRef } from "react";
-import { CopyIcon, CheckIcon } from "lucide-react";
+import { memo, useRef, useState } from "react";
+import { CopyIcon, CheckIcon, LoaderCircleIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
@@ -43,27 +43,46 @@ export const MessageCopyButton = memo(function MessageCopyButton({
   size = "xs",
   variant = "outline",
   className,
+  onPrepare,
 }: {
-  text: string;
+  text: string | (() => Promise<string>);
   size?: "xs" | "icon-xs";
   variant?: "outline" | "ghost";
   className?: string;
+  onPrepare?: () => void;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
+  const [isResolving, setIsResolving] = useState(false);
   const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
     onCopy: () => onCopy(ref),
     onError: (error: Error) => onCopyError(ref, error),
     timeout: ANCHORED_TOAST_TIMEOUT_MS,
   });
 
+  const copy = () => {
+    if (typeof text === "string") {
+      copyToClipboard(text);
+      return;
+    }
+    setIsResolving(true);
+    void text()
+      .then(
+        (resolvedText) => copyToClipboard(resolvedText),
+        (error) => onCopyError(ref, error instanceof Error ? error : new Error(String(error))),
+      )
+      .finally(() => setIsResolving(false));
+  };
+
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <Button
-            aria-label="Copy link"
-            disabled={isCopied}
-            onClick={() => copyToClipboard(text)}
+            aria-label="Copy"
+            disabled={isCopied || isResolving}
+            onFocus={onPrepare}
+            onClick={copy}
+            onPointerEnter={onPrepare}
             ref={ref}
             type="button"
             size={size}
@@ -72,7 +91,13 @@ export const MessageCopyButton = memo(function MessageCopyButton({
           />
         }
       >
-        {isCopied ? <CheckIcon className="size-3 text-primary" /> : <CopyIcon className="size-3" />}
+        {isResolving ? (
+          <LoaderCircleIcon className="size-3 animate-spin" />
+        ) : isCopied ? (
+          <CheckIcon className="size-3 text-primary" />
+        ) : (
+          <CopyIcon className="size-3" />
+        )}
       </TooltipTrigger>
       <TooltipPopup>
         <p>Copy to clipboard</p>

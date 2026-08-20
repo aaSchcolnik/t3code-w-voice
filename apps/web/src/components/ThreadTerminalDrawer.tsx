@@ -40,7 +40,7 @@ import {
   GhosttyTerminalSurface,
   type GhosttyTerminalSurfaceOptions,
 } from "~/terminal/ghostty/surface";
-import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
+import { terminalThemeFromApp } from "~/terminal/ghostty/theme";
 import { useOpenInPreferredEditor } from "../editorPreferences";
 import { isTerminalLinkActivation, resolvePathLinkTarget } from "../terminal-links";
 import {
@@ -71,6 +71,7 @@ import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import {
   resolveTerminalFontPreference,
   resolveTerminalFontSizePreference,
+  terminalFontOptions,
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../appearanceFonts";
 
@@ -97,28 +98,6 @@ function writeTerminalBuffer(terminal: GhosttyTerminalSurface, buffer: string): 
   terminal.resetAndWrite(buffer);
 }
 
-function parseTerminalColor(value: string, fallback: GhosttyColor): GhosttyColor {
-  if (typeof document === "undefined") return fallback;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = 1;
-  canvas.height = 1;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) return fallback;
-
-  context.clearRect(0, 0, 1, 1);
-  context.fillStyle = value;
-  context.fillRect(0, 0, 1, 1);
-  const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
-  if (alpha === 0) return fallback;
-
-  return {
-    r: red ?? fallback.r,
-    g: green ?? fallback.g,
-    b: blue ?? fallback.b,
-  };
-}
-
 function runtimeEnvSignature(runtimeEnv: Record<string, string> | undefined): string {
   if (!runtimeEnv) return "";
   return JSON.stringify(
@@ -126,77 +105,6 @@ function runtimeEnvSignature(runtimeEnv: Record<string, string> | undefined): st
       .filter(([key, value]) => key.length > 0 && typeof value === "string")
       .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey)),
   );
-}
-
-function normalizeComputedColor(value: string | null | undefined, fallback: string): string {
-  const normalizedValue = value?.trim().toLowerCase();
-  if (
-    !normalizedValue ||
-    normalizedValue === "transparent" ||
-    normalizedValue === "rgba(0, 0, 0, 0)" ||
-    normalizedValue === "rgba(0 0 0 / 0)"
-  ) {
-    return fallback;
-  }
-  return value ?? fallback;
-}
-
-function readThemeColor(styles: CSSStyleDeclaration, variable: string, fallback: string): string {
-  return normalizeComputedColor(styles.getPropertyValue(variable), fallback);
-}
-
-/** The surface treats an omitted family or size as "use the built-in default". */
-function terminalFontOptions(family: string, size: number): { family?: string; size: number } {
-  const trimmed = family.trim();
-  return trimmed.length > 0 ? { family: trimmed, size } : { size };
-}
-
-export function terminalThemeFromApp(mountElement?: HTMLElement | null): GhosttyTheme {
-  const isDark = document.documentElement.classList.contains("dark");
-  const fallbackBackground = isDark ? "rgb(14, 18, 24)" : "rgb(255, 255, 255)";
-  const fallbackForeground = isDark ? "rgb(237, 241, 247)" : "rgb(28, 33, 41)";
-  const drawerSurface =
-    mountElement?.closest(".thread-terminal-drawer") ??
-    document.querySelector(".thread-terminal-drawer") ??
-    document.body;
-  const drawerStyles = getComputedStyle(drawerSurface);
-  const bodyStyles = getComputedStyle(document.body);
-  const themeStyles = getComputedStyle(document.documentElement);
-  const background = normalizeComputedColor(
-    drawerStyles.backgroundColor,
-    normalizeComputedColor(bodyStyles.backgroundColor, fallbackBackground),
-  );
-  const foreground = normalizeComputedColor(
-    drawerStyles.color,
-    normalizeComputedColor(bodyStyles.color, fallbackForeground),
-  );
-  const terminalBackground = readThemeColor(themeStyles, "--terminal-background", background);
-  const terminalForeground = readThemeColor(themeStyles, "--terminal-foreground", foreground);
-  const terminalCursor = readThemeColor(
-    themeStyles,
-    "--terminal-cursor",
-    isDark ? "rgb(180, 203, 255)" : "rgb(38, 56, 78)",
-  );
-  const terminalSelection = readThemeColor(
-    themeStyles,
-    "--terminal-selection-background",
-    isDark ? "rgba(180, 203, 255, 0.25)" : "rgba(37, 63, 99, 0.2)",
-  );
-  return {
-    background: parseTerminalColor(
-      terminalBackground,
-      isDark ? { r: 14, g: 18, b: 24 } : { r: 255, g: 255, b: 255 },
-    ),
-    foreground: parseTerminalColor(
-      terminalForeground,
-      isDark ? { r: 237, g: 241, b: 247 } : { r: 28, g: 33, b: 41 },
-    ),
-    cursor: parseTerminalColor(
-      terminalCursor,
-      isDark ? { r: 180, g: 203, b: 255 } : { r: 38, g: 56, b: 78 },
-    ),
-    selectionBackground: terminalSelection,
-  };
 }
 
 export function resolveTerminalSelectionActionPosition(options: {

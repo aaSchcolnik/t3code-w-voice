@@ -12,6 +12,61 @@ const layer = it.layer(
 );
 
 layer("ProjectionThreadMessageRepository", (it) => {
+  it.effect("persists terminal command records across lifecycle upserts", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-terminal-command");
+      const messageId = MessageId.make("message-terminal-command");
+      const createdAt = "2026-08-19T00:00:00.000Z";
+      const queued = {
+        executionId: "exec-1",
+        command: "npm test",
+        cwd: "/repo",
+        status: "queued" as const,
+        exitCode: null,
+        durationMs: 0,
+        excerpt: "",
+        truncated: false,
+        logBytes: 0,
+        startedAt: null,
+        completedAt: null,
+        consumedAt: null,
+      };
+      yield* repository.upsert({
+        messageId,
+        threadId,
+        turnId: null,
+        role: "system",
+        text: "$ npm test",
+        terminalCommand: queued,
+        isStreaming: true,
+        createdAt,
+        updatedAt: createdAt,
+      });
+      yield* repository.upsert({
+        messageId,
+        threadId,
+        turnId: null,
+        role: "system",
+        text: "$ npm test\ncompleted",
+        terminalCommand: {
+          ...queued,
+          status: "completed",
+          exitCode: 0,
+          excerpt: "ok",
+          completedAt: "2026-08-19T00:00:01.000Z",
+        },
+        isStreaming: false,
+        createdAt,
+        updatedAt: "2026-08-19T00:00:01.000Z",
+      });
+
+      const rows = yield* repository.listByThreadId({ threadId });
+      assert.equal(rows[0]?.terminalCommand?.status, "completed");
+      assert.equal(rows[0]?.terminalCommand?.excerpt, "ok");
+    }),
+  );
+
   it.effect("preserves existing attachments when upsert omits attachments", () =>
     Effect.gen(function* () {
       const repository = yield* ProjectionThreadMessageRepository;

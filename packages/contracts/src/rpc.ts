@@ -121,6 +121,14 @@ import {
   TerminalClearInput,
   TerminalCloseInput,
   TerminalError,
+  TerminalExecAttachInput,
+  TerminalExecCancelInput,
+  TerminalExecError,
+  TerminalExecReadOutputInput,
+  TerminalExecReadOutputResult,
+  TerminalExecStartInput,
+  TerminalExecStreamEvent,
+  TerminalCommandRecord,
   TerminalEvent,
   TerminalMetadataStreamEvent,
   TerminalOpenInput,
@@ -310,6 +318,10 @@ export const WS_METHODS = {
   terminalClear: "terminal.clear",
   terminalRestart: "terminal.restart",
   terminalClose: "terminal.close",
+  terminalExecStart: "terminal.exec.start",
+  terminalExecAttach: "terminal.exec.attach",
+  terminalExecCancel: "terminal.exec.cancel",
+  terminalExecReadOutput: "terminal.exec.readOutput",
 
   // Preview methods
   previewOpen: "preview.open",
@@ -1047,6 +1059,31 @@ export const WsTerminalCloseRpc = Rpc.make(WS_METHODS.terminalClose, {
   error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
 });
 
+export const WsTerminalExecStartRpc = Rpc.make(WS_METHODS.terminalExecStart, {
+  payload: TerminalExecStartInput,
+  success: TerminalCommandRecord,
+  error: Schema.Union([TerminalExecError, EnvironmentAuthorizationError]),
+});
+
+export const WsTerminalExecAttachRpc = Rpc.make(WS_METHODS.terminalExecAttach, {
+  payload: TerminalExecAttachInput,
+  success: TerminalExecStreamEvent,
+  error: Schema.Union([TerminalExecError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsTerminalExecCancelRpc = Rpc.make(WS_METHODS.terminalExecCancel, {
+  payload: TerminalExecCancelInput,
+  success: TerminalCommandRecord,
+  error: Schema.Union([TerminalExecError, EnvironmentAuthorizationError]),
+});
+
+export const WsTerminalExecReadOutputRpc = Rpc.make(WS_METHODS.terminalExecReadOutput, {
+  payload: TerminalExecReadOutputInput,
+  success: TerminalExecReadOutputResult,
+  error: Schema.Union([TerminalExecError, EnvironmentAuthorizationError]),
+});
+
 export const WsPreviewOpenRpc = Rpc.make(WS_METHODS.previewOpen, {
   payload: PreviewOpenInput,
   success: PreviewSessionSnapshot,
@@ -1432,6 +1469,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsTerminalClearRpc,
   WsTerminalRestartRpc,
   WsTerminalCloseRpc,
+  WsTerminalExecStartRpc,
+  WsTerminalExecAttachRpc,
+  WsTerminalExecCancelRpc,
+  WsTerminalExecReadOutputRpc,
   WsTranscriptionStartRpc,
   WsTranscriptionSendAudioRpc,
   WsTranscriptionStopRpc,

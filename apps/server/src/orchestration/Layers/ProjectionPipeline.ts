@@ -284,7 +284,13 @@ function retainProjectionMessagesAfterRevert(
     }
   }
 
-  return messages.filter((message) => retainedMessageIds.has(message.messageId));
+  return messages
+    .filter((message) => retainedMessageIds.has(message.messageId))
+    .map((message) =>
+      message.terminalCommand && message.terminalCommand.consumedAt === null
+        ? { ...message, terminalCommand: { ...message.terminalCommand, stale: true } }
+        : message,
+    );
 }
 
 function retainProjectionActivitiesAfterRevert(
@@ -987,6 +993,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                 })
               : previousMessage?.attachments;
           const nextSystemEvent = event.payload.systemEvent ?? previousMessage?.systemEvent;
+          const nextTerminalCommand =
+            event.payload.terminalCommand ?? previousMessage?.terminalCommand;
           yield* projectionThreadMessageRepository.upsert({
             messageId: event.payload.messageId,
             threadId: event.payload.threadId,
@@ -995,6 +1003,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             text: nextText,
             ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
             ...(nextSystemEvent !== undefined ? { systemEvent: nextSystemEvent } : {}),
+            ...(nextTerminalCommand !== undefined ? { terminalCommand: nextTerminalCommand } : {}),
             isStreaming: event.payload.streaming,
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -1018,10 +1027,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             existingTurns,
             event.payload.turnCount,
           );
-          if (keptRows.length === existingRows.length) {
-            return;
-          }
-
           yield* projectionThreadMessageRepository.deleteByThreadId({
             threadId: event.payload.threadId,
           });

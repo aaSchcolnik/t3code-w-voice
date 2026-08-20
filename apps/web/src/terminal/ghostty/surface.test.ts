@@ -22,6 +22,7 @@ import {
   terminalLinkAtPosition,
   terminalLinkAtPositionWithRange,
   terminalContentOriginY,
+  terminalContentRowCount,
   terminalFontFamily,
   terminalFontSize,
   terminalWheelArrowData,
@@ -390,6 +391,17 @@ describe("terminalContentOriginY", () => {
       const origin = terminalContentOriginY(height, 4, rows, 16, true);
       expect(origin + rows * 16).toBe(height - 4);
     }
+  });
+});
+
+describe("terminalContentRowCount", () => {
+  it("uses Ghostty's total rows so soft-wrapped output expands the surface", () => {
+    expect(terminalContentRowCount({ total: 4, offset: 3, len: 1 }, 0)).toBe(4);
+  });
+
+  it("falls back to the cursor row when scrollbar state is unavailable", () => {
+    expect(terminalContentRowCount(null, 2)).toBe(3);
+    expect(terminalContentRowCount(null, -1)).toBe(1);
   });
 });
 

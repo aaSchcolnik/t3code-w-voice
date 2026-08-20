@@ -50,6 +50,15 @@ export function resolveTerminalFontSizePreference(input: {
   return input.code;
 }
 
+/** The surface treats an omitted family or size as "use the built-in default". */
+export function terminalFontOptions(
+  family: string,
+  size: number,
+): { family?: string; size: number } {
+  const trimmed = family.trim();
+  return trimmed.length > 0 ? { family: trimmed, size } : { size };
+}
+
 function quoteFontFamilyName(name: string): string {
   const bare = name.trim();
   if (bare.length === 0) return "";

@@ -953,6 +953,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const activeTerminalCommand = targetThread.messages.find(
+        (message) =>
+          message.terminalCommand?.status === "queued" ||
+          message.terminalCommand?.status === "running",
+      );
+      if (activeTerminalCommand) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.threadId}' cannot start a provider turn while terminal command '${activeTerminalCommand.terminalCommand?.executionId}' is active.`,
+        });
+      }
       if (command.type === "thread.turn.start-server") {
         // Reject wakes while a turn is already in flight (including the
         // turn-start-requested → turn.started race window, which marks
@@ -1319,6 +1330,48 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           text: "",
           turnId: command.turnId ?? null,
           streaming: false,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.terminal-command.upsert": {
+      const targetThread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      if (command.terminalCommand.status === "queued") {
+        const hasActiveTurn =
+          targetThread.session?.activeTurnId != null ||
+          targetThread.session?.status === "running" ||
+          targetThread.latestTurn?.state === "running";
+        if (hasActiveTurn) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `Thread '${command.threadId}' cannot run a terminal command while a provider turn is active.`,
+          });
+        }
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.message-sent",
+        payload: {
+          threadId: command.threadId,
+          messageId: command.messageId,
+          role: "system",
+          text: `$ ${command.terminalCommand.command}\n${command.terminalCommand.status}`,
+          terminalCommand: command.terminalCommand,
+          turnId: null,
+          streaming:
+            command.terminalCommand.status === "queued" ||
+            command.terminalCommand.status === "running",
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },

@@ -123,6 +123,7 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as TerminalCommandManager from "./terminal/CommandManager.ts";
 import * as TranscriptionServiceModule from "./transcription/TranscriptionService.ts";
 import {
   ServerVoiceModelManager,
@@ -752,6 +753,15 @@ const buildAppUnderTest = (options?: {
       Layer.provide(
         Layer.mock(TerminalManager.TerminalManager)({
           ...options?.layers?.terminalManager,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(TerminalCommandManager.TerminalCommandManager)({
+          start: () => Effect.die("TerminalCommandManager not stubbed in this test"),
+          attachStream: () => Effect.die("TerminalCommandManager not stubbed in this test"),
+          cancel: () => Effect.die("TerminalCommandManager not stubbed in this test"),
+          readOutput: () => Effect.die("TerminalCommandManager not stubbed in this test"),
+          cleanupThread: () => Effect.void,
         }),
       ),
     );

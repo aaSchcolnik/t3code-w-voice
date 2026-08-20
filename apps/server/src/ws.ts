@@ -58,6 +58,8 @@ import {
   SubagentRunError,
   type TerminalAttachStreamEvent,
   type TerminalError,
+  type TerminalExecError,
+  type TerminalExecStreamEvent,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   type TranscriptionError,
@@ -101,6 +103,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as TerminalCommandManager from "./terminal/CommandManager.ts";
 import * as TranscriptionService from "./transcription/TranscriptionService.ts";
 import * as ServerVoiceModelManager from "./transcription/ServerVoiceModelManager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -412,6 +415,7 @@ const makeWsRpcLayer = (
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
+      const terminalCommandManager = yield* TerminalCommandManager.TerminalCommandManager;
       const transcription = yield* TranscriptionService.TranscriptionService;
       const voiceModels = yield* ServerVoiceModelManager.ServerVoiceModelManager;
       const subagentTranscripts = yield* SubagentTranscriptService.SubagentTranscriptService;
@@ -2406,6 +2410,31 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.terminalClose, terminalManager.close(input), {
             "rpc.aggregate": "terminal",
           }),
+        [WS_METHODS.terminalExecStart]: (input) =>
+          observeRpcEffect(WS_METHODS.terminalExecStart, terminalCommandManager.start(input), {
+            "rpc.aggregate": "terminal-command",
+          }),
+        [WS_METHODS.terminalExecAttach]: (input) =>
+          observeRpcStream(
+            WS_METHODS.terminalExecAttach,
+            Stream.callback<TerminalExecStreamEvent, TerminalExecError>((queue) =>
+              Effect.acquireRelease(
+                terminalCommandManager.attachStream(input, (event) => Queue.offer(queue, event)),
+                (unsubscribe) => Effect.sync(unsubscribe),
+              ),
+            ),
+            { "rpc.aggregate": "terminal-command" },
+          ),
+        [WS_METHODS.terminalExecCancel]: (input) =>
+          observeRpcEffect(WS_METHODS.terminalExecCancel, terminalCommandManager.cancel(input), {
+            "rpc.aggregate": "terminal-command",
+          }),
+        [WS_METHODS.terminalExecReadOutput]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.terminalExecReadOutput,
+            terminalCommandManager.readOutput(input),
+            { "rpc.aggregate": "terminal-command" },
+          ),
         [WS_METHODS.transcriptionStart]: (input) =>
           observeRpcStream(
             WS_METHODS.transcriptionStart,

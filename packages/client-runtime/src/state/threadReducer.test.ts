@@ -308,6 +308,66 @@ describe("applyThreadDetailEvent", () => {
   });
 
   describe("thread.message-sent", () => {
+    it("projects terminal command lifecycle updates by message id", () => {
+      const terminalCommand = {
+        executionId: "exec-1",
+        command: "npm test",
+        cwd: "/repo",
+        status: "queued" as const,
+        exitCode: null,
+        durationMs: 0,
+        excerpt: "",
+        truncated: false,
+        logBytes: 0,
+        startedAt: null,
+        completedAt: null,
+        consumedAt: null,
+      };
+      const event = {
+        ...baseEventFields,
+        sequence: 6,
+        occurredAt: "2026-04-01T06:00:00.000Z",
+        aggregateKind: "thread" as const,
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent" as const,
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: MessageId.make("terminal-message"),
+          role: "system" as const,
+          text: "$ npm test",
+          terminalCommand,
+          turnId: null,
+          streaming: true,
+          createdAt: "2026-04-01T06:00:00.000Z",
+          updatedAt: "2026-04-01T06:00:00.000Z",
+        },
+      };
+      const queued = applyThreadDetailEvent(baseThread, event);
+      expect(queued.kind).toBe("updated");
+      if (queued.kind !== "updated") return;
+      const completed = applyThreadDetailEvent(queued.thread, {
+        ...event,
+        sequence: 7,
+        payload: {
+          ...event.payload,
+          streaming: false,
+          terminalCommand: {
+            ...terminalCommand,
+            status: "completed",
+            exitCode: 0,
+            excerpt: "ok",
+            completedAt: "2026-04-01T06:00:01.000Z",
+          },
+        },
+      });
+      expect(completed.kind).toBe("updated");
+      if (completed.kind === "updated") {
+        expect(completed.thread.messages).toHaveLength(1);
+        expect(completed.thread.messages[0]?.terminalCommand?.status).toBe("completed");
+        expect(completed.thread.messages[0]?.terminalCommand?.excerpt).toBe("ok");
+      }
+    });
+
     it("appends a new message", () => {
       const result = applyThreadDetailEvent(baseThread, {
         ...baseEventFields,

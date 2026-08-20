@@ -23,6 +23,7 @@ import {
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import { ProjectMcpOverrides } from "./projectMcpOverrides.ts";
+import { TerminalCommandRecord } from "./terminal.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -236,6 +237,7 @@ export const OrchestrationMessage = Schema.Struct({
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   systemEvent: Schema.optional(OrchestrationSystemEvent),
+  terminalCommand: Schema.optional(TerminalCommandRecord),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -994,6 +996,15 @@ const ThreadMessageAssistantCompleteCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadTerminalCommandUpsertCommand = Schema.Struct({
+  type: Schema.Literal("thread.terminal-command.upsert"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  terminalCommand: TerminalCommandRecord,
+  createdAt: IsoDateTime,
+});
+
 const ThreadProposedPlanUpsertCommand = Schema.Struct({
   type: Schema.Literal("thread.proposed-plan.upsert"),
   commandId: CommandId,
@@ -1045,6 +1056,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadSessionSetCommand,
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
+  ThreadTerminalCommandUpsertCommand,
   ThreadProposedPlanUpsertCommand,
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
@@ -1251,6 +1263,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   systemEvent: Schema.optional(OrchestrationSystemEvent),
+  terminalCommand: Schema.optional(TerminalCommandRecord),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,

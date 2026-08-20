@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { MessageId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 /**
  * Client-side id for the first shell opened on a thread. Ids are uniformly
@@ -231,6 +231,183 @@ export const TerminalAttachStreamEvent = Schema.Union([
   TerminalActivityEvent,
 ]);
 export type TerminalAttachStreamEvent = typeof TerminalAttachStreamEvent.Type;
+
+export const TERMINAL_EXEC_MAX_COMMAND_CHARS = 32_768;
+export const TERMINAL_EXEC_MAX_TIMEOUT_MS = 24 * 60 * 60 * 1_000;
+export const TERMINAL_EXEC_MAX_STREAM_CHARS = 32_768;
+export const TERMINAL_EXEC_MAX_READ_CHARS = 256 * 1_024;
+
+const TerminalExecutionId = TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(128));
+
+export const TerminalCommandStatus = Schema.Literals([
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+  "timed_out",
+  "interrupted",
+]);
+export type TerminalCommandStatus = typeof TerminalCommandStatus.Type;
+
+/** Durable, bounded lifecycle data stored on a system timeline message. */
+export const TerminalCommandRecord = Schema.Struct({
+  executionId: TerminalExecutionId,
+  command: Schema.String.check(
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(TERMINAL_EXEC_MAX_COMMAND_CHARS),
+  ),
+  cwd: TrimmedNonEmptyStringSchema,
+  status: TerminalCommandStatus,
+  exitCode: Schema.NullOr(Schema.Int),
+  durationMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  excerpt: Schema.String,
+  truncated: Schema.Boolean,
+  logBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  startedAt: Schema.NullOr(Schema.String),
+  completedAt: Schema.NullOr(Schema.String),
+  consumedAt: Schema.NullOr(Schema.String),
+  stale: Schema.optional(Schema.Boolean),
+});
+export type TerminalCommandRecord = typeof TerminalCommandRecord.Type;
+
+export const TerminalExecStartInput = Schema.Struct({
+  threadId: ThreadId,
+  executionId: TerminalExecutionId,
+  messageId: MessageId,
+  command: Schema.String.check(
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(TERMINAL_EXEC_MAX_COMMAND_CHARS),
+  ),
+  timeoutMs: Schema.optional(
+    Schema.Int.check(
+      Schema.isGreaterThan(0),
+      Schema.isLessThanOrEqualTo(TERMINAL_EXEC_MAX_TIMEOUT_MS),
+    ),
+  ),
+});
+export type TerminalExecStartInput = typeof TerminalExecStartInput.Type;
+
+export const TerminalExecAttachInput = Schema.Struct({
+  threadId: ThreadId,
+  executionId: TerminalExecutionId,
+  afterSequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+});
+export type TerminalExecAttachInput = typeof TerminalExecAttachInput.Type;
+
+export const TerminalExecCancelInput = Schema.Struct({
+  threadId: ThreadId,
+  executionId: TerminalExecutionId,
+});
+export type TerminalExecCancelInput = typeof TerminalExecCancelInput.Type;
+
+export const TerminalExecReadOutputInput = Schema.Struct({
+  threadId: ThreadId,
+  executionId: TerminalExecutionId,
+  offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type TerminalExecReadOutputInput = typeof TerminalExecReadOutputInput.Type;
+
+export const TerminalExecReadOutputResult = Schema.Struct({
+  data: Schema.String.check(Schema.isMaxLength(TERMINAL_EXEC_MAX_READ_CHARS)),
+  offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  nextOffset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  totalBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  eof: Schema.Boolean,
+  truncated: Schema.Boolean,
+});
+export type TerminalExecReadOutputResult = typeof TerminalExecReadOutputResult.Type;
+
+const TerminalExecEventBase = Schema.Struct({
+  threadId: ThreadId,
+  executionId: TerminalExecutionId,
+  sequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+
+export const TerminalExecSnapshotEvent = Schema.Struct({
+  ...TerminalExecEventBase.fields,
+  type: Schema.Literal("snapshot"),
+  record: TerminalCommandRecord,
+  tail: Schema.String,
+});
+
+export const TerminalExecOutputEvent = Schema.Struct({
+  ...TerminalExecEventBase.fields,
+  type: Schema.Literal("output"),
+  data: Schema.String.check(Schema.isMaxLength(TERMINAL_EXEC_MAX_STREAM_CHARS)),
+});
+
+export const TerminalExecStatusEvent = Schema.Struct({
+  ...TerminalExecEventBase.fields,
+  type: Schema.Literal("status"),
+  record: TerminalCommandRecord,
+});
+
+export const TerminalExecStreamEvent = Schema.Union([
+  TerminalExecSnapshotEvent,
+  TerminalExecOutputEvent,
+  TerminalExecStatusEvent,
+]);
+export type TerminalExecStreamEvent = typeof TerminalExecStreamEvent.Type;
+
+export class TerminalExecNotFoundError extends Schema.TaggedErrorClass<TerminalExecNotFoundError>()(
+  "TerminalExecNotFoundError",
+  { threadId: ThreadId, executionId: TerminalExecutionId },
+) {
+  override get message() {
+    return `Terminal command '${this.executionId}' was not found on thread '${this.threadId}'.`;
+  }
+}
+
+export class TerminalExecConflictError extends Schema.TaggedErrorClass<TerminalExecConflictError>()(
+  "TerminalExecConflictError",
+  { threadId: ThreadId, executionId: TerminalExecutionId, detail: Schema.String },
+) {
+  override get message() {
+    return this.detail;
+  }
+}
+
+export class TerminalExecThreadBusyError extends Schema.TaggedErrorClass<TerminalExecThreadBusyError>()(
+  "TerminalExecThreadBusyError",
+  { threadId: ThreadId, detail: Schema.String },
+) {
+  override get message() {
+    return this.detail;
+  }
+}
+
+export class TerminalExecThreadNotFoundError extends Schema.TaggedErrorClass<TerminalExecThreadNotFoundError>()(
+  "TerminalExecThreadNotFoundError",
+  { threadId: ThreadId },
+) {
+  override get message() {
+    return `Thread '${this.threadId}' must exist before running a terminal command.`;
+  }
+}
+
+export class TerminalExecFailure extends Schema.TaggedErrorClass<TerminalExecFailure>()(
+  "TerminalExecFailure",
+  {
+    threadId: ThreadId,
+    executionId: TerminalExecutionId,
+    operation: Schema.Literals(["start", "persist", "attach", "cancel", "read", "cleanup"]),
+    detail: Schema.String,
+  },
+) {
+  override get message() {
+    return this.detail;
+  }
+}
+
+export const TerminalExecError = Schema.Union([
+  TerminalExecNotFoundError,
+  TerminalExecConflictError,
+  TerminalExecThreadBusyError,
+  TerminalExecThreadNotFoundError,
+  TerminalExecFailure,
+]);
+export type TerminalExecError = typeof TerminalExecError.Type;
 
 export class TerminalCwdNotFoundError extends Schema.TaggedErrorClass<TerminalCwdNotFoundError>()(
   "TerminalCwdNotFoundError",

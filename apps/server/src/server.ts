@@ -44,6 +44,8 @@ import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import * as TerminalCommandManager from "./terminal/CommandManager.ts";
+import * as TerminalCommandProcess from "./terminal/CommandProcess.ts";
 import * as TranscriptionServiceModule from "./transcription/TranscriptionService.ts";
 import * as ServerVoiceModelManager from "./transcription/ServerVoiceModelManager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
@@ -361,6 +363,11 @@ const TerminalLayerLive = TerminalManager.layer.pipe(
   Layer.provide(PortScannerLayerLive),
 );
 
+const TerminalCommandLayerLive = TerminalCommandManager.layer.pipe(
+  Layer.provide(TerminalCommandProcess.layer.pipe(Layer.provide(PtyAdapterLive))),
+  Layer.provide(OrchestrationLayerLive),
+);
+
 const PreviewLayerLive = Layer.empty.pipe(
   Layer.provideMerge(PreviewManager.layer),
   Layer.provideMerge(PortScannerLayerLive),
@@ -428,7 +435,7 @@ const RuntimeCoreServicesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(
     Layer.mergeAll(DelegatedRunLayerLive, SubagentTranscriptLayerLive, SubagentRunLayerLive),
   ),
-  Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
+  Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, TerminalCommandLayerLive, PreviewLayerLive)),
   Layer.provideMerge(Layer.mergeAll(PersistenceLayerLive, McpSessionInstructionBuilderLive)),
   Layer.provideMerge(Keybindings.layer),
   Layer.provideMerge(ProviderRegistryLive),

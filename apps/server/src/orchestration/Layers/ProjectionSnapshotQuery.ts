@@ -10,6 +10,7 @@ import {
   OrchestrationThreadSearchSource,
   OrchestrationShellSnapshot,
   OrchestrationSystemEvent,
+  TerminalCommandRecord,
   OrchestrationThread,
   OrchestrationThreadDetailSnapshot,
   ProjectScript,
@@ -89,6 +90,7 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
     isStreaming: Schema.Number,
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
     systemEvent: Schema.NullOr(Schema.fromJsonString(OrchestrationSystemEvent)),
+    terminalCommand: Schema.NullOr(Schema.fromJsonString(TerminalCommandRecord)),
   }),
 );
 const ProjectionThreadProposedPlanDbRowSchema = ProjectionThreadProposedPlan;
@@ -541,6 +543,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           system_event_json AS "systemEvent",
+          terminal_command_json AS "terminalCommand",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -987,6 +990,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           system_event_json AS "systemEvent",
+          terminal_command_json AS "terminalCommand",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1231,6 +1235,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           system_event_json AS "systemEvent",
+          terminal_command_json AS "terminalCommand",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1574,6 +1579,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   text: row.text,
                   ...(row.attachments !== null ? { attachments: row.attachments } : {}),
                   ...(row.systemEvent !== null ? { systemEvent: row.systemEvent } : {}),
+                  ...(row.terminalCommand !== null ? { terminalCommand: row.terminalCommand } : {}),
                   turnId: row.turnId,
                   streaming: row.isStreaming === 1,
                   createdAt: row.createdAt,
@@ -2646,6 +2652,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           }
           if (row.systemEvent !== null) {
             Object.assign(message, { systemEvent: row.systemEvent });
+          }
+          if (row.terminalCommand !== null) {
+            Object.assign(message, { terminalCommand: row.terminalCommand });
           }
           return message;
         }),

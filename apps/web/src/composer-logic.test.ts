@@ -7,9 +7,11 @@ import {
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   isCollapsedCursorAdjacentToInlineToken,
+  isTerminalCommandDraft,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
   shouldSubmitComposerOnEnter,
+  terminalCommandFromDraft,
 } from "./composer-logic";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
@@ -24,6 +26,17 @@ describe("shouldSubmitComposerOnEnter", () => {
 
   it("inserts a newline for Shift+Enter", () => {
     expect(shouldSubmitComposerOnEnter({ isMobileViewport: false, shiftKey: true })).toBe(false);
+  });
+});
+
+describe("terminal command drafts", () => {
+  it("only activates when bang is the first character", () => {
+    expect(isTerminalCommandDraft("! npm test")).toBe(true);
+    expect(isTerminalCommandDraft(" ! npm test")).toBe(false);
+  });
+
+  it("removes only the bang so multiline scripts keep their exact whitespace", () => {
+    expect(terminalCommandFromDraft("!  npm test\n")).toBe("  npm test\n");
   });
 });
 

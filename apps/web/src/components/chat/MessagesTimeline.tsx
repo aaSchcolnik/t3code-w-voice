@@ -110,6 +110,7 @@ import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
+import { TerminalCommandRow } from "./TerminalCommandRow";
 
 import {
   buildInlineTerminalContextText,
@@ -1305,6 +1306,19 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
 }
 
 function SystemMessageTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
+  const ctx = use(TimelineRowCtx);
+  if (row.message.terminalCommand) {
+    const threadId = ctx.threadRef?.threadId;
+    if (threadId) {
+      return (
+        <TerminalCommandRow
+          environmentId={ctx.activeThreadEnvironmentId}
+          threadId={threadId}
+          record={row.message.terminalCommand}
+        />
+      );
+    }
+  }
   const text = row.message.text.trim();
   return (
     <div className="mx-1 rounded-lg border border-border/60 bg-card/35 px-2.5 py-1.5">

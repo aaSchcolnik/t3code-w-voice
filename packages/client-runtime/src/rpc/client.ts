@@ -53,6 +53,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.previewAutomationConnect
   | typeof WS_METHODS.subscribeVcsStatus
   | typeof WS_METHODS.terminalAttach
+  | typeof WS_METHODS.terminalExecAttach
   | typeof WS_METHODS.transcriptionStart
   | typeof WS_METHODS.subscribeVoiceModelState
   | typeof WS_METHODS.subscribeSubagentRuns

@@ -11,6 +11,15 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
+/** Bang mode is deliberately separate from token/command trigger detection. */
+export function isTerminalCommandDraft(text: string): boolean {
+  return text.startsWith("!");
+}
+
+export function terminalCommandFromDraft(text: string): string {
+  return isTerminalCommandDraft(text) ? text.slice(1) : "";
+}
+
 export function shouldSubmitComposerOnEnter(input: {
   isMobileViewport: boolean;
   shiftKey: boolean;
