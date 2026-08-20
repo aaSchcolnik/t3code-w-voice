@@ -18,7 +18,7 @@ export function TimelineTurnFoldToggle({
         aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
         data-scroll-anchor-ignore
         onClick={(event) => onToggle(event.currentTarget)}
-        className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-xs text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       >
         <span>{label}</span>
         <Icon className="size-3.5" aria-hidden />

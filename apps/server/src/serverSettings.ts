@@ -61,56 +61,60 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-const readConfigEnabled = (config: unknown): boolean | undefined => {
-  if (!config || typeof config !== "object" || globalThis.Array.isArray(config)) {
-    return undefined;
-  }
-  const enabled = (config as { readonly enabled?: unknown }).enabled;
-  return typeof enabled === "boolean" ? enabled : undefined;
-};
-
 /**
- * Legacy settings can carry contradictory enablement state — an envelope
- * `enabled` that disagrees with a driver-config `enabled` inside the same
- * `providerInstances` entry (e.g. `{ enabled: true, config: { enabled:
- * false } }`). The envelope field is authoritative; this rewrites both
- * fields to the canonical value so downstream readers agree regardless of
- * which one they consult. Entries with only a config-level flag are lifted
- * to the envelope.
+ * Fold the legacy in-config `enabled` flag into the envelope-level
+ * `ProviderInstanceConfig.enabled` and strip it from the config blob, so
+ * explicit provider instances carry exactly one enabled flag. Old settings
+ * files can hold both flags with conflicting values; an explicit false on
+ * either side wins so a user's disable is never silently undone. Runs on
+ * every load and update — the file converges on the next write.
  */
-export function canonicalizeProviderInstanceEnablement(settings: ServerSettings): ServerSettings {
+const foldProviderInstanceEnabledFlags = (settings: ServerSettings): ServerSettings => {
   let changed = false;
-  const providerInstances = Object.fromEntries(
-    Object.entries(settings.providerInstances).map(([instanceId, instance]) => {
-      const configEnabled = readConfigEnabled(instance.config);
-      const canonical = instance.enabled ?? configEnabled;
-      if (canonical === undefined) return [instanceId, instance] as const;
-      const envelopeOutOfSync = instance.enabled !== canonical;
-      const configOutOfSync = configEnabled !== undefined && configEnabled !== canonical;
-      if (!envelopeOutOfSync && !configOutOfSync) return [instanceId, instance] as const;
-      changed = true;
-      return [
-        instanceId,
-        {
-          ...instance,
-          enabled: canonical,
-          ...(configOutOfSync
-            ? { config: { ...(instance.config as Record<string, unknown>), enabled: canonical } }
-            : {}),
-        },
-      ] as const;
-    }),
-  );
-  return changed
-    ? { ...settings, providerInstances: providerInstances as ServerSettings["providerInstances"] }
-    : settings;
-}
+  const providerInstances: Record<string, ProviderInstanceConfig> = {};
+  for (const [instanceId, instance] of Object.entries(settings.providerInstances)) {
+    const config = instance.config;
+    // Only fold boolean flags: a malformed `enabled` (e.g. `"false"`) must
+    // stay in the blob so driver schema validation flags it instead of the
+    // fold silently repairing the config.
+    if (
+      config === null ||
+      typeof config !== "object" ||
+      Array.isArray(config) ||
+      typeof (config as { readonly enabled?: unknown }).enabled !== "boolean"
+    ) {
+      providerInstances[instanceId] = instance;
+      continue;
+    }
+    const { enabled: configEnabled, ...restConfig } = config as Record<string, unknown> & {
+      readonly enabled: boolean;
+    };
+    const resolved =
+      instance.enabled === false || configEnabled === false
+        ? false
+        : (instance.enabled ?? configEnabled);
+    changed = true;
+    providerInstances[instanceId] = {
+      ...instance,
+      enabled: resolved,
+      config: restConfig,
+    } satisfies ProviderInstanceConfig;
+  }
+  if (!changed) {
+    return settings;
+  }
+  return {
+    ...settings,
+    providerInstances: providerInstances as ServerSettings["providerInstances"],
+  };
+};
 
 const normalizeServerSettings = (
   settings: ServerSettings,
 ): Effect.Effect<ServerSettings, ServerSettingsError> =>
-  encodeServerSettings(canonicalizeProviderInstanceEnablement(settings)).pipe(
+  encodeServerSettings(settings).pipe(
     Effect.flatMap(decodeServerSettings),
+    Effect.map(foldProviderInstanceEnabledFlags),
     Effect.mapError(
       (cause) =>
         new ServerSettingsError({
@@ -348,7 +352,7 @@ const make = Effect.gen(function* () {
       });
       return DEFAULT_SERVER_SETTINGS;
     }
-    return decoded.value;
+    return foldProviderInstanceEnabledFlags(decoded.value);
   });
 
   const settingsCache = yield* Cache.make<typeof cacheKey, ServerSettings, ServerSettingsError>({
