@@ -27,6 +27,7 @@ __screenshots__/
 squashfs-root/
 .vercel
 .gstack/
+.plans/
 dist-electron/
 .electron-runtime/
 .showcase/
@@ -34,6 +35,7 @@ apps/mobile/.showcase/
 apps/mobile/.derived-data/
 apps/mobile/modules/t3-transcribe/.build/
 artifacts/app-store/screenshots/
+.github/pr-assets/
 native/**/target/
 node_modules/
 .alchemy/
