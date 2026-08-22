@@ -3,6 +3,7 @@ import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "skill";
 export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerSubmissionIntent = "foreground" | "background";
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -20,11 +21,16 @@ export function terminalCommandFromDraft(text: string): string {
   return isTerminalCommandDraft(text) ? text.slice(1) : "";
 }
 
-export function shouldSubmitComposerOnEnter(input: {
+export function composerSubmissionIntentForEnter(input: {
   isMobileViewport: boolean;
   shiftKey: boolean;
-}): boolean {
-  return !input.isMobileViewport && !input.shiftKey;
+  modifierKey: boolean;
+  isDraftThread: boolean;
+}): ComposerSubmissionIntent | null {
+  if (input.isMobileViewport || input.shiftKey) {
+    return null;
+  }
+  return input.modifierKey && input.isDraftThread ? "background" : "foreground";
 }
 
 const isInlineTokenSegment = (

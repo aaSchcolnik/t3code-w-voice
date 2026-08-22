@@ -544,8 +544,8 @@ function mapItemLifecycle(
     lifecycle === "item.started"
       ? "inProgress"
       : lifecycle === "item.completed"
-        ? "status" in item && item.status === "failed"
-          ? "failed"
+        ? "status" in item && (item.status === "failed" || item.status === "declined")
+          ? item.status
           : "completed"
         : undefined;
 
