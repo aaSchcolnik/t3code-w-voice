@@ -13,6 +13,7 @@ import {
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
+  ActiveTerminalCommand,
   GetProjectionThreadMessageInput,
   ProjectionThreadMessageRepository,
   type ProjectionThreadMessageRepositoryShape,
@@ -27,6 +28,11 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
     systemEvent: Schema.NullOr(Schema.fromJsonString(OrchestrationSystemEvent)),
     terminalCommand: Schema.NullOr(Schema.fromJsonString(TerminalCommandRecord)),
+  }),
+);
+const ActiveTerminalCommandDbRowSchema = ActiveTerminalCommand.mapFields(
+  Struct.assign({
+    terminalCommand: Schema.fromJsonString(TerminalCommandRecord),
   }),
 );
 
@@ -179,6 +185,22 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
       `,
   });
 
+  const listActiveTerminalCommandRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ActiveTerminalCommandDbRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          message_id AS "messageId",
+          thread_id AS "threadId",
+          terminal_command_json AS "terminalCommand"
+        FROM projection_thread_messages
+        WHERE terminal_command_json IS NOT NULL
+          AND json_extract(terminal_command_json, '$.status') IN ('queued', 'running')
+        ORDER BY created_at ASC, message_id ASC
+      `,
+  });
+
   const deleteProjectionThreadMessageRows = SqlSchema.void({
     Request: DeleteProjectionThreadMessagesInput,
     execute: ({ threadId }) =>
@@ -209,6 +231,16 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
       Effect.map((rows) => rows.map(toProjectionThreadMessage)),
     );
 
+  const listActiveTerminalCommands: ProjectionThreadMessageRepositoryShape["listActiveTerminalCommands"] =
+    () =>
+      listActiveTerminalCommandRows().pipe(
+        Effect.mapError(
+          toPersistenceSqlError(
+            "ProjectionThreadMessageRepository.listActiveTerminalCommands:query",
+          ),
+        ),
+      );
+
   const deleteByThreadId: ProjectionThreadMessageRepositoryShape["deleteByThreadId"] = (input) =>
     deleteProjectionThreadMessageRows(input).pipe(
       Effect.mapError(
@@ -220,6 +252,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
     upsert,
     getByMessageId,
     listByThreadId,
+    listActiveTerminalCommands,
     deleteByThreadId,
   } satisfies ProjectionThreadMessageRepositoryShape;
 });

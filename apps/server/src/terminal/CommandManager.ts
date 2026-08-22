@@ -39,6 +39,7 @@ import { resolveThreadWorkspaceCwd } from "../checkpointing/Utils.ts";
 import * as ServerConfig from "../config.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectionThreadMessageRepository } from "../persistence/Services/ProjectionThreadMessages.ts";
 import { TerminalCommandProcess, type TerminalCommandProcessHandle } from "./CommandProcess.ts";
 import { TerminalReplaySanitizer } from "./outputSanitizer.ts";
 
@@ -150,6 +151,7 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const orchestration = yield* OrchestrationEngineService;
   const projection = yield* ProjectionSnapshotQuery;
+  const projectionThreadMessages = yield* ProjectionThreadMessageRepository;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
   const logsDir = path.join(config.terminalLogsDir, "commands");
@@ -690,36 +692,34 @@ const make = Effect.gen(function* () {
 
   // A process cannot be trusted across a server restart. Durable active rows
   // are finalized as interrupted; stored PIDs are intentionally never used.
-  const snapshot = yield* projection.getSnapshot().pipe(Effect.catch(() => Effect.succeed(null)));
-  if (snapshot) {
-    for (const thread of snapshot.threads) {
-      for (const message of thread.messages) {
-        const record = message.terminalCommand;
-        if (!record || !terminalCommandIsActive(record)) continue;
-        const createdAt = yield* nowIso;
-        const partialOutput = yield* fileSystem
-          .readFileString(executionLogPath(thread.id, record.executionId))
-          .pipe(Effect.orElseSucceed(() => record.excerpt));
-        const partialExcerpt = timelineExcerpt(partialOutput);
-        yield* orchestration
-          .dispatch({
-            type: "thread.terminal-command.upsert",
-            commandId: yield* commandId("startup-interrupted"),
-            threadId: thread.id,
-            messageId: message.id,
-            terminalCommand: {
-              ...record,
-              status: "interrupted",
-              excerpt: partialExcerpt.excerpt,
-              truncated: record.truncated || partialExcerpt.truncated,
-              logBytes: Math.max(record.logBytes, Buffer.byteLength(partialOutput)),
-              completedAt: createdAt,
-            },
-            createdAt,
-          })
-          .pipe(Effect.ignore);
-      }
-    }
+  const activeTerminalCommands = yield* projectionThreadMessages
+    .listActiveTerminalCommands()
+    .pipe(Effect.orElseSucceed(() => []));
+  for (const message of activeTerminalCommands) {
+    const record = message.terminalCommand;
+    if (!record || !terminalCommandIsActive(record)) continue;
+    const createdAt = yield* nowIso;
+    const partialOutput = yield* fileSystem
+      .readFileString(executionLogPath(message.threadId, record.executionId))
+      .pipe(Effect.orElseSucceed(() => record.excerpt));
+    const partialExcerpt = timelineExcerpt(partialOutput);
+    yield* orchestration
+      .dispatch({
+        type: "thread.terminal-command.upsert",
+        commandId: yield* commandId("startup-interrupted"),
+        threadId: message.threadId,
+        messageId: message.messageId,
+        terminalCommand: {
+          ...record,
+          status: "interrupted",
+          excerpt: partialExcerpt.excerpt,
+          truncated: record.truncated || partialExcerpt.truncated,
+          logBytes: Math.max(record.logBytes, Buffer.byteLength(partialOutput)),
+          completedAt: createdAt,
+        },
+        createdAt,
+      })
+      .pipe(Effect.ignore);
   }
 
   yield* Effect.addFinalizer(() =>

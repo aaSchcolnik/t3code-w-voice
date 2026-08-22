@@ -38,6 +38,13 @@ export const ProjectionThreadMessage = Schema.Struct({
 });
 export type ProjectionThreadMessage = typeof ProjectionThreadMessage.Type;
 
+export const ActiveTerminalCommand = Schema.Struct({
+  messageId: MessageId,
+  threadId: ThreadId,
+  terminalCommand: TerminalCommandRecord,
+});
+export type ActiveTerminalCommand = typeof ActiveTerminalCommand.Type;
+
 export const ListProjectionThreadMessagesInput = Schema.Struct({
   threadId: ThreadId,
 });
@@ -81,6 +88,14 @@ export interface ProjectionThreadMessageRepositoryShape {
   readonly listByThreadId: (
     input: ListProjectionThreadMessagesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadMessage>, ProjectionRepositoryError>;
+
+  /**
+   * List terminal commands whose process state cannot survive a server restart.
+   */
+  readonly listActiveTerminalCommands: () => Effect.Effect<
+    ReadonlyArray<ActiveTerminalCommand>,
+    ProjectionRepositoryError
+  >;
 
   /**
    * Delete projected thread messages by thread.

@@ -2,6 +2,7 @@ import { MessageId, ThreadId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { ProjectionThreadMessageRepository } from "../Services/ProjectionThreadMessages.ts";
 import { ProjectionThreadMessageRepositoryLive } from "./ProjectionThreadMessages.ts";
@@ -64,6 +65,84 @@ layer("ProjectionThreadMessageRepository", (it) => {
       const rows = yield* repository.listByThreadId({ threadId });
       assert.equal(rows[0]?.terminalCommand?.status, "completed");
       assert.equal(rows[0]?.terminalCommand?.excerpt, "ok");
+    }),
+  );
+
+  it.effect("lists only active terminal commands without loading thread history", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-active-terminal-commands");
+      const createdAt = "2026-08-20T00:00:00.000Z";
+      yield* sql`
+        WITH RECURSIVE history(value) AS (
+          SELECT 1
+          UNION ALL
+          SELECT value + 1 FROM history WHERE value < 10000
+        )
+        INSERT INTO projection_thread_messages (
+          message_id,
+          thread_id,
+          turn_id,
+          role,
+          text,
+          attachments_json,
+          system_event_json,
+          terminal_command_json,
+          is_streaming,
+          created_at,
+          updated_at
+        )
+        SELECT
+          'history-' || value,
+          ${threadId},
+          NULL,
+          'assistant',
+          'historical message',
+          NULL,
+          NULL,
+          NULL,
+          0,
+          ${createdAt},
+          ${createdAt}
+        FROM history
+      `;
+      const baseRecord = {
+        command: "npm test",
+        cwd: "/repo",
+        exitCode: null,
+        durationMs: 0,
+        excerpt: "",
+        truncated: false,
+        logBytes: 0,
+        startedAt: null,
+        completedAt: null,
+        consumedAt: null,
+        stale: false,
+      };
+      for (const [executionId, status] of [
+        ["exec-queued", "queued"],
+        ["exec-running", "running"],
+        ["exec-completed", "completed"],
+      ] as const) {
+        yield* repository.upsert({
+          messageId: MessageId.make(`message-${executionId}`),
+          threadId,
+          turnId: null,
+          role: "system",
+          text: `$ ${baseRecord.command}`,
+          terminalCommand: { ...baseRecord, executionId, status },
+          isStreaming: status !== "completed",
+          createdAt,
+          updatedAt: createdAt,
+        });
+      }
+
+      const active = yield* repository.listActiveTerminalCommands();
+      assert.deepEqual(
+        active.map((message) => message.terminalCommand?.executionId),
+        ["exec-queued", "exec-running"],
+      );
     }),
   );
 
