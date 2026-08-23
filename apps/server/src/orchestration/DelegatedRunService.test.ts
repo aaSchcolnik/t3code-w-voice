@@ -151,6 +151,7 @@ const makeStubbedProviderService = (
     respondToRequest: onRespondToRequest,
     respondToUserInput: () => Effect.die("unused"),
     rollbackConversation: () => Effect.die("unused"),
+    uploadFeedback: () => Effect.die("unused"),
     streamEvents,
   });
 
@@ -586,6 +587,7 @@ it.effect("starts, projects, and cancels a delegated run", () => {
     respondToRequest: () => Effect.die("unused"),
     respondToUserInput: () => Effect.die("unused"),
     rollbackConversation: () => Effect.die("unused"),
+    uploadFeedback: () => Effect.die("unused"),
     streamEvents: Stream.empty,
   });
   const engine = OrchestrationEngineService.of({

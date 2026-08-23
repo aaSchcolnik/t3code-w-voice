@@ -51,6 +51,7 @@ const makeProviderServiceStub = (events: Stream.Stream<ProviderRuntimeEvent>) =>
     respondToRequest: () => Effect.die("unused"),
     respondToUserInput: () => Effect.die("unused"),
     rollbackConversation: () => Effect.die("unused"),
+    uploadFeedback: () => Effect.die("unused"),
     streamEvents: events,
   });
 
