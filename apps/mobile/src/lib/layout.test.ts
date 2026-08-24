@@ -8,6 +8,7 @@ import {
   deriveLayout,
   deriveStableFormSheetDetent,
   deriveUsageCardColumnCount,
+  deriveThreadFeedInitialContentInset,
   deriveWorkspacePaneLayout,
   SPLIT_LAYOUT_MIN_HEIGHT,
   SPLIT_LAYOUT_MIN_WIDTH,
@@ -21,6 +22,28 @@ describe("deriveUsageCardColumnCount", () => {
     expect(deriveUsageCardColumnCount(USAGE_CARD_MIN_COLUMN_WIDTH * 2)).toBe(2);
     expect(deriveUsageCardColumnCount(1_024)).toBe(2);
     expect(deriveUsageCardColumnCount(Number.NaN)).toBe(1);
+  });
+});
+
+describe("deriveThreadFeedInitialContentInset", () => {
+  it("seeds Android scroll math with the composer overlay estimate", () => {
+    expect(
+      deriveThreadFeedInitialContentInset({
+        platform: "android",
+        usesNativeAutomaticInsets: false,
+        bottomContentInset: 174,
+      }),
+    ).toEqual({ bottom: 174 });
+  });
+
+  it("does not double native iOS insets", () => {
+    expect(
+      deriveThreadFeedInitialContentInset({
+        platform: "ios",
+        usesNativeAutomaticInsets: true,
+        bottomContentInset: 174,
+      }),
+    ).toBeUndefined();
   });
 });
 

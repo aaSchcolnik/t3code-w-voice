@@ -78,6 +78,16 @@ import {
   type ComposerTasksProgress,
 } from "./ComposerTasksBadge";
 import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
+import {
+  releaseAttachmentUpload,
+  retryAttachmentUpload,
+  startAttachmentUpload,
+  useAttachmentUploadStore,
+} from "../../lib/attachmentUploadQueue";
+import {
+  attachmentUploadBlockReason,
+  formatAttachmentUploadProgress,
+} from "../../lib/attachmentUploadState";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import { resolveShortcutCommand } from "../../keybindings";
@@ -251,6 +261,7 @@ import {
   LockIcon,
   LockOpenIcon,
   PenLineIcon,
+  RotateCcwIcon,
   ScanSearchIcon,
   SparklesIcon,
   XIcon,
@@ -272,7 +283,11 @@ import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
-import { formatProviderSkillDisplayName } from "@t3tools/client-runtime/providerSkills";
+import {
+  formatProviderSkillDisplayName,
+  getProviderSlashCommandsForSlashMenu,
+  getProviderSkillsForSlashMenu,
+} from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
@@ -550,6 +565,8 @@ export interface ChatComposerHandle {
 export interface ChatComposerProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   environmentId: EnvironmentId;
+  attachmentUploadsCapabilityKnown: boolean;
+  supportsAttachmentUploads: boolean;
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
@@ -673,6 +690,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const {
     composerDraftTarget,
     environmentId,
+    attachmentUploadsCapabilityKnown,
+    supportsAttachmentUploads,
     routeKind,
     routeThreadRef,
     draftId,
@@ -686,7 +705,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     phase,
     isConnecting,
     isSendBusy,
-    sendDisabledReason,
+    sendDisabledReason: externalSendDisabledReason,
     isPreparingWorktree,
     environmentUnavailable,
     activePendingApproval,
@@ -752,8 +771,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerPreviewAnnotations = composerDraft.previewAnnotations;
   const composerReviewComments = composerDraft.reviewComments;
   const isTerminalMode = isTerminalCommandDraft(prompt);
-  const isSendDisabled = sendDisabledReason !== null && !isTerminalMode;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
+  const uploadsByImageId = useAttachmentUploadStore((state) => state.uploadsByImageId);
+  const attachmentBlockReason = supportsAttachmentUploads
+    ? attachmentUploadBlockReason({
+        imageIds: composerImages.map((image) => image.id),
+        uploadsByImageId,
+        environmentId,
+      })
+    : null;
+  const sendDisabledReason =
+    externalSendDisabledReason ?? (activePendingProgress ? null : attachmentBlockReason);
+  const isSendDisabled = sendDisabledReason !== null && !isTerminalMode;
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
@@ -787,6 +816,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (store) => store.syncPersistedAttachments,
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+
+  useEffect(() => {
+    if (!attachmentUploadsCapabilityKnown) {
+      return;
+    }
+    if (!supportsAttachmentUploads) {
+      for (const image of composerImages) {
+        releaseAttachmentUpload(image.id);
+      }
+      return;
+    }
+    for (const image of composerImages) {
+      startAttachmentUpload({ environmentId, image });
+    }
+  }, [attachmentUploadsCapabilityKnown, composerImages, environmentId, supportsAttachmentUploads]);
 
   // ------------------------------------------------------------------
   // Model state
@@ -1149,30 +1193,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             ] as const)
           : []),
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
-      const providerSlashCommandItems = (selectedProviderStatus?.slashCommands ?? []).map(
-        (command) => ({
-          id: `provider-slash-command:${selectedProvider}:${command.name}`,
-          type: "provider-slash-command" as const,
-          provider: selectedProvider,
-          command,
-          label: `/${command.name}`,
-          description: command.description ?? command.input?.hint ?? "Run provider command",
-        }),
+      const slashMenuSkills = getProviderSkillsForSlashMenu(
+        selectedProviderStatus?.skills ?? [],
+        settings.showSkillsInSlashMenu,
       );
+      const providerSlashCommandItems = getProviderSlashCommandsForSlashMenu(
+        selectedProviderStatus?.slashCommands ?? [],
+        slashMenuSkills,
+      ).map((command) => ({
+        id: `provider-slash-command:${selectedProvider}:${command.name}`,
+        type: "provider-slash-command" as const,
+        provider: selectedProvider,
+        command,
+        label: `/${command.name}`,
+        description: command.description ?? command.input?.hint ?? "Run provider command",
+      }));
       const query = composerTrigger.query.trim().toLowerCase();
-      const skillItems = (selectedProviderStatus?.skills ?? [])
-        .filter((skill) => skill.enabled)
-        .map((skill) => ({
-          id: `skill:${selectedProvider}:${skill.name}`,
-          type: "skill" as const,
-          provider: selectedProvider,
-          skill,
-          label: `skill:${skill.name}`,
-          description:
-            skill.shortDescription ??
-            skill.description ??
-            (skill.scope ? `${skill.scope} skill` : ""),
-        }));
+      const skillItems = slashMenuSkills.map((skill) => ({
+        id: `skill:${selectedProvider}:${skill.name}`,
+        type: "skill" as const,
+        provider: selectedProvider,
+        skill,
+        label: `/skill:${skill.name}`,
+        description:
+          skill.shortDescription ??
+          skill.description ??
+          (skill.scope ? `${skill.scope} skill` : ""),
+      }));
       const slashCommandItems = [
         ...builtInSlashCommandItems,
         ...providerSlashCommandItems,
@@ -1201,6 +1248,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeUiEnabled,
     selectedProvider,
     selectedProviderStatus,
+    settings.showSkillsInSlashMenu,
     workspaceEntries.entries,
   ]);
 
@@ -1371,6 +1419,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const removeComposerImageFromDraft = useCallback(
     (imageId: string) => {
+      releaseAttachmentUpload(imageId);
       removeComposerDraftImage(composerDraftTarget, imageId);
     },
     [composerDraftTarget, removeComposerDraftImage],
@@ -2503,6 +2552,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // destroying them here would be unrecoverable.
       promptRef.current = "";
       clearComposerDraftPromptAndImages(stashTarget);
+      for (const image of images) {
+        releaseAttachmentUpload(image.id);
+      }
       setComposerCursor(0);
       setComposerTrigger(null);
       pulseStashBadge();
@@ -3184,6 +3236,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   <ComposerPendingApprovalActions
                     requestId={activePendingApproval.requestId}
                     isResponding={respondingRequestIds.includes(activePendingApproval.requestId)}
+                    options={activePendingApproval.options}
                     onRespondToApproval={onRespondToApproval}
                   />
                 </div>
@@ -3213,6 +3266,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   <ComposerPendingApprovalActions
                     requestId={activePendingApproval.requestId}
                     isResponding={respondingRequestIds.includes(activePendingApproval.requestId)}
+                    options={activePendingApproval.options}
                     onRespondToApproval={onRespondToApproval}
                   />
                 </div>
@@ -3427,9 +3481,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <ComposerPreviewAnnotationCards
                       annotations={composerPreviewAnnotations}
                       images={composerImages}
-                      onRemove={(annotationId) =>
-                        removeComposerDraftPreviewAnnotation(composerDraftTarget, annotationId)
-                      }
+                      {...(supportsAttachmentUploads
+                        ? {
+                            uploadsByImageId,
+                            onRetryUpload: (image: ComposerImageAttachment) =>
+                              retryAttachmentUpload({ environmentId, image }),
+                          }
+                        : {})}
+                      onRemove={(annotationId) => {
+                        releaseAttachmentUpload(annotationId);
+                        removeComposerDraftPreviewAnnotation(composerDraftTarget, annotationId);
+                      }}
                       onExpandImage={(imageId) => {
                         const preview = buildExpandedImagePreview(composerImages, imageId);
                         if (preview) onExpandImage(preview);
@@ -3479,69 +3541,104 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               (annotation) => annotation.id === image.id,
                             ),
                         )
-                        .map((image) => (
-                          <div
-                            key={image.id}
-                            className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/80 bg-background"
-                          >
-                            {image.previewUrl ? (
-                              <button
-                                type="button"
-                                className="h-full w-full cursor-zoom-in"
-                                aria-label={`Preview ${image.name}`}
-                                onClick={() => {
-                                  const preview = buildExpandedImagePreview(
-                                    composerImages,
-                                    image.id,
-                                  );
-                                  if (!preview) return;
-                                  onExpandImage(preview);
-                                }}
-                              >
-                                <img
-                                  src={image.previewUrl}
-                                  alt={image.name}
-                                  className="h-full w-full object-cover"
-                                />
-                              </button>
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] text-secondary-label">
-                                {image.name}
-                              </div>
-                            )}
-                            {nonPersistedComposerImageIdSet.has(image.id) && (
-                              <Tooltip>
-                                <TooltipTrigger
-                                  render={
-                                    <span
-                                      role="img"
-                                      aria-label="Draft attachment may not persist"
-                                      className="absolute left-1 top-1 inline-flex items-center justify-center rounded bg-background/85 p-0.5 text-amber-600"
-                                    >
-                                      <CircleAlertIcon className="size-3" />
-                                    </span>
-                                  }
-                                />
-                                <TooltipPopup
-                                  side="top"
-                                  className="max-w-64 whitespace-normal leading-tight"
-                                >
-                                  Draft attachment could not be saved locally and may be lost on
-                                  navigation.
-                                </TooltipPopup>
-                              </Tooltip>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              className="absolute right-1 top-1 bg-background/80 hover:bg-background/90"
-                              onClick={() => removeComposerImage(image.id)}
-                              aria-label={`Remove ${image.name}`}
+                        .map((image) => {
+                          const upload = supportsAttachmentUploads
+                            ? uploadsByImageId[image.id]
+                            : undefined;
+                          return (
+                            <div
+                              key={image.id}
+                              className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/80 bg-background"
                             >
-                              <XIcon />
-                            </Button>
-                          </div>
-                        ))}
+                              {image.previewUrl ? (
+                                <button
+                                  type="button"
+                                  className="h-full w-full cursor-zoom-in"
+                                  aria-label={`Preview ${image.name}`}
+                                  onClick={() => {
+                                    const preview = buildExpandedImagePreview(
+                                      composerImages,
+                                      image.id,
+                                    );
+                                    if (!preview) return;
+                                    onExpandImage(preview);
+                                  }}
+                                >
+                                  <img
+                                    src={image.previewUrl}
+                                    alt={image.name}
+                                    className="h-full w-full object-cover"
+                                  />
+                                </button>
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] text-secondary-label">
+                                  {image.name}
+                                </div>
+                              )}
+                              {nonPersistedComposerImageIdSet.has(image.id) && (
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <span
+                                        role="img"
+                                        aria-label="Draft attachment may not persist"
+                                        className="absolute left-1 top-1 inline-flex items-center justify-center rounded bg-background/85 p-0.5 text-amber-600"
+                                      >
+                                        <CircleAlertIcon className="size-3" />
+                                      </span>
+                                    }
+                                  />
+                                  <TooltipPopup
+                                    side="top"
+                                    className="max-w-64 whitespace-normal leading-tight"
+                                  >
+                                    Draft attachment could not be saved locally and may be lost on
+                                    navigation.
+                                  </TooltipPopup>
+                                </Tooltip>
+                              )}
+                              {upload?.status === "uploading" && (
+                                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/85 px-1 text-center text-[10px] text-foreground">
+                                  {formatAttachmentUploadProgress(upload.progress)}
+                                </span>
+                              )}
+                              {upload?.status === "failed" && (
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <Button
+                                        variant="ghost"
+                                        size="icon-xs"
+                                        className="absolute bottom-1 left-1 bg-background/85 hover:bg-background/95"
+                                        onClick={() =>
+                                          retryAttachmentUpload({ environmentId, image })
+                                        }
+                                        aria-label={`Retry upload for ${image.name}`}
+                                      />
+                                    }
+                                  >
+                                    <RotateCcwIcon />
+                                  </TooltipTrigger>
+                                  <TooltipPopup
+                                    side="top"
+                                    className="max-w-64 whitespace-normal leading-tight"
+                                  >
+                                    {upload.reason}
+                                  </TooltipPopup>
+                                </Tooltip>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                className="absolute right-1 top-1 bg-background/80 hover:bg-background/90"
+                                onClick={() => removeComposerImage(image.id)}
+                                aria-label={`Remove ${image.name}`}
+                              >
+                                <XIcon />
+                              </Button>
+                            </div>
+                          );
+                        })}
                     </div>
                   )}
 
