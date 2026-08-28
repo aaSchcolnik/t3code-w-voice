@@ -198,6 +198,7 @@ describe("CodexSessionRuntime collab integration", () => {
         cwd: "/tmp",
         runtimeMode: "full-access",
         environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+        buildMcpSessionInstructions: () => Effect.succeed(undefined),
       });
       const metadataFiber = yield* runtime.events.pipe(
         Stream.filter(
@@ -290,6 +291,7 @@ describe("CodexSessionRuntime collab integration", () => {
         cwd: "/tmp",
         runtimeMode: "full-access",
         environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+        buildMcpSessionInstructions: () => Effect.succeed(undefined),
       });
       const eventsFiber = yield* runtime.events.pipe(
         Stream.takeUntil(
@@ -369,6 +371,7 @@ describe("CodexSessionRuntime collab integration", () => {
             cwd: "/tmp",
             runtimeMode: "full-access",
             environment: { ...process.env, T3_CODEX_COLLAB_SCRIPT: scriptPath },
+            buildMcpSessionInstructions: () => Effect.succeed(undefined),
           });
           const eventsFiber = yield* runtime.events.pipe(
             Stream.takeUntil(
