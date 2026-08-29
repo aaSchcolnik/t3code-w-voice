@@ -10,7 +10,7 @@ import { AppText as Text } from "../../../components/AppText";
 import { SymbolView } from "../../../components/AppSymbol";
 import { ProviderIcon } from "../../../components/ProviderIcon";
 import { cn } from "../../../lib/cn";
-import { useThemeColor } from "../../../lib/useThemeColor";
+import { useUniwindTheme } from "../../../lib/useUniwindTheme";
 import { UsageMeter } from "./UsageMeter";
 
 function UsageValueMetric(props: { readonly metric: SubscriptionUsageValueMetric }) {
@@ -31,8 +31,9 @@ export function UsageProviderCard(props: {
   readonly card: SubscriptionUsageCard;
   readonly nowMs: number;
 }) {
-  const dangerColor = useThemeColor("--color-danger-foreground");
-  const mutedIconColor = useThemeColor("--color-icon-subtle");
+  const theme = useUniwindTheme();
+  const dangerColor = theme["--color-danger-foreground"];
+  const mutedIconColor = theme["--color-icon-subtle"];
   const source = describeUsageSource(props.card.sourceStability);
 
   return (
@@ -79,9 +80,7 @@ export function UsageProviderCard(props: {
             className="shrink-0 flex-row items-center gap-1 rounded-lg bg-amber-500/10 px-2 py-1"
           >
             <SymbolView name="clock" size={11} tintColor={mutedIconColor} type="monochrome" />
-            <Text className="text-3xs font-t3-medium text-amber-700 dark:text-amber-300">
-              Stale
-            </Text>
+            <Text className="text-3xs font-t3-medium text-foreground-muted">Stale</Text>
           </View>
         ) : null}
       </View>

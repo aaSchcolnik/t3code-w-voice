@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { SymbolView } from "../../components/AppSymbol";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import {
   resolveVoiceModelSelection,
@@ -260,8 +260,9 @@ function ChoiceRow(props: {
   readonly subtitle: string;
   readonly onPress: () => void;
 }) {
-  const iconColor = useThemeColor("--color-icon");
-  const primary = useThemeColor("--color-primary");
+  const theme = useUniwindTheme();
+  const iconColor = theme["--color-icon"];
+  const primary = theme["--color-primary"];
   return (
     <Pressable
       accessibilityLabel={props.title}

@@ -18,6 +18,7 @@ describe("buildOpenCodePermissionRules", () => {
 
     expect(buildOpenCodePermissionRules("full-access", settings)).toEqual([
       { permission: "*", pattern: "*", action: "allow" },
+      { permission: "external_directory", pattern: "*", action: "allow" },
       { permission: "skill", pattern: "imagegen", action: "deny" },
       { permission: "skill", pattern: "shadcn", action: "deny" },
     ]);

@@ -1,7 +1,7 @@
 import { Path, Svg } from "react-native-svg";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
-import { useThemeColor } from "../lib/useThemeColor";
+import { useUniwindTheme } from "../lib/useUniwindTheme";
 
 type ProviderIconProps = {
   readonly provider: string | null | undefined;
@@ -10,8 +10,9 @@ type ProviderIconProps = {
 
 export function ProviderIcon(props: ProviderIconProps) {
   const { themeAppearance } = useAppearancePreferences();
+  const theme = useUniwindTheme();
   const isDarkMode = themeAppearance === "dark";
-  const foregroundColor = useThemeColor("--color-foreground");
+  const foregroundColor = theme["--color-foreground"];
   const size = props.size ?? 16;
 
   if (props.provider === "claudeAgent" || props.provider === "claude") {
