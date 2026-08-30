@@ -2041,6 +2041,18 @@ html.standalone-viewport-shift [data-slot="sidebar-container"] {
   position: absolute;
 }
 
+/* Fixed surfaces ignore #root's safe-area padding, so wherever the page
+   renders edge-to-edge against overlaid system chrome (iPadOS home-screen web
+   apps, Safari's floating toolbars), the sidebar's top row lands under it.
+   Drop its top edge to the reported inset instead; height goes auto so the
+   top+bottom pair keeps the background flush to the real bottom edge. Skipped
+   while the standalone shift owns alignment: WebKit then still reports an
+   inset it failed to apply, and double-applying it would overshoot. */
+html:not(.standalone-viewport-shift) [data-slot="sidebar-container"] {
+  top: max(env(safe-area-inset-top), 0px);
+  height: auto;
+}
+
 .electron-windows {
   --desktop-window-right-resize-inset: 6px;
 }
