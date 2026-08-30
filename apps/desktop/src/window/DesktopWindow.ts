@@ -824,10 +824,14 @@ export const make = Effect.gen(function* () {
       );
     });
 
-    const revealSubscribers: RevealSubscription[] = [(fire) => window.once("ready-to-show", fire)];
-    if (environment.platform === "linux") {
-      revealSubscribers.push((fire) => window.webContents.once("did-finish-load", fire));
-    }
+    const revealSubscribers: RevealSubscription[] = [
+      (fire) => window.once("ready-to-show", fire),
+      // A packaged macOS window can finish loading without emitting
+      // `ready-to-show`, which otherwise leaves the BrowserWindow alive but
+      // permanently hidden. The first-trigger guard keeps this fallback from
+      // revealing twice on platforms where both events fire normally.
+      (fire) => window.webContents.once("did-finish-load", fire),
+    ];
     bindFirstRevealTrigger(revealSubscribers, () => {
       // Boot is done; hand the window back to normal hidden-window throttling
       // (see the backgroundThrottling comment on the create options above).

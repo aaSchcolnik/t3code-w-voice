@@ -67,6 +67,7 @@ const environmentInput = {
 function makeFakeBrowserWindow() {
   const windowListeners = new Map<string, (...args: readonly unknown[]) => void>();
   const webContentsListeners = new Map<string, (...args: readonly unknown[]) => void>();
+  const webContentsOnceListeners = new Map<string, (...args: readonly unknown[]) => void>();
   let zoomLevel = 0;
   const webContents = {
     copyImageAt: vi.fn(),
@@ -79,7 +80,9 @@ function makeFakeBrowserWindow() {
     on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
       webContentsListeners.set(eventName, listener);
     }),
-    once: vi.fn(),
+    once: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
+      webContentsOnceListeners.set(eventName, listener);
+    }),
     openDevTools: vi.fn(),
     reload: vi.fn(),
     replaceMisspelling: vi.fn(),
@@ -135,6 +138,7 @@ function makeFakeBrowserWindow() {
     setZoomLevel: webContents.setZoomLevel,
     setBackgroundThrottling: webContents.setBackgroundThrottling,
     setAutoHideCursor: window.setAutoHideCursor,
+    webContentsOnceListeners,
     webContentsListeners,
     windowListeners,
   };
@@ -608,6 +612,38 @@ describe("DesktopWindow", () => {
         if (!readyToShow) {
           return yield* Effect.die("window ready-to-show listener was not registered");
         }
+        readyToShow();
+        assert.equal(fakeWindow.maximize.mock.calls.length, 1);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("reveals only once when the renderer finishes before ready-to-show", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+        desktopSettings: {
+          ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+          mainWindowMaximized: true,
+        },
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const didFinishLoad = fakeWindow.webContentsOnceListeners.get("did-finish-load");
+        const readyToShow = fakeWindow.windowListeners.get("ready-to-show");
+        if (!didFinishLoad || !readyToShow) {
+          return yield* Effect.die("window reveal listeners were not registered");
+        }
+
+        didFinishLoad();
         readyToShow();
         assert.equal(fakeWindow.maximize.mock.calls.length, 1);
       }).pipe(Effect.provide(layer));
