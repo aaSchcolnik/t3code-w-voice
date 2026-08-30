@@ -1343,7 +1343,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     aria-label="Wake thread now"
                     onClick={handleUnsnoozeClick}
                     className={cn(
-                      "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
+                      "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:static focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:static group-hover/sidebar-row:opacity-100 any-pointer-coarse:pointer-events-auto any-pointer-coarse:static any-pointer-coarse:opacity-100",
                       isWoke && "group-hover/sidebar-row:static",
                     )}
                   >
@@ -1359,7 +1359,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         aria-label="Un-settle thread"
                         onClick={handleUnsettleClick}
                         className={cn(
-                          "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
+                          "pointer-events-none absolute inset-y-0 right-0 -mr-1 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:static focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:static group-hover/sidebar-row:opacity-100 any-pointer-coarse:pointer-events-auto any-pointer-coarse:static any-pointer-coarse:opacity-100",
                           isWoke && "group-hover/sidebar-row:static",
                         )}
                       />
@@ -1375,7 +1375,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   aria-label="Settle thread"
                   onClick={handleSettleClick}
                   className={cn(
-                    "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:opacity-100",
+                    "pointer-events-none absolute inset-y-0 right-0 inline-flex cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 text-xs text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:pointer-events-auto focus-visible:static focus-visible:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:static group-hover/sidebar-row:opacity-100 any-pointer-coarse:pointer-events-auto any-pointer-coarse:static any-pointer-coarse:opacity-100",
                     isWoke && "group-hover/sidebar-row:static",
                   )}
                 >
@@ -1522,7 +1522,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       // would keep the controls pinned over the status label
                       // once the pointer moves away (e.g. after a failed
                       // settle) instead of cross-fading back.
-                      "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:static group-hover/sidebar-row:opacity-100",
+                      "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-hover/sidebar-row:pointer-events-auto group-hover/sidebar-row:static group-hover/sidebar-row:opacity-100 any-pointer-coarse:pointer-events-auto any-pointer-coarse:static any-pointer-coarse:opacity-100",
                       snoozeMenuOpen && "pointer-events-auto static opacity-100",
                     )}
                   >

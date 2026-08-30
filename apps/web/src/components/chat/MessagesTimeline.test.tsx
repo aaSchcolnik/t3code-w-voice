@@ -1052,6 +1052,20 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('data-user-message-footer="true"');
   });
 
+  it("keeps message action rows visible on touch where hover never fires", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          buildUserTimelineEntry(buildLongUserMessageText()),
+          buildAssistantTimelineEntry("Done."),
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("any-pointer-coarse:opacity-100");
+  });
+
   it("renders context compaction entries in the normal work log", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
