@@ -1,4 +1,5 @@
 import * as Equal from "effect/Equal";
+import { renderCodexDirectivesForCopy } from "@t3tools/client-runtime/codex-markdown-directives";
 import {
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
@@ -270,7 +271,7 @@ export function computeMessageDurationStart(
   return result;
 }
 
-type ToolGroupAction = "read" | "edit" | "command" | "code-search" | "search" | "other";
+type ToolGroupAction = "read" | "edit" | "command" | "code-search" | "search" | "other" | "update";
 type ToolGroupSummaryKind = ToolGroupAction | "dynamic-tool" | "agent-tool" | "tone-tool" | "mixed";
 
 export function workLogEntryIsLocalCodeSearch(entry: WorkLogEntry): boolean {
@@ -300,7 +301,7 @@ export function toolGroupAction(entry: WorkLogEntry): ToolGroupAction {
   }
   if (workLogEntryIsLocalCodeSearch(entry)) return "code-search";
   if (entry.itemType === "web_search") return "search";
-  return "other";
+  return workLogEntryIsToolLike(entry) ? "other" : "update";
 }
 
 function toolGroupActionCount(
@@ -335,6 +336,8 @@ function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
       return `Searched code ${count} ${count === 1 ? "time" : "times"}`;
     case "other":
       return `Used ${count} ${count === 1 ? "tool" : "tools"}`;
+    case "update":
+      return `Received ${count} ${count === 1 ? "update" : "updates"}`;
   }
 }
 
@@ -435,9 +438,10 @@ export function resolveAssistantMessageCopyState({
   streaming: boolean;
 }) {
   const hasText = text !== null && text.trim().length > 0;
+  const visible = showCopyButton && hasText && !streaming;
   return {
-    text: hasText ? text : null,
-    visible: showCopyButton && hasText && !streaming,
+    text: hasText ? (visible ? renderCodexDirectivesForCopy(text) : text) : null,
+    visible,
   };
 }
 
@@ -504,9 +508,6 @@ function timelineEntryTurnId(entry: TimelineEntry): TurnId | null {
   if (entry.kind === "message") {
     return entry.message.role === "assistant" ? (entry.message.turnId ?? null) : null;
   }
-  if (entry.kind === "turn-plan") {
-    return entry.turnPlan.turnId;
-  }
   if (entry.kind === "proposed-plan") {
     return entry.proposedPlan.turnId;
   }
@@ -514,10 +515,9 @@ function timelineEntryTurnId(entry: TimelineEntry): TurnId | null {
 }
 
 /**
- * Settled turns keep their first and terminal assistant messages visible.
- * Everything between them folds behind a "Worked for ..." row anchored at
- * the first hidden entry. Keeping both ends prevents a short follow-up from
- * hiding a substantive opening response while still bounding noisy turns.
+ * Settled turns keep only their terminal assistant message visible.
+ * Everything before it folds behind a "Worked for ..." row anchored at the
+ * first hidden entry, so the duration leads directly into the final response.
  */
 function deriveTurnFolds(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
@@ -595,8 +595,6 @@ export function deriveMessagesTimelineRows(input: {
     unsettledTurnId !== null &&
     entry.toolLifecycleStatus === "inProgress" &&
     entry.turnId === unsettledTurnId;
-  const isVisibleActiveToolEntry = (entry: WorkLogEntry) =>
-    workLogEntryIsToolLike(entry) && workEntryIsVisibleInGroup(entry, true);
   const activeEntries = input.isWorking
     ? input.timelineEntries.filter((entry, index) => entryBelongsToActiveTurn(entry, index))
     : [];
@@ -611,7 +609,7 @@ export function deriveMessagesTimelineRows(input: {
         entry.entry.toolLifecycleStatus === "inProgress"
       );
     }
-    if (entry.kind === "proposed-plan" || entry.kind === "turn-plan") return true;
+    if (entry.kind === "proposed-plan") return true;
     return false;
   });
 
@@ -622,8 +620,7 @@ export function deriveMessagesTimelineRows(input: {
       !entryBelongsToActiveTurn(entry, index) ||
       entry.kind !== "work" ||
       entry.entry.agentSpawn !== undefined ||
-      entry.entry.tone === "error" ||
-      !workLogEntryIsToolLike(entry.entry)
+      entry.entry.tone === "error"
     ) {
       break;
     }
@@ -631,7 +628,7 @@ export function deriveMessagesTimelineRows(input: {
   }
   const activeWorkEntryIds = new Set(activeToolEntries.map((entry) => entry.id));
   const visibleActiveToolEntries = omitSupersededLifecycleMarkers(
-    activeToolEntries.filter((entry) => isVisibleActiveToolEntry(entry.entry)),
+    activeToolEntries.filter((entry) => workEntryIsVisibleInGroup(entry.entry, true)),
     (entry) => entry.entry,
   );
   const activeWorkAnchor = activeToolEntries[0];
@@ -735,12 +732,12 @@ export function deriveMessagesTimelineRows(input: {
         (entry) => entry,
       );
       if (visibleGroupedEntries.length > 0) {
-        const onlyToolEntries = visibleGroupedEntries.every(
-          (entry) =>
-            workLogEntryIsToolLike(entry) &&
-            entry.agentSpawn === undefined &&
-            entry.tone !== "error",
-        );
+        const onlyToolEntries =
+          (workLogEntryIsToolLike(visibleGroupedEntries[0]!) ||
+            visibleGroupedEntries.some(workEntryDisplayIndicatesToolFailure)) &&
+          visibleGroupedEntries.every(
+            (entry) => entry.agentSpawn === undefined && entry.tone !== "error",
+          );
         const activeInProgressToolEntries = visibleGroupedEntries.filter(workEntryIsInActiveRun);
         if (onlyToolEntries && activeInProgressToolEntries.length > 0) {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
@@ -771,6 +768,7 @@ export function deriveMessagesTimelineRows(input: {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
           const summaryKind = toolGroupSummaryKind(visibleGroupedEntries);
+          const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
           nextRows.push({
             kind: "work-toggle",
             id: `work-toggle:${timelineEntry.id}`,
@@ -781,7 +779,9 @@ export function deriveMessagesTimelineRows(input: {
             onlyToolEntries: true,
             summary: summarizeToolGroup(visibleGroupedEntries),
             summaryKind,
-            hasFailure: workEntryDisplayIndicatesToolFailure(visibleGroupedEntries.at(-1)!),
+            hasFailure:
+              latestToolEntry !== undefined &&
+              workEntryDisplayIndicatesToolFailure(latestToolEntry),
           });
           if (expanded) {
             for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
@@ -807,19 +807,24 @@ export function deriveMessagesTimelineRows(input: {
         } else {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
-          // Agent-spawn CTA rows are always visible: a running fleet must
-          // never hide behind a "+N tool calls" toggle. Selection is by
-          // membership (spawn OR recent-tail), preserving the group's
-          // chronological order in both collapsed and expanded states
-          // (review finding: concatenating two filtered lists moved a
-          // mid-group spawn row above earlier tool rows).
-          const overflowCandidates = visibleGroupedEntries.filter(
-            (entry) => entry.agentSpawn === undefined,
+          const permanentVisibleEntries = visibleGroupedEntries.filter(
+            (entry) => entry.agentSpawn !== undefined || entry.tone === "error",
           );
-          const hiddenEntries = overflowCandidates.slice(0, -MAX_VISIBLE_WORK_LOG_ENTRIES);
+          const overflowCandidates = visibleGroupedEntries.filter(
+            (entry) => entry.agentSpawn === undefined && entry.tone !== "error",
+          );
+          const retainedCapacity = Math.max(
+            0,
+            MAX_VISIBLE_WORK_LOG_ENTRIES - permanentVisibleEntries.length,
+          );
+          const hiddenEntries =
+            retainedCapacity === 0
+              ? overflowCandidates
+              : overflowCandidates.slice(0, -retainedCapacity);
           const hiddenIds = new Set(hiddenEntries.map((entry) => entry.id));
           const visibleEntries = visibleGroupedEntries.filter(
-            (entry) => entry.agentSpawn !== undefined || !hiddenIds.has(entry.id),
+            (entry) =>
+              entry.agentSpawn !== undefined || entry.tone === "error" || !hiddenIds.has(entry.id),
           );
           const renderedEntries = expanded ? visibleGroupedEntries : visibleEntries;
 
@@ -836,7 +841,7 @@ export function deriveMessagesTimelineRows(input: {
 
           if (hiddenEntries.length > 0) {
             const latestToolEntry = visibleGroupedEntries.findLast(workLogEntryIsToolLike);
-
+            const hiddenEntriesHaveTool = hiddenEntries.some(workLogEntryIsToolLike);
             nextRows.push({
               kind: "work-toggle",
               id: `work-toggle:${timelineEntry.id}`,
@@ -844,9 +849,9 @@ export function deriveMessagesTimelineRows(input: {
               groupId,
               hiddenCount: hiddenEntries.length,
               expanded,
-              onlyToolEntries: hiddenEntries.every(workLogEntryIsToolLike),
-              summary: null,
-              summaryKind: null,
+              onlyToolEntries: hiddenEntriesHaveTool,
+              summary: hiddenEntriesHaveTool ? summarizeToolGroup(hiddenEntries) : null,
+              summaryKind: hiddenEntriesHaveTool ? toolGroupSummaryKind(hiddenEntries) : null,
               hasFailure:
                 latestToolEntry !== undefined &&
                 workEntryDisplayIndicatesToolFailure(latestToolEntry) &&
@@ -888,7 +893,6 @@ export function deriveMessagesTimelineRows(input: {
       });
       continue;
     }
-
     const assistantTurnStillInProgress =
       timelineEntry.message.role === "assistant" &&
       unsettledTurnId !== null &&
@@ -979,7 +983,6 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       // unchanged plan keeps its row reference (virtualization stability).
       return a.createdAt === bp.createdAt && a.turnPlan.plan === bp.turnPlan.plan;
     }
-
     case "work": {
       const bw = b as typeof a;
       return (

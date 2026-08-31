@@ -106,15 +106,9 @@ export function deriveTimelineTurnFolds(input: {
   const folds = new Map<string, TimelineTurnFold>();
   for (const [turnId, group] of groups) {
     if (turnId === input.unsettledTurnId || group.hasStreamingMessage) continue;
-    const firstAssistantEntry = group.entries.find((entry) => entry.role === "assistant");
     const hiddenEntryIds = new Set(
       group.entries
-        .filter(
-          (entry) =>
-            entry.id !== firstAssistantEntry?.id &&
-            entry.id !== group.terminalEntry?.id &&
-            entry.foldable !== false,
-        )
+        .filter((entry) => entry.id !== group.terminalEntry?.id && entry.foldable !== false)
         .map((entry) => entry.id),
     );
     if (hiddenEntryIds.size === 0) continue;
