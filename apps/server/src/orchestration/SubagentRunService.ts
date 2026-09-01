@@ -307,12 +307,23 @@ const make = Effect.gen(function* () {
   }
 
   // Non-terminal state cannot be trusted across process restart until a
-  // provider-specific reconciler supplies fresh evidence.
+  // provider-specific reconciler supplies fresh evidence. Cursor ACP has no
+  // child replay API, so keeping its native runs active would leave permanent
+  // spinners. Record the loss as a terminal failure instead.
   for (const [runId, internal] of initial.runs) {
     if (!TERMINAL_STATUSES.has(internal.run.status)) {
+      const cursorNative = internal.run.provider === "cursor" && internal.run.source === "native";
       initial.runs.set(runId, {
         ...internal,
-        run: { ...internal.run, status: "unknown", sequence: internal.run.sequence + 1 },
+        run: cursorNative
+          ? {
+              ...internal.run,
+              status: "failed",
+              error: "Cursor subagent state was lost when the server restarted.",
+              completedAt: internal.run.completedAt ?? internal.run.updatedAt,
+              sequence: internal.run.sequence + 1,
+            }
+          : { ...internal.run, status: "unknown", sequence: internal.run.sequence + 1 },
       });
       initial.snapshotSequence += 1;
     }

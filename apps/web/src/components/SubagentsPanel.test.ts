@@ -275,7 +275,11 @@ describe("SubagentsPanel", () => {
       provider: ProviderDriverKind.make("claudeAgent"),
       providerInstanceId: ProviderInstanceId.make("claudeAgent"),
       runKind: "workflow",
-      workflow: { runId: "wf_example", name: "Verify migration" },
+      workflow: {
+        runId: "wf_example",
+        name: "Verify migration",
+        scriptPath: "/tmp/workflows/verify.js",
+      },
       title: "Verify migration",
       taskPreview: "Verify the migration",
       stats: { agentCount: 2, totalTokens: 900, totalToolCalls: 11 },
@@ -322,6 +326,7 @@ describe("SubagentsPanel", () => {
 
     expect(html).toContain('aria-label="Dynamic workflow subagents"');
     expect(html).toContain("2 agents · 900 tokens");
+    expect(html).toContain('aria-label="View Verify migration workflow script"');
     expect(html).toContain(">Verify<");
     expect(html).toContain("verify:contracts");
     expect(html.indexOf("Dynamic workflow")).toBeLessThan(html.indexOf("Active subagents"));

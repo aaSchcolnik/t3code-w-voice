@@ -3651,7 +3651,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
    * workflow_progress array. Member identity is the stable slot
    * `<coordinatorTaskId>:wf:<index>` (never the per-attempt agent id, which
    * changes on retry and would split one member into duplicate rows).
-   * timelineBypass keeps these out of the parent chat; the Agents surface and
+   * timelineBypass keeps these out of the parent chat; the Subagents surface and
    * workflow card consume them.
    */
   const emitWorkflowMemberProgress = Effect.fn("emitWorkflowMemberProgress")(function* (

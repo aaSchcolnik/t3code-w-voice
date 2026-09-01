@@ -607,7 +607,7 @@ const taskAgentLinkageFields = {
   agentPath: Schema.optional(TrimmedNonEmptyStringSchema),
   /**
    * Set on provider-synthesized child-agent events (Codex) whose activity
-   * belongs in the Agents surface, never the parent timeline.
+   * belongs in the Subagents surface, never the parent timeline.
    */
   timelineBypass: Schema.optional(Schema.Boolean),
 } as const;

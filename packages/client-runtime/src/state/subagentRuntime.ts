@@ -109,7 +109,7 @@ const SUMMARY_CHAR_LIMIT = 180;
 const ROSTER_LIMIT = 100;
 
 /**
- * True when this activity's payload does NOT belong on the Agents surface.
+ * True when this activity's payload does NOT belong on the Subagents surface.
  * Classification happens exactly once, server-side at ingestion
  * (classifyTaskAgentKind → the persisted agentKind stamp); the client only
  * reads it. Rows without a stamp — legacy threads, pre-stamp servers — are
@@ -475,7 +475,7 @@ export function foldSubagentActivities(
         if (!taskId) break;
         // Only real agents join the roster. Shells, monitors, and plan-mode
         // tasks are background work — they render in the ordinary work log,
-        // not the Agents surface (a "Run 12s stall" shell is not a subagent).
+        // not the Subagents surface (a "Run 12s stall" shell is not a subagent).
         if (isBackgroundTaskActivity(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
         fillMetadata(agent, payload);
@@ -892,7 +892,7 @@ export function isSubagentActivityKind(kind: string): boolean {
 
 /**
  * Quiet-timeline guarantee: tool rows attributed to an owning agent belong in
- * the Agents surface, not the parent chat. Unattributed rows must stay.
+ * the Subagents surface, not the parent chat. Unattributed rows must stay.
  */
 export function isAgentAttributedToolActivity(activity: OrchestrationThreadActivity): boolean {
   if (typeof activity.payload !== "object" || activity.payload === null) {

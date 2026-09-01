@@ -15,7 +15,9 @@ provider activity cards are not treated as lifecycle truth.
 
 The UI deliberately omits controls and transcript claims that a provider cannot verify. A terminal
 status is sticky: late progress cannot reopen a completed, failed, or cancelled run. After a server
-restart, an unreconciled non-terminal run appears as `unknown` until provider evidence arrives.
+restart, an unreconciled non-terminal Claude or Codex run appears as `unknown` until provider
+evidence arrives. Cursor has no child replay API, so T3 Code marks a native Cursor run failed after
+a restart instead of leaving it stuck as active.
 
 ## Delegation policy rollout
 

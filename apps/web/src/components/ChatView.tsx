@@ -176,7 +176,6 @@ import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
-import { AgentsPanel } from "./AgentsPanel";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
@@ -2492,9 +2491,10 @@ function ChatViewContent(props: ChatViewProps) {
     [providerStatuses],
   );
   const turnPlans = useMemo(() => deriveTurnPlans(threadActivities), [threadActivities]);
-  // Native subagent fold: memoized by activity-list identity, shared by the
-  // Agents surface, live strip, and workflow cards. v2Projection is null
-  // until orchestration-v2 lands (source precedence lives in the derive).
+  // Native subagent fold: memoized by activity-list identity and retained for
+  // the compact timeline CTA while normalized SubagentRun owns the panel.
+  // v2Projection is null until orchestration-v2 lands (source precedence lives
+  // in the derive).
   // sessionLive derives interruption for agents orphaned by session death.
   const agentSessionLive = phase !== "disconnected";
   const agentPanelModel = useMemo(
@@ -2503,6 +2503,14 @@ function ChatViewContent(props: ChatViewProps) {
         agents: foldSubagentActivities(threadActivities, { sessionLive: agentSessionLive }),
       }),
     [agentSessionLive, threadActivities],
+  );
+  const liveSubagentCount = useMemo(
+    () =>
+      Math.max(
+        agentPanelModel.liveCount,
+        subagentRuns.filter((run) => isActiveSubagentStatus(run.status)).length,
+      ),
+    [agentPanelModel.liveCount, subagentRuns],
   );
   const pendingApprovals = useMemo(
     () => derivePendingApprovals(threadActivities),
@@ -3748,10 +3756,6 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef) return;
     subagentsPanelDismissedForTurnRef.current = null;
     useRightPanelStore.getState().open(activeThreadRef, "subagents");
-  }, [activeThreadRef]);
-  const addAgentsSurface = useCallback(() => {
-    if (!activeThreadRef) return;
-    useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
@@ -5054,7 +5058,7 @@ function ChatViewContent(props: ChatViewProps) {
       return null;
     }
     const working = activeBackgroundLiveness === "working";
-    const liveCount = agentPanelModel.liveCount;
+    const liveCount = liveSubagentCount;
     return {
       id: `background-liveness:${activeThread.id}`,
       variant: "default",
@@ -5084,9 +5088,9 @@ function ChatViewContent(props: ChatViewProps) {
   }, [
     activeBackgroundLiveness,
     activeThread,
-    agentPanelModel.liveCount,
     handleStopBackgroundWork,
     isStoppingBackgroundWork,
+    liveSubagentCount,
   ]);
   // A woken thread announces itself in the open view, not just the sidebar
   // pill. Dismissing marks the wake as seen (same acknowledgment as the
@@ -7181,10 +7185,10 @@ function ChatViewContent(props: ChatViewProps) {
       rightPanelAvailable={activeProject !== null}
       rightPanelOpen={rightPanelOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
-      // Suppressed while the Agents surface is visible: the roster itself is
+      // Suppressed while the Subagents surface is visible: the roster itself is
       // on screen, so the toggle badge would be pointing at nothing.
-      liveAgentCount={
-        rightPanelOpen && activeRightPanelSurface?.kind === "agents" ? 0 : agentPanelModel.liveCount
+      liveSubagentCount={
+        rightPanelOpen && activeRightPanelSurface?.kind === "subagents" ? 0 : liveSubagentCount
       }
       onToggleTerminal={toggleTerminalVisibility}
       onToggleRightPanel={toggleRightPanel}
@@ -7306,12 +7310,6 @@ function ChatViewContent(props: ChatViewProps) {
         }
         composerDraftTarget={composerDraftTarget}
         onStateChange={handlePullRequestTabStatusChange}
-      />
-    ) : activeRightPanelSurface?.kind === "agents" ? (
-      <AgentsPanel
-        model={agentPanelModel}
-        environmentId={activeThreadRef?.environmentId ?? null}
-        threadId={activeThreadRef?.threadId ?? null}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
@@ -7441,7 +7439,7 @@ function ChatViewContent(props: ChatViewProps) {
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
                 agentPanelModel={agentPanelModel}
-                onOpenAgents={addAgentsSurface}
+                onOpenSubagents={addSubagentsSurface}
                 key={activeThread.id}
                 isWorking={isWorking}
                 activeTurnStartedAt={activeWorkStartedAt}
@@ -7792,15 +7790,14 @@ function ChatViewContent(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddSubagents={addSubagentsSurface}
           onAddPullRequest={addPullRequestSurface}
-          onAddAgents={addAgentsSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
+          subagentsAvailable
           pullRequestAvailable={pullRequestSurfaceAvailable}
-          agentsAvailable
           pullRequestStatuses={pullRequestTabStatuses}
-          liveAgentCount={agentPanelModel.liveCount}
+          liveSubagentCount={liveSubagentCount}
         >
           {rightPanelContent}
         </RightPanelTabs>
@@ -7833,15 +7830,14 @@ function ChatViewContent(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddSubagents={addSubagentsSurface}
             onAddPullRequest={addPullRequestSurface}
-            onAddAgents={addAgentsSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
+            subagentsAvailable
             pullRequestAvailable={pullRequestSurfaceAvailable}
-            agentsAvailable
             pullRequestStatuses={pullRequestTabStatuses}
-            liveAgentCount={agentPanelModel.liveCount}
+            liveSubagentCount={liveSubagentCount}
           >
             {rightPanelContent}
           </RightPanelTabs>

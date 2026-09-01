@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 /**
- * Read-only access to persisted workflow scripts for the Agents surface's
+ * Read-only access to persisted workflow scripts for the Subagents surface's
  * "{} script" affordance.
  *
  * Containment rules (lifted from the reviewed #3650 inspection service):

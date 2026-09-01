@@ -253,6 +253,50 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     }),
   );
 
+  it.effect("terminalizes a background native subagent when the parent prompt returns", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-background-subagent-thread");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ T3_ACP_EMIT_CURSOR_BACKGROUND_TASK: "1" }),
+      );
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({ threadId, input: "delegate review", attachments: [] });
+
+      const events = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const lifecycle = events.filter(
+        (event) =>
+          event.type === "subagent.started" ||
+          event.type === "subagent.updated" ||
+          event.type === "subagent.completed",
+      );
+      assert.deepStrictEqual(
+        lifecycle.map((event) => event.payload.status),
+        ["starting", "running", "completed"],
+      );
+      assert.equal(lifecycle.at(-1)?.type, "subagent.completed");
+      assert.isBelow(
+        events.findIndex((event) => event.type === "subagent.completed"),
+        events.findIndex((event) => event.type === "turn.completed"),
+      );
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("steers a running turn instead of opening a new one on mid-turn sendTurn", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;

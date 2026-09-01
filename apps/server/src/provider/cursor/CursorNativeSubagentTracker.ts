@@ -21,6 +21,20 @@ export interface CursorNativeSubagentRecord {
   readonly transcriptQuality: "summary" | "none";
 }
 
+type CursorNativeTerminalStatus = Extract<SubagentStatus, "completed" | "failed" | "cancelled">;
+
+const TERMINAL_STATUSES = new Set<SubagentStatus>(["completed", "failed", "cancelled"]);
+
+function reduceTerminalStatus(
+  current: SubagentStatus | undefined,
+  incoming: SubagentStatus,
+): SubagentStatus {
+  if (!current || !TERMINAL_STATUSES.has(current)) return incoming;
+  if (incoming === "failed") return "failed";
+  if (current === "cancelled" && incoming === "completed") return "completed";
+  return current;
+}
+
 function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -67,7 +81,7 @@ export class CursorNativeSubagentTracker {
     const background = rawOutput?.isBackground === true;
     const error = text(rawOutput?.error);
     const result = text(rawOutput?.result) ?? text(rawOutput?.output);
-    const status: SubagentStatus = error
+    const observedStatus: SubagentStatus = error
       ? "failed"
       : toolCall.status === "failed"
         ? "failed"
@@ -78,6 +92,7 @@ export class CursorNativeSubagentTracker {
           : toolCall.status === "inProgress"
             ? "running"
             : "starting";
+    const status = reduceTerminalStatus(current?.status, observedStatus);
     const run: CursorNativeSubagentRecord = {
       ...current,
       runId: SubagentRunId.make(toolCall.toolCallId),
@@ -114,24 +129,25 @@ export class CursorNativeSubagentTracker {
         status: "unknown",
         transcriptQuality: "none",
       } satisfies CursorNativeSubagentRecord);
-    const priorRunId = this.#lastRunByAgentId.get(params.agentId);
+    const priorRunId = params.agentId ? this.#lastRunByAgentId.get(params.agentId) : undefined;
     const outcomeStatus = text(params.outcome?.status);
     const error = text(params.outcome?.error) ?? current.error;
     const result = text(params.outcome?.result) ?? current.finalMessage;
-    const status: SubagentStatus = error
+    const observedStatus: SubagentStatus = error
       ? "failed"
       : outcomeStatus === "completed"
         ? "completed"
         : outcomeStatus === "failed"
           ? "failed"
           : current.status;
+    const status = reduceTerminalStatus(current.status, observedStatus);
     const next: CursorNativeSubagentRecord = {
       ...current,
       title: params.description.trim() || current.title,
       taskPreview: params.prompt.trim() || current.taskPreview,
       agentType: cursorSubagentTypeLabel(params.subagentType),
       ...(text(params.model) ? { requestedModel: text(params.model)! } : {}),
-      agentId: params.agentId,
+      ...(params.agentId ? { agentId: params.agentId } : {}),
       ...(params.durationMs !== undefined ? { durationMs: params.durationMs } : {}),
       status,
       ...(result ? { finalMessage: result, lastSummary: result } : {}),
@@ -140,7 +156,27 @@ export class CursorNativeSubagentTracker {
       transcriptQuality: params.prompt.trim() || result ? "summary" : "none",
     };
     this.#runs.set(params.toolCallId, next);
-    this.#lastRunByAgentId.set(params.agentId, next.runId);
+    if (params.agentId) {
+      this.#lastRunByAgentId.set(params.agentId, next.runId);
+    }
     return next;
+  }
+
+  settleOpenRuns(input: {
+    readonly status: CursorNativeTerminalStatus;
+    readonly error?: string;
+  }): ReadonlyArray<CursorNativeSubagentRecord> {
+    const settled: CursorNativeSubagentRecord[] = [];
+    for (const [toolCallId, run] of this.#runs) {
+      if (TERMINAL_STATUSES.has(run.status)) continue;
+      const next: CursorNativeSubagentRecord = {
+        ...run,
+        status: input.status,
+        ...(input.error ? { error: input.error } : {}),
+      };
+      this.#runs.set(toolCallId, next);
+      settled.push(next);
+    }
+    return settled;
   }
 }

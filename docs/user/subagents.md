@@ -37,9 +37,12 @@ same workspace—can start concurrently. T3 Code does not reserve files or direc
 When multiple agents may write, the parent must assign disjoint work and keep shared files such as
 lockfiles, configuration, fixtures, generated output, and package barrels sequential.
 
-The Subagents panel shows status, startup diagnostics, transcript, result, and supported controls.
-Cursor runs can ask structured questions; answer them with the run's response control. Runs can be
-cancelled only by their owning parent.
+The Subagents panel is the only child-work view. It combines provider-native children, tracked
+delegated runs, and dynamic workflows. A spawn card in the parent transcript opens the panel, and
+the panel opens automatically when a new run starts unless that setting is disabled. Select a run
+to subscribe to its transcript and inspect its status, startup diagnostics, result, and supported
+controls. Cursor runs can ask structured questions; answer them with the run's response control.
+Runs can be cancelled only by their owning parent.
 
 Questions and terminal results are delivered back to the parent durably. After starting every
 independent run, the parent should end its turn instead of polling. If the server restarts, it

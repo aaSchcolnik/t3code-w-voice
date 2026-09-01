@@ -112,7 +112,7 @@ export interface WorkLogEntry {
    * Present on agent-spawn CTA rows: one per workflow run or per-turn batch
    * of direct spawns. The row renders as a call-to-action ("Kicked off N
    * subagents") whose live status is derived from the agent panel model at
-   * render time; clicking opens the Agents panel.
+   * render time; clicking opens the Subagents panel.
    */
   agentSpawn?: {
     /** Workflow coordinator taskId, or null for a direct-spawn batch. */
@@ -856,7 +856,7 @@ export function hasActionableProposedPlan(
 /**
  * Quiet-timeline guarantee: the work log carries the parent's narrative plus
  * at most one row per agent. Everything an agent does internally lives in the
- * Agents surface:
+ * Subagents surface:
  * - timelineBypass rows (Codex children, workflow members) never render here;
  * - tool rows attributed to an owning agent (payload.agentId) are re-homed;
  * - task.progress ticks collapse into one row per taskId;
@@ -1461,7 +1461,7 @@ function collapseDerivedWorkLogEntries(
   const collapsed: DerivedWorkLogEntry[] = [];
   // Subagent rows collapse by spawn group, not adjacency: a workflow run (or
   // a turn's batch of direct spawns) is ONE narrative event in the chat — a
-  // CTA row that opens the Agents panel — no matter how many agents it
+  // CTA row that opens the Subagents panel — no matter how many agents it
   // contains or how their progress rows interleave (quiet-timeline
   // guarantee).
   const spawnRowIndex = new Map<string, number>();

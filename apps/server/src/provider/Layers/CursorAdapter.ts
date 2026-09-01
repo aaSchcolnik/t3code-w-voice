@@ -432,6 +432,23 @@ export function makeCursorAdapter(
       });
     });
 
+    const settleNativeSubagents = Effect.fn("settleNativeSubagents")(function* (
+      ctx: CursorSessionContext,
+      input: {
+        readonly status: "completed" | "failed" | "cancelled";
+        readonly error?: string;
+        readonly method: string;
+        readonly rawPayload: unknown;
+      },
+    ) {
+      const runs = ctx.nativeSubagents.settleOpenRuns(input);
+      yield* Effect.forEach(
+        runs,
+        (run) => emitNativeSubagentLifecycle(ctx, run, input.method, input.rawPayload),
+        { discard: true },
+      );
+    });
+
     const getThreadSemaphore = (threadId: string) =>
       SynchronizedRef.modifyEffect(threadLocksRef, (current) => {
         const existing: Option.Option<Semaphore.Semaphore> = Option.fromNullishOr(
@@ -528,6 +545,12 @@ export function makeCursorAdapter(
       Effect.gen(function* () {
         if (ctx.stopped) return;
         ctx.stopped = true;
+        yield* settleNativeSubagents(ctx, {
+          status: "cancelled",
+          error: "Cursor session ended before the subagent reported completion.",
+          method: "session/stop",
+          rawPayload: { reason: "session stopped" },
+        });
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
         yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
         if (ctx.notificationFiber) {
@@ -1128,6 +1151,28 @@ export function makeCursorAdapter(
               Effect.mapError((error) =>
                 mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
               ),
+              Effect.tapError(() =>
+                ctx.promptsInFlight === 1
+                  ? Effect.gen(function* () {
+                      const reason =
+                        "Cursor parent turn failed before the subagent reported completion.";
+                      yield* settleNativeSubagents(ctx, {
+                        status: "failed",
+                        error: reason,
+                        method: "session/prompt/error",
+                        rawPayload: { reason },
+                      });
+                      yield* offerRuntimeEvent({
+                        type: "turn.aborted",
+                        ...(yield* makeEventStamp()),
+                        provider: PROVIDER,
+                        threadId: input.threadId,
+                        turnId,
+                        payload: { reason },
+                      });
+                    })
+                  : Effect.void,
+              ),
             );
 
           const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
@@ -1147,6 +1192,15 @@ export function makeCursorAdapter(
           // superseded prompt resolving (usually cancelled) while another is
           // in flight or pending must leave the merged turn running.
           if (ctx.promptsInFlight === 1) {
+            const cancelled = result.stopReason === "cancelled";
+            yield* settleNativeSubagents(ctx, {
+              status: cancelled ? "cancelled" : "completed",
+              ...(cancelled
+                ? { error: "Cursor parent turn was cancelled before child output was returned." }
+                : {}),
+              method: "session/prompt/settled",
+              rawPayload: result,
+            });
             yield* offerRuntimeEvent({
               type: "turn.completed",
               ...(yield* makeEventStamp()),
@@ -1154,7 +1208,7 @@ export function makeCursorAdapter(
               threadId: input.threadId,
               turnId,
               payload: {
-                state: result.stopReason === "cancelled" ? "cancelled" : "completed",
+                state: cancelled ? "cancelled" : "completed",
                 stopReason: result.stopReason ?? null,
               },
             });

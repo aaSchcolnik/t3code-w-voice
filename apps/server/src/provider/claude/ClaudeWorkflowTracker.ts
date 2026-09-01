@@ -27,7 +27,6 @@ export interface ClaudeWorkflowRunRecord {
   readonly taskId?: string;
   readonly agentId?: string;
   readonly transcriptDir?: string;
-  readonly scriptPath?: string;
   readonly status: SubagentStatus;
   readonly lastSummary?: string;
   readonly finalMessage?: string;
@@ -170,6 +169,7 @@ export class ClaudeWorkflowTracker {
     const current = this.#byRunId.get(canonicalRunId);
     const taskId = nonEmpty(input.result?.taskId);
     const name = nonEmpty(input.result?.workflowName);
+    const scriptPath = nonEmpty(input.result?.scriptPath);
     const summary = nonEmpty(input.result?.summary);
     const error =
       resultError ??
@@ -184,15 +184,13 @@ export class ClaudeWorkflowTracker {
       workflow: {
         runId: providerRunId,
         ...(name ? { name } : {}),
+        ...(scriptPath ? { scriptPath } : {}),
       },
       title: name ?? current?.title ?? pending.title,
       taskPreview: summary ?? current?.taskPreview ?? pending.taskPreview,
       ...(taskId ? { taskId } : {}),
       ...(nonEmpty(input.result?.transcriptDir)
         ? { transcriptDir: nonEmpty(input.result?.transcriptDir)! }
-        : {}),
-      ...(nonEmpty(input.result?.scriptPath)
-        ? { scriptPath: nonEmpty(input.result?.scriptPath)! }
         : {}),
       status: failed ? "failed" : (statusFromResult ?? "starting"),
       ...(summary ? { lastSummary: summary } : {}),

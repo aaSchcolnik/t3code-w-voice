@@ -83,12 +83,13 @@ function renderTabs(
   second?: DesktopPreviewFavicon,
   audio?: { audible?: boolean; audioMuted?: boolean },
   previewRuntimeTabId: ((tabId: string) => string) | null = (tabId) => `runtime:${tabId}`,
+  options?: { empty?: boolean; liveSubagentCount?: number },
 ) {
   return renderToStaticMarkup(
     <RightPanelTabs
       mode="inline"
-      surfaces={second ? [previewSurface, secondSurface] : [previewSurface]}
-      activeSurfaceId={previewSurface.id}
+      surfaces={options?.empty ? [] : second ? [previewSurface, secondSurface] : [previewSurface]}
+      activeSurfaceId={options?.empty ? null : previewSurface.id}
       pendingSurfaceIds={new Set()}
       previewSessions={sessions}
       desktopByTabId={{
@@ -108,20 +109,32 @@ function renderTabs(
       onAddPullRequest={() => undefined}
       onAddDiff={() => undefined}
       onAddFiles={() => undefined}
-      onAddAgents={() => undefined}
       onAddSubagents={() => undefined}
-      liveAgentCount={0}
+      liveSubagentCount={options?.liveSubagentCount ?? 0}
       browserAvailable
       terminalAvailable={false}
       diffAvailable={false}
       filesAvailable={false}
+      subagentsAvailable
       pullRequestAvailable={false}
-      agentsAvailable={false}
     >
       <div>content</div>
     </RightPanelTabs>,
   );
 }
+
+describe("RightPanelTabs subagent launcher", () => {
+  it("offers one Subagents surface with the live-run badge", () => {
+    const html = renderTabs(null, undefined, undefined, null, {
+      empty: true,
+      liveSubagentCount: 2,
+    });
+
+    expect(html).toContain("Follow native and delegated subagents.");
+    expect(html).toContain(">2<");
+    expect(html).not.toContain(">Agents<");
+  });
+});
 
 describe("RightPanelTabs preview favicon", () => {
   it("prefers a live capture and never asks Google about a private hostname", () => {

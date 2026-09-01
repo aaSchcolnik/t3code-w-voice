@@ -1301,7 +1301,7 @@ function PullRequestsRouteView() {
       rightPanelOpen={rightPanelState.isOpen}
       rightPanelShortcutLabel={null}
       rightPanelUnavailableLabel="Select a pull request first"
-      liveAgentCount={0}
+      liveSubagentCount={0}
       onToggleTerminal={() => undefined}
       onToggleRightPanel={toggleRightPanel}
     />
@@ -1587,14 +1587,13 @@ function PullRequestsRouteView() {
             onAddFiles={() => undefined}
             onAddSubagents={() => undefined}
             onAddPullRequest={() => undefined}
-            onAddAgents={() => undefined}
             browserAvailable={false}
             terminalAvailable={false}
             diffAvailable={false}
             filesAvailable={false}
+            subagentsAvailable={false}
             pullRequestAvailable={false}
-            agentsAvailable={false}
-            liveAgentCount={0}
+            liveSubagentCount={0}
             pullRequestStatuses={pullRequestTabStatuses}
           >
             <PullRequestDetailPanel

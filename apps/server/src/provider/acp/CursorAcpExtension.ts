@@ -66,7 +66,7 @@ export const CursorTaskRequest = Schema.Struct({
   prompt: Schema.String,
   subagentType: CursorSubagentType,
   model: Schema.optional(Schema.String),
-  agentId: Schema.String,
+  agentId: Schema.optional(Schema.String),
   durationMs: Schema.optional(Schema.Number),
   outcome: Schema.optional(
     Schema.Struct({

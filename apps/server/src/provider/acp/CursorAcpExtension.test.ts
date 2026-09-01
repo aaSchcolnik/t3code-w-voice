@@ -168,4 +168,15 @@ describe("CursorAcpExtension", () => {
     expect(decoded.toolCallId).toBe("tool-foreground");
     expect(cursorSubagentTypeLabel(decoded.subagentType)).toBe("unspecified");
   });
+
+  it("accepts cursor/task events without an agent id", () => {
+    const decoded = CursorTaskRequest.make({
+      toolCallId: "tool-without-agent-id",
+      description: "Review changes",
+      prompt: "Inspect the diff.",
+      subagentType: "reviewer",
+    });
+
+    expect(decoded.agentId).toBeUndefined();
+  });
 });

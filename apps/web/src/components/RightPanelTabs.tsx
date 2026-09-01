@@ -1,7 +1,6 @@
 import type { ContextMenuItem, PreviewSessionSnapshot, PullRequestState } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
-  Bot,
   FileDiff,
   Files,
   GitPullRequest,
@@ -75,16 +74,15 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddSubagents: () => void;
   onAddPullRequest: () => void;
-  onAddAgents: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
+  subagentsAvailable: boolean;
   pullRequestAvailable: boolean;
-  agentsAvailable: boolean;
   pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
-  /** Running + waiting subagents; badges the Agents card in the empty state. */
-  liveAgentCount: number;
+  /** Running + waiting subagents; badges the Subagents card in the empty state. */
+  liveSubagentCount: number;
   children: ReactNode;
 }
 
@@ -102,7 +100,7 @@ const SURFACE_DISABLED_REASONS = {
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "This thread's branch has no pull request yet.",
-  agents: "Agents are only available from a thread.",
+  subagents: "Subagents are only available from a thread.",
 } as const;
 
 /** Overlays that must win over the launcher's letter shortcuts. */
@@ -124,7 +122,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
   files: "Available when a project is open.",
   diff: "Available for Git repositories.",
   pullRequest: "No pull request on this branch yet.",
-  agents: "Available from a thread.",
+  subagents: "Available from a thread.",
 } as const;
 
 type TabContextMenuAction =
@@ -254,14 +252,13 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddSubagents: () => void;
   onAddPullRequest: () => void;
-  onAddAgents: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
+  subagentsAvailable: boolean;
   pullRequestAvailable: boolean;
-  agentsAvailable: boolean;
-  liveAgentCount: number;
+  liveSubagentCount: number;
 }) {
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
@@ -269,13 +266,13 @@ function RightPanelEmptyState(props: {
   const actions = [
     {
       label: "Subagents",
-      description: "Follow delegated agents and their latest updates.",
+      description: "Follow native and delegated subagents.",
       icon: UsersRound,
       shortcut: "S",
-      available: true,
-      disabledReason: null,
+      available: props.subagentsAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.subagents,
       onClick: props.onAddSubagents,
-      badgeCount: 0,
+      badgeCount: props.liveSubagentCount,
     },
     {
       label: "Browser",
@@ -326,16 +323,6 @@ function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
       onClick: props.onAddPullRequest,
       badgeCount: 0,
-    },
-    {
-      label: "Agents",
-      description: "Follow subagents and workflows.",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
-      onClick: props.onAddAgents,
-      badgeCount: props.liveAgentCount,
     },
   ] as const;
 
@@ -525,8 +512,6 @@ function surfaceTitle(
       return "Subagents";
     case "pull-request":
       return `#${surface.number}`;
-    case "agents":
-      return "Agents";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -612,8 +597,6 @@ function SurfaceIcon({
                 : "text-muted-foreground";
       return <GitPullRequest className={cn("size-3 shrink-0", toneClassName)} />;
     }
-    case "agents":
-      return <Bot className="size-3 shrink-0" />;
   }
 }
 
@@ -628,8 +611,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       label: "Subagents",
       icon: UsersRound,
       shortcut: "S",
-      available: true,
-      disabledReason: null,
+      available: props.subagentsAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.subagents,
       onClick: props.onAddSubagents,
     },
     {
@@ -671,14 +654,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.pullRequestAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
       onClick: props.onAddPullRequest,
-    },
-    {
-      label: "Agents",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.agents,
-      onClick: props.onAddAgents,
     },
   ] as const;
 
@@ -969,14 +944,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddFiles={props.onAddFiles}
             onAddSubagents={props.onAddSubagents}
             onAddPullRequest={props.onAddPullRequest}
-            onAddAgents={props.onAddAgents}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
+            subagentsAvailable={props.subagentsAvailable}
             pullRequestAvailable={props.pullRequestAvailable}
-            agentsAvailable={props.agentsAvailable}
-            liveAgentCount={props.liveAgentCount}
+            liveSubagentCount={props.liveSubagentCount}
           />
         ) : (
           props.children

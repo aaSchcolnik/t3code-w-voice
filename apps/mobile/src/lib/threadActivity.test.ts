@@ -1068,8 +1068,8 @@ describe("quiet timeline: nested agents", () => {
           createdAt: "2026-04-01T00:00:02.000Z",
           payload: { taskId: "sh-1", agentId: "owner", agentKind: "background" },
         }),
-        // A nested AGENT's completion: mobile has no Agents sheet, so this
-        // terminal row is the only signal it ever finished.
+        // A nested agent's completion remains a direct terminal signal in the
+        // feed alongside the normalized Subagents view.
         makeActivity({
           id: EventId.make("nested-done"),
           kind: "task.completed",

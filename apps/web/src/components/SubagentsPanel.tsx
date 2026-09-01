@@ -1,6 +1,8 @@
+import { useAtomValue } from "@effect/atom-react";
 import {
   BotIcon,
   BrainIcon,
+  BracesIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleDashedIcon,
@@ -8,6 +10,7 @@ import {
   ShieldCheckIcon,
   WorkflowIcon,
   WrenchIcon,
+  XIcon,
   type LucideIcon,
 } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
@@ -16,6 +19,7 @@ import type { EnvironmentId, ProviderDriverKind, SubagentRun, ThreadId } from "@
 import { driverKindLabel, type ProviderInstanceEntry } from "../providerInstances";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { cn } from "../lib/utils";
+import { orchestrationEnvironment } from "../state/orchestration";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -205,6 +209,54 @@ function workflowStatusVariant(
   return "secondary";
 }
 
+function WorkflowScriptView({
+  environmentId,
+  threadId,
+  scriptPath,
+  onClose,
+}: {
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+  scriptPath: string;
+  onClose: () => void;
+}) {
+  const result = useAtomValue(
+    orchestrationEnvironment.workflowScript({ environmentId, input: { threadId, scriptPath } }),
+  );
+
+  return (
+    <div className="mx-3 mb-2 rounded-md border border-border/60 bg-background/60">
+      <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1">
+        <BracesIcon aria-hidden className="size-3 text-muted-foreground" />
+        <span className="truncate font-mono text-[.65rem] text-muted-foreground">
+          {scriptPath.split("/").at(-1)}
+        </span>
+        <Button
+          size="icon-micro"
+          variant="ghost-muted"
+          onClick={onClose}
+          aria-label="Close workflow script"
+          className="ml-auto"
+        >
+          <XIcon aria-hidden />
+        </Button>
+      </div>
+      <div className="max-h-72 overflow-auto p-2">
+        {result._tag === "Success" ? (
+          <pre className="whitespace-pre-wrap break-words font-mono text-[.7rem] leading-relaxed text-foreground/90">
+            {result.value.contents}
+            {result.value.truncated ? "\n… (truncated)" : ""}
+          </pre>
+        ) : result._tag === "Failure" ? (
+          <p className="text-xs text-destructive-foreground">Could not load the script.</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SubagentRow({
   visible,
   provider,
@@ -214,6 +266,8 @@ function SubagentRow({
   selected,
   onOpen,
   onToggle,
+  onToggleScript,
+  scriptOpen = false,
 }: {
   visible: VisibleRun;
   provider: ProviderInstanceEntry | undefined;
@@ -223,6 +277,8 @@ function SubagentRow({
   selected: boolean;
   onOpen: (run: SubagentRun) => void;
   onToggle: (runId: string) => void;
+  onToggleScript?: (() => void) | undefined;
+  scriptOpen?: boolean | undefined;
 }) {
   const { run, hasChildren, collapsed, depth } = visible;
   const timestamp = run.completedAt ?? run.updatedAt;
@@ -322,6 +378,19 @@ function SubagentRow({
           <ChevronRightIcon className="mt-2 size-3.5 shrink-0 text-muted-foreground/50 group-hover:text-muted-foreground" />
         ) : null}
       </button>
+      {onToggleScript ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="my-2.5 size-6 shrink-0"
+          aria-label={`${scriptOpen ? "Hide" : "View"} ${run.title} workflow script`}
+          aria-expanded={scriptOpen}
+          onClick={onToggleScript}
+        >
+          <BracesIcon />
+        </Button>
+      ) : null}
       {hasChildren ? (
         <Button
           type="button"
@@ -394,6 +463,8 @@ function WorkflowSection({
   providers,
   fallbackDriverKind,
   selectedId,
+  environmentId,
+  threadId,
   onOpen,
   onToggle,
 }: {
@@ -403,9 +474,12 @@ function WorkflowSection({
   providers: ReadonlyArray<ProviderInstanceEntry>;
   fallbackDriverKind: ProviderDriverKind;
   selectedId: string | null;
+  environmentId: EnvironmentId;
+  threadId: ThreadId | null;
   onOpen: (run: SubagentRun) => void;
   onToggle: (runId: string) => void;
 }) {
+  const [openScriptRunId, setOpenScriptRunId] = useState<string | null>(null);
   const workflowRoots = sortRuns(runs.filter((run) => run.runKind === "workflow"));
   const childrenByParent = new Map<string, SubagentRun[]>();
   for (const run of runs) {
@@ -434,6 +508,9 @@ function WorkflowSection({
             .map((group) => group.phaseTitle)
             .filter((title): title is string => title !== null);
           const LeadingIcon = workflowIconFor([workflow.title, ...phaseNames].join(" "));
+          const scriptPath = workflow.workflow?.scriptPath;
+          const canShowScript = scriptPath !== undefined && threadId !== null;
+          const scriptOpen = canShowScript && openScriptRunId === workflow.id;
           return (
             <div key={workflow.id} role="group" aria-label={workflow.title}>
               <SubagentRow
@@ -450,7 +527,24 @@ function WorkflowSection({
                 selected={workflow.id === selectedId}
                 onOpen={onOpen}
                 onToggle={onToggle}
+                {...(canShowScript
+                  ? {
+                      onToggleScript: () =>
+                        setOpenScriptRunId((current) =>
+                          current === workflow.id ? null : workflow.id,
+                        ),
+                      scriptOpen,
+                    }
+                  : {})}
               />
+              {scriptOpen && scriptPath && threadId ? (
+                <WorkflowScriptView
+                  environmentId={environmentId}
+                  threadId={threadId}
+                  scriptPath={scriptPath}
+                  onClose={() => setOpenScriptRunId(null)}
+                />
+              ) : null}
               {!collapsed
                 ? groups.map((group) => (
                     <div
@@ -677,6 +771,8 @@ export const SubagentsPanel = memo(function SubagentsPanel(props: SubagentsPanel
             {...sectionProps}
             runs={partitionedRuns.workflows}
             collapsedIds={collapsedIds}
+            environmentId={environmentId}
+            threadId={threadId}
           />
         ) : null}
         {active.length > 0 ? (

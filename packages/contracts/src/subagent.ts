@@ -53,6 +53,8 @@ export type SubagentCapabilities = typeof SubagentCapabilities.Type;
 export const SubagentWorkflowInfo = Schema.Struct({
   runId: TrimmedNonEmptyString,
   name: Schema.optional(TrimmedNonEmptyString),
+  /** Absolute provider-reported workflow script path. Read access stays server-contained. */
+  scriptPath: Schema.optional(TrimmedNonEmptyString),
   phaseIndex: Schema.optional(NonNegativeInt),
   phaseTitle: Schema.optional(TrimmedNonEmptyString),
   agentIndex: Schema.optional(NonNegativeInt),

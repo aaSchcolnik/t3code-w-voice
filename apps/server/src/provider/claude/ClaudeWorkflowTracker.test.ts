@@ -32,6 +32,7 @@ describe("ClaudeWorkflowTracker", () => {
 
     expect(workflow?.runId).toBe("claude-wf:wf_0d018200-1d0");
     expect(workflow?.status).toBe("starting");
+    expect(workflow?.workflow.scriptPath).toBe(launchResult.scriptPath);
     expect(tracker.byTaskId("wfg13dai0")?.runId).toBe(workflow?.runId);
     expect(tracker.byToolUseId("tool-workflow-1")?.runId).toBe(workflow?.runId);
   });

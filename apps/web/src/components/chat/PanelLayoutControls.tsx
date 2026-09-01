@@ -14,7 +14,7 @@ interface PanelLayoutControlsProps {
   rightPanelShortcutLabel: string | null;
   rightPanelUnavailableLabel?: string;
   /** Running + waiting subagents in this thread; badges the right panel toggle. */
-  liveAgentCount: number;
+  liveSubagentCount: number;
   onToggleTerminal: () => void;
   onToggleRightPanel: () => void;
 }
@@ -28,7 +28,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   rightPanelOpen,
   rightPanelShortcutLabel,
   rightPanelUnavailableLabel = "Right panel is unavailable",
-  liveAgentCount,
+  liveSubagentCount,
   onToggleTerminal,
   onToggleRightPanel,
 }: PanelLayoutControlsProps) {
@@ -66,8 +66,8 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
             pressed={rightPanelOpen}
             onPressedChange={onToggleRightPanel}
             aria-label={
-              liveAgentCount > 0
-                ? `Toggle right panel, ${liveAgentCount} ${liveAgentCount === 1 ? "agent" : "agents"} working`
+              liveSubagentCount > 0
+                ? `Toggle right panel, ${liveSubagentCount} ${liveSubagentCount === 1 ? "subagent" : "subagents"} working`
                 : "Toggle right panel"
             }
             variant="ghost"
@@ -75,12 +75,12 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
             disabled={!rightPanelAvailable}
           >
             <PanelRightIcon className="size-4" />
-            {liveAgentCount > 0 ? (
+            {liveSubagentCount > 0 ? (
               <span
                 aria-hidden
                 className="absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
               >
-                {liveAgentCount}
+                {liveSubagentCount}
               </span>
             ) : null}
           </Toggle>
@@ -88,8 +88,8 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
         <TooltipPopup side="bottom">
           {rightPanelAvailable
             ? `Toggle right panel${rightPanelShortcutLabel ? ` (${rightPanelShortcutLabel})` : ""}${
-                liveAgentCount > 0
-                  ? ` · ${liveAgentCount} ${liveAgentCount === 1 ? "agent" : "agents"} working`
+                liveSubagentCount > 0
+                  ? ` · ${liveSubagentCount} ${liveSubagentCount === 1 ? "subagent" : "subagents"} working`
                   : ""
               }`
             : rightPanelUnavailableLabel}

@@ -104,4 +104,60 @@ describe("CursorNativeSubagentTracker", () => {
     expect(tracker.recordMissingParentCorrelation("tool-a")).toBe(false);
     expect(tracker.recordMissingParentCorrelation("tool-b")).toBe(true);
   });
+
+  it("terminalizes open background runs when the parent turn settles", () => {
+    const tracker = new CursorNativeSubagentTracker();
+    tracker.fromToolCall({
+      toolCallId: "tool-background",
+      title: "Task: Background",
+      status: "completed",
+      data: {
+        toolCallId: "tool-background",
+        rawInput: { _toolName: "task" },
+        rawOutput: { isBackground: true },
+      },
+    });
+
+    expect(tracker.settleOpenRuns({ status: "completed" })).toMatchObject([
+      { toolCallId: "tool-background", status: "completed" },
+    ]);
+    expect(tracker.settleOpenRuns({ status: "failed", error: "late failure" })).toEqual([]);
+  });
+
+  it("keeps synthesized terminal state sticky across late progress", () => {
+    const tracker = new CursorNativeSubagentTracker();
+    tracker.fromToolCall({
+      toolCallId: "tool-late-progress",
+      title: "Task: Background",
+      status: "inProgress",
+      data: { toolCallId: "tool-late-progress", rawInput: { _toolName: "task" } },
+    });
+    tracker.settleOpenRuns({ status: "completed" });
+
+    const late = tracker.fromToolCall({
+      toolCallId: "tool-late-progress",
+      title: "Task: Background",
+      status: "inProgress",
+      data: { toolCallId: "tool-late-progress", rawInput: { _toolName: "task" } },
+    });
+
+    expect(late?.status).toBe("completed");
+  });
+
+  it("enriches runs when Cursor omits agentId", () => {
+    const tracker = new CursorNativeSubagentTracker();
+    const run = tracker.enrich({
+      toolCallId: "tool-no-agent-id",
+      description: "Review changes",
+      prompt: "Inspect the diff",
+      subagentType: "reviewer",
+    });
+
+    expect(run).toMatchObject({
+      toolCallId: "tool-no-agent-id",
+      title: "Review changes",
+      status: "unknown",
+    });
+    expect(run?.agentId).toBeUndefined();
+  });
 });

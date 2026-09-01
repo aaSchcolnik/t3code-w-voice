@@ -1035,7 +1035,7 @@ function shouldSuppressChildConversationNotification(
  * Exported and pure so the routing table can be asserted against captured
  * wire traces (see codexMultiAgentWire.json) rather than only read.
  *
- * - "agent-event": map to a synthetic collabAgent/* event (Agents surface).
+ * - "agent-event": map to a synthetic collabAgent/* event (Subagents surface).
  * - "parent": pass through to the parent path — it carries state the parent
  *   still owns (approval correlation cleanup).
  * - "drop": genuine child chatter with no parent meaning (deltas, name and

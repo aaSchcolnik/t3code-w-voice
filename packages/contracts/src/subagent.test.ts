@@ -112,7 +112,11 @@ describe("SubagentRun", () => {
       ...baseRun,
       id: "claude-wf:wf_example",
       runKind: "workflow",
-      workflow: { runId: "wf_example", name: "Review migration" },
+      workflow: {
+        runId: "wf_example",
+        name: "Review migration",
+        scriptPath: "/tmp/workflows/review.js",
+      },
       stats: { agentCount: 2, totalTokens: 1200, totalToolCalls: 7 },
     });
     const agent = decodeSubagentRun({
@@ -131,6 +135,7 @@ describe("SubagentRun", () => {
     });
 
     expect(workflow.stats?.agentCount).toBe(2);
+    expect(workflow.workflow?.scriptPath).toBe("/tmp/workflows/review.js");
     expect(agent.workflow?.attempt).toBe(2);
     expect(agent.workflow?.phaseTitle).toBe("Review");
   });

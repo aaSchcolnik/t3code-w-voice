@@ -251,7 +251,7 @@ it.live("creates provisional native runs from execution scope and refines lifecy
   ),
 );
 
-it.live("replays terminal runs, marks interrupted runs unknown, and ignores malformed tails", () =>
+it.live("replays terminal runs, fails unreplayable Cursor runs, and ignores malformed tails", () =>
   withTestServices(
     "subagent-run-replay-test-",
     Effect.gen(function* () {
@@ -260,6 +260,15 @@ it.live("replays terminal runs, marks interrupted runs unknown, and ignores malf
       yield* first.upsert({
         eventId: "active",
         run: makeRun({ id: SubagentRunId.make("run-active"), status: "running" }),
+      });
+      yield* first.upsert({
+        eventId: "replayable-active",
+        run: makeRun({
+          id: SubagentRunId.make("run-replayable-active"),
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          status: "running",
+        }),
       });
 
       const config = yield* ServerConfig;
@@ -270,8 +279,13 @@ it.live("replays terminal runs, marks interrupted runs unknown, and ignores malf
 
       const restarted = yield* SubagentRunService.__testing.make;
       expect((yield* restarted.getOwned(rootThreadId, runId)).status).toBe("completed");
+      const cursorRun = yield* restarted.getOwned(rootThreadId, SubagentRunId.make("run-active"));
+      expect(cursorRun.status).toBe("failed");
+      expect(cursorRun.error).toBe("Cursor subagent state was lost when the server restarted.");
+      expect(cursorRun.completedAt).toBe(now);
       expect(
-        (yield* restarted.getOwned(rootThreadId, SubagentRunId.make("run-active"))).status,
+        (yield* restarted.getOwned(rootThreadId, SubagentRunId.make("run-replayable-active")))
+          .status,
       ).toBe("unknown");
 
       const compacted = yield* fs.readFileString(`${config.stateDir}/subagent-runs-v1.ndjson`);

@@ -5,7 +5,7 @@
  * surface descriptors and the active surface, while each feature continues to
  * own its durable resource state. Browser surfaces point at preview tab ids,
  * terminal surfaces point at terminal session ids, file surfaces point at
- * workspace paths, and diff/files/subagents/agents remain singleton surfaces.
+ * workspace paths, and diff/files/subagents remain singleton surfaces.
  */
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
@@ -22,7 +22,6 @@ export const RIGHT_PANEL_KINDS = [
   "preview",
   "terminal",
   "pull-request",
-  "agents",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -63,14 +62,14 @@ export type RightPanelSurface =
       projectId: string;
       repository: string;
       number: number;
-    }
-  | { id: "agents"; kind: "agents" };
+    };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v9 removed the "plan" surface kind (plans render inline in the transcript).
 // v10 keys pull-request surfaces by reference instead of a singleton tab.
 // v11 stops persisting the pull-request list's shared panel, so a restart opens the page fresh.
-const RIGHT_PANEL_STORAGE_VERSION = 11;
+// v12 folds the removed Agents surface into the normalized Subagents surface.
+const RIGHT_PANEL_STORAGE_VERSION = 12;
 
 /**
  * The pull-request list's shared panel (see PULL_REQUESTS_PANEL_ID in the route) is session
@@ -138,8 +137,6 @@ const singletonSurface = (
       return { id: "files", kind };
     case "subagents":
       return { id: "subagents", kind };
-    case "agents":
-      return { id: "agents", kind };
   }
 };
 
@@ -265,11 +262,17 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
             .map(([threadKey, threadState]) => {
               const validThreadState =
                 threadState && typeof threadState === "object" ? threadState : null;
-              const surfaces = Array.isArray(validThreadState?.surfaces)
+              const migratedSurfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
+                    const surfaceKind = (surface as { kind?: unknown }).kind;
                     // Dropped surface kind: plans now render inline in the
                     // transcript (v9).
-                    if ((surface as { kind?: string }).kind === "plan") return [];
+                    if (surfaceKind === "plan") return [];
+                    // Agents and Subagents were two views over the same child
+                    // work. The normalized Subagents surface owns both now.
+                    if (surfaceKind === "agents") {
+                      return [{ id: "subagents", kind: "subagents" }];
+                    }
                     if (surface.kind === "file") {
                       const revealLine =
                         typeof surface.revealLine === "number" &&
@@ -337,12 +340,17 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     ];
                   })
                 : [];
+              const surfaces = [
+                ...new Map(migratedSurfaces.map((surface) => [surface.id, surface])).values(),
+              ];
               const rawActiveSurfaceId = validThreadState?.activeSurfaceId;
+              const migratedActiveSurfaceId =
+                rawActiveSurfaceId === "agents" ? "subagents" : rawActiveSurfaceId;
               const persistedActiveSurfaceId = surfaces.some(
-                (surface) => surface.id === rawActiveSurfaceId,
+                (surface) => surface.id === migratedActiveSurfaceId,
               )
-                ? (rawActiveSurfaceId ?? null)
-                : rawActiveSurfaceId === "pull-request"
+                ? (migratedActiveSurfaceId ?? null)
+                : migratedActiveSurfaceId === "pull-request"
                   ? (surfaces.find((surface) => surface.kind === "pull-request")?.id ?? null)
                   : null;
               // A migration that dropped every surface (e.g. plan-only panels

@@ -16,7 +16,7 @@ import {
 } from "@t3tools/client-runtime/state/subagentRuntime";
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
-const NOOP_OPEN_AGENTS = () => {};
+const NOOP_OPEN_SUBAGENTS = () => {};
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
@@ -167,7 +167,7 @@ interface TimelineRowSharedState {
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
-  onOpenAgents: () => void;
+  onOpenSubagents: () => void;
 }
 
 interface TimelineRowActivityState {
@@ -226,7 +226,7 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
 
 interface MessagesTimelineProps {
   agentPanelModel?: AgentPanelModel;
-  onOpenAgents?: () => void;
+  onOpenSubagents?: () => void;
   isWorking: boolean;
   activeTurnStartedAt: string | null;
   listRef: React.RefObject<LegendListRef | null>;
@@ -275,7 +275,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   isWorking,
   activeTurnStartedAt,
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
-  onOpenAgents = NOOP_OPEN_AGENTS,
+  onOpenSubagents = NOOP_OPEN_SUBAGENTS,
   listRef,
   timelineEntries,
   latestTurn,
@@ -555,7 +555,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleTurnFold,
       onToggleWorkGroup,
       agentPanelModel,
-      onOpenAgents,
+      onOpenSubagents,
     }),
     [
       timestampFormat,
@@ -574,7 +574,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onToggleTurnFold,
       onToggleWorkGroup,
       agentPanelModel,
-      onOpenAgents,
+      onOpenSubagents,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -2498,13 +2498,15 @@ const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation(
 /**
  * A1 spawn CTA: one anchored row per workflow run (or per-turn direct-spawn
  * batch). Live status is derived from the shared agent panel model at render
- * time — the row itself never re-renders a roster; the Agents panel is the
- * only roster. Freezes to past tense when every member settles. Static dot,
+ * time. The row never renders a roster; the Subagents panel owns that list.
+ * Freezes to past tense when every member settles. Static dot,
  * no animation.
  */
-const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: TimelineWorkEntry }) {
+const SubagentSpawnCtaRow = memo(function SubagentSpawnCtaRow(props: {
+  workEntry: TimelineWorkEntry;
+}) {
   const { workEntry } = props;
-  const { agentPanelModel, onOpenAgents } = use(TimelineRowCtx);
+  const { agentPanelModel, onOpenSubagents } = use(TimelineRowCtx);
   const spawn = workEntry.agentSpawn;
   if (!spawn) {
     return null;
@@ -2569,7 +2571,7 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
   return (
     <button
       type="button"
-      onClick={onOpenAgents}
+      onClick={onOpenSubagents}
       className="flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-accent/50"
     >
       <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />
@@ -2583,7 +2585,7 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
         {totalTokens > 0 ? (
           <span className="tabular-nums">Σ {formatSubagentTokenCount(totalTokens)}</span>
         ) : null}
-        <span className="text-info-foreground">{live ? "Open Agents ▸" : "View ▸"}</span>
+        <span className="text-info-foreground">{live ? "Open Subagents ▸" : "View ▸"}</span>
       </span>
     </button>
   );
@@ -2597,7 +2599,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
   // Before any hooks: spawn CTA rows render their own component.
   if (workEntry.agentSpawn) {
-    return <AgentSpawnCtaRow workEntry={workEntry} />;
+    return <SubagentSpawnCtaRow workEntry={workEntry} />;
   }
   return (
     <PlainWorkEntryRow

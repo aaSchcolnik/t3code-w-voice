@@ -307,9 +307,9 @@ function isTerminalBypassUpdate(activity: OrchestrationThreadActivity): boolean 
 
 /**
  * Quiet-timeline guarantee (mirrors web's session-logic): agent-internal
- * activity lives in the Agents sheet, not the work log. Terminal rows are
- * kept — with no Agents surface on mobile they are the terminal signal
- * (a surface that hides rows must keep its own terminal signal). That means
+ * activity lives in Subagents, not the work log. Terminal rows remain in the
+ * mobile feed as an immediate completion signal alongside normalized run
+ * detail. That means
  * task.completed (Claude) AND terminal bypassed task.updated (Codex, whose
  * children never emit task.completed — review finding).
  */
@@ -326,7 +326,7 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
     return true;
   }
   // agentId marks ownership, not "hide me": a NESTED AGENT's terminal row is
-  // the only signal mobile gets (no Agents sheet), so it stays. Only an
+  // a direct completion signal in the feed, so it stays. Only an
   // agent's own background work (stamped "background") is internal — same
   // rule as web (review finding: hiding on agentId alone dropped nested
   // completions with no replacement UI).
