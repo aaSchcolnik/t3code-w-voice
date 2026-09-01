@@ -132,13 +132,24 @@ describe("routeCodexChildNotification", () => {
 
   it("drops only enumerated child chatter", () => {
     for (const method of [
-      "item/agentMessage/delta",
-      "item/reasoning/textDelta",
-      "item/commandExecution/outputDelta",
+      "item/reasoning/summaryPartAdded",
+      "item/fileChange/patchUpdated",
       "turn/plan/updated",
       "thread/name/updated",
     ]) {
       assert.equal(routeCodexChildNotification(method), "drop", method);
+    }
+  });
+
+  it("routes child output deltas into the subagent transcript", () => {
+    for (const method of [
+      "item/agentMessage/delta",
+      "item/reasoning/textDelta",
+      "item/reasoning/summaryTextDelta",
+      "item/commandExecution/outputDelta",
+      "item/fileChange/outputDelta",
+    ]) {
+      assert.equal(routeCodexChildNotification(method), "agent-event", method);
     }
   });
 

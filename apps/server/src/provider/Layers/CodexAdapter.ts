@@ -15,6 +15,7 @@ import {
   ProviderDriverKind,
   type ProviderEvent,
   ProviderInstanceId,
+  ProviderItemId,
   type ProviderRuntimeEvent,
   type ProviderRequestKind,
   type ThreadTokenUsageSnapshot,
@@ -26,6 +27,7 @@ import {
   type RuntimeTaskUsage,
   ProviderApprovalDecision,
   ThreadId,
+  TurnId,
   ProviderSendTurnInput,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -76,6 +78,7 @@ import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 import {
   CodexNativeSubagentTracker,
   type CodexNativeSubagentRecord,
+  type CodexNativeSubagentObservation,
 } from "../codex/CodexNativeSubagentTracker.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
@@ -567,22 +570,284 @@ function mapItemLifecycle(
   };
 }
 
+function collabAgentPayload(event: ProviderEvent): Record<string, unknown> | undefined {
+  return typeof event.payload === "object" && event.payload !== null
+    ? (event.payload as Record<string, unknown>)
+    : undefined;
+}
+
+function collabAgentStatus(
+  method: string,
+  payload: Record<string, unknown>,
+): CodexNativeSubagentObservation["status"] {
+  if (method === "collabAgent/started") return "starting";
+  if (method === "collabAgent/turnStarted") return "running";
+  if (method === "collabAgent/closed") return "cancelled";
+  if (method === "collabAgent/activity") {
+    if (payload.activityKind === "started") return "running";
+    if (payload.activityKind === "completed") return "completed";
+    if (payload.activityKind === "interrupted") return "cancelled";
+    return undefined;
+  }
+  if (method === "collabAgent/turnCompleted") {
+    const turn =
+      typeof payload.turn === "object" && payload.turn !== null
+        ? (payload.turn as Record<string, unknown>)
+        : undefined;
+    return turn?.status === "failed"
+      ? "failed"
+      : turn?.status === "interrupted" || turn?.status === "cancelled"
+        ? "cancelled"
+        : "completed";
+  }
+  if (method === "collabAgent/statusChanged") {
+    const status =
+      typeof payload.status === "object" && payload.status !== null
+        ? (payload.status as Record<string, unknown>)
+        : undefined;
+    if (status?.type === "systemError") return "failed";
+    if (status?.type !== "active") return undefined;
+    const flags = Array.isArray(status.activeFlags) ? status.activeFlags : [];
+    return flags.some((flag) => flag === "waitingOnApproval" || flag === "waitingOnUserInput")
+      ? "waiting_for_input"
+      : "running";
+  }
+  return undefined;
+}
+
+function observeCollabAgentEvent(
+  event: ProviderEvent,
+  tracker: CodexNativeSubagentTracker,
+): { readonly run: CodexNativeSubagentRecord; readonly emitLifecycle: boolean } | undefined {
+  if (event.kind !== "notification" || !event.method.startsWith("collabAgent/")) {
+    return undefined;
+  }
+  const payload = collabAgentPayload(event);
+  const providerThreadId =
+    typeof payload?.agentThreadId === "string" ? payload.agentThreadId.trim() : "";
+  if (!payload || providerThreadId.length === 0) return undefined;
+
+  const current = tracker.byThreadId(providerThreadId);
+  if (
+    current &&
+    (event.method === "collabAgent/contentDelta" ||
+      event.method === "collabAgent/tokenUsage" ||
+      (event.method === "collabAgent/activity" && payload.activityKind === "interacted"))
+  ) {
+    return { run: current, emitLifecycle: false };
+  }
+  const path = typeof payload.agentPath === "string" ? trimText(payload.agentPath) : undefined;
+  const pathLeaf = path?.split("/").findLast((segment) => segment.length > 0);
+  const nickname = typeof payload.nickname === "string" ? trimText(payload.nickname) : undefined;
+  const role = typeof payload.role === "string" ? trimText(payload.role) : undefined;
+  const title = nickname ?? pathLeaf ?? role;
+  const resolvedModel = typeof payload.model === "string" ? trimText(payload.model) : undefined;
+  const reasoningEffort = typeof payload.effort === "string" ? trimText(payload.effort) : undefined;
+  const depth =
+    typeof payload.depth === "number" && Number.isInteger(payload.depth) && payload.depth >= 0
+      ? payload.depth
+      : undefined;
+  const childTurnId =
+    typeof payload.childTurnId === "string" && payload.childTurnId.trim().length > 0
+      ? TurnId.make(payload.childTurnId)
+      : undefined;
+  const item =
+    typeof payload.item === "object" && payload.item !== null
+      ? (payload.item as Record<string, unknown>)
+      : undefined;
+  const itemSummary =
+    item?.type === "agentMessage" && typeof item.text === "string"
+      ? trimText(item.text)
+      : undefined;
+  const status = collabAgentStatus(event.method, payload);
+  const metadataChanged =
+    event.method === "collabAgent/metadataUpdated" &&
+    (resolvedModel !== undefined || reasoningEffort !== undefined);
+  if (
+    current &&
+    status === undefined &&
+    itemSummary === undefined &&
+    !metadataChanged &&
+    event.method !== "collabAgent/started"
+  ) {
+    return { run: current, emitLifecycle: false };
+  }
+  const run = tracker.observe({
+    providerThreadId,
+    ...(typeof payload.parentThreadId === "string"
+      ? { providerParentThreadId: payload.parentThreadId }
+      : {}),
+    ...(depth !== undefined ? { depth } : {}),
+    ...(title ? { title } : {}),
+    ...(typeof payload.taskPreview === "string" ? { taskPreview: payload.taskPreview } : {}),
+    ...(role ? { agentType: role } : {}),
+    ...(resolvedModel ? { resolvedModel } : {}),
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+    ...(path ? { path } : {}),
+    ...(status ? { status } : {}),
+    ...(itemSummary ? { lastSummary: itemSummary } : {}),
+    ...(event.method === "collabAgent/turnStarted" && childTurnId
+      ? { activeTurnId: childTurnId }
+      : event.method === "collabAgent/turnCompleted" || event.method === "collabAgent/closed"
+        ? { activeTurnId: null }
+        : {}),
+  });
+  const emitLifecycle =
+    current === undefined ||
+    event.method === "collabAgent/started" ||
+    status !== undefined ||
+    metadataChanged ||
+    itemSummary !== undefined;
+  return { run, emitLifecycle };
+}
+
+function collabAgentScopedEventBase(
+  event: ProviderEvent,
+  canonicalThreadId: ThreadId,
+  run: CodexNativeSubagentRecord,
+  suffix: string,
+) {
+  const base = runtimeEventBase(event, canonicalThreadId);
+  return {
+    ...base,
+    eventId: EventId.make(`${event.id}:subagent:${run.runId}:${suffix}`),
+    executionScope: codexExecutionScope(run),
+    providerRefs: {
+      ...base.providerRefs,
+      providerThreadId: run.providerThreadId,
+      ...(run.providerParentThreadId ? { providerParentThreadId: run.providerParentThreadId } : {}),
+    },
+  };
+}
+
+function mapCollabAgentTranscriptEvents(
+  event: ProviderEvent,
+  canonicalThreadId: ThreadId,
+  run: CodexNativeSubagentRecord,
+): ReadonlyArray<ProviderRuntimeEvent> {
+  const payload = collabAgentPayload(event);
+  if (!payload) return [];
+  const childTurnId =
+    typeof payload.childTurnId === "string" && payload.childTurnId.trim().length > 0
+      ? TurnId.make(payload.childTurnId)
+      : undefined;
+
+  if (event.method === "collabAgent/contentDelta") {
+    const childMethod =
+      typeof payload.childMethod === "string" ? payload.childMethod : "item/agentMessage/delta";
+    const delta = typeof payload.delta === "string" ? payload.delta : undefined;
+    if (!delta) return [];
+    const childItemId =
+      typeof payload.childItemId === "string" && payload.childItemId.trim().length > 0
+        ? payload.childItemId
+        : undefined;
+    const base = collabAgentScopedEventBase(event, canonicalThreadId, run, "content");
+    return [
+      {
+        ...base,
+        type: "content.delta",
+        ...(childTurnId ? { turnId: childTurnId } : {}),
+        ...(childItemId ? { itemId: RuntimeItemId.make(childItemId) } : {}),
+        providerRefs: {
+          ...base.providerRefs,
+          ...(childTurnId ? { providerTurnId: childTurnId } : {}),
+          ...(childItemId ? { providerItemId: ProviderItemId.make(childItemId) } : {}),
+        },
+        payload: {
+          streamKind: contentStreamKindFromMethod(childMethod),
+          delta,
+        },
+      },
+    ];
+  }
+
+  if (event.method === "collabAgent/item") {
+    const item =
+      typeof payload.item === "object" && payload.item !== null
+        ? (payload.item as CodexLifecycleItem)
+        : undefined;
+    if (!item || typeof item.type !== "string") return [];
+    const itemType = toCanonicalItemType(item.type);
+    if (itemType === "unknown") return [];
+    const lifecycle = payload.lifecycle === "started" ? "item.started" : "item.completed";
+    const itemId = typeof item.id === "string" ? item.id : `${event.id}:item`;
+    const detail = itemDetail(itemType, item);
+    const base = collabAgentScopedEventBase(event, canonicalThreadId, run, "item");
+    return [
+      {
+        ...base,
+        type: lifecycle,
+        ...(childTurnId ? { turnId: childTurnId } : {}),
+        itemId: RuntimeItemId.make(itemId),
+        providerRefs: {
+          ...base.providerRefs,
+          ...(childTurnId ? { providerTurnId: childTurnId } : {}),
+          providerItemId: ProviderItemId.make(itemId),
+        },
+        payload: {
+          itemType,
+          status:
+            lifecycle === "item.started"
+              ? "inProgress"
+              : "status" in item && (item.status === "failed" || item.status === "declined")
+                ? item.status
+                : "completed",
+          ...(itemTitle(itemType, item) ? { title: itemTitle(itemType, item) } : {}),
+          ...(detail ? { detail } : {}),
+          data: {
+            threadId: run.providerThreadId,
+            ...(childTurnId ? { turnId: childTurnId } : {}),
+            item,
+          },
+        },
+      },
+    ];
+  }
+
+  if (event.method === "collabAgent/turnStarted" || event.method === "collabAgent/turnCompleted") {
+    const base = collabAgentScopedEventBase(event, canonicalThreadId, run, "turn");
+    if (event.method === "collabAgent/turnStarted") {
+      return [
+        {
+          ...base,
+          type: "turn.started",
+          ...(childTurnId ? { turnId: childTurnId } : {}),
+          payload: {},
+        },
+      ];
+    }
+    const turn =
+      typeof payload.turn === "object" && payload.turn !== null
+        ? (payload.turn as Record<string, unknown>)
+        : undefined;
+    const state =
+      turn?.status === "failed"
+        ? ("failed" as const)
+        : turn?.status === "interrupted" || turn?.status === "cancelled"
+          ? ("cancelled" as const)
+          : ("completed" as const);
+    return [
+      {
+        ...base,
+        type: "turn.completed",
+        ...(childTurnId ? { turnId: childTurnId } : {}),
+        payload: { state },
+      },
+    ];
+  }
+
+  return [];
+}
+
 /**
- * Maps the session runtime's synthetic `collabAgent/*` events (native
- * multi-agent v2 child-thread signals) into the shared task.* lifecycle.
- * Agent identity = child thread id; nickname is the display title, role is
- * agentRole (fallback: last agentPath segment, then "general-purpose").
- * A completed child turn is idle (resumable), not terminal. timelineBypass
- * keeps these rows out of the parent chat.
+ * Keeps the compact spawn card in the parent transcript. The normalized
+ * SubagentRun lifecycle and child transcript are emitted separately.
  */
 function mapCollabAgentEvent(
   event: ProviderEvent,
   canonicalThreadId: ThreadId,
 ): ReadonlyArray<ProviderRuntimeEvent> {
-  const payload =
-    typeof event.payload === "object" && event.payload !== null
-      ? (event.payload as Record<string, unknown>)
-      : undefined;
+  const payload = collabAgentPayload(event);
   const agentThreadId = typeof payload?.agentThreadId === "string" ? payload.agentThreadId : "";
   if (!payload || agentThreadId.length === 0) {
     return [];
@@ -1713,6 +1978,9 @@ function codexLifecycleEvent(
 ): ProviderRuntimeEvent {
   const isTerminal =
     run.status === "completed" || run.status === "failed" || run.status === "cancelled";
+  const resolvedOptions = run.reasoningEffort
+    ? [{ id: "reasoningEffort", value: run.reasoningEffort }]
+    : undefined;
   return {
     ...runtimeEventBase(event, canonicalThreadId),
     eventId: EventId.make(`${event.id}:subagent:${run.runId}`),
@@ -1733,9 +2001,16 @@ function codexLifecycleEvent(
       status: run.status,
       title: run.title,
       taskPreview: run.taskPreview,
+      runKind: "agent",
       ...(run.agentType ? { agentType: run.agentType } : {}),
       ...(run.requestedModel ? { requestedModel: run.requestedModel } : {}),
-      modelResolution: run.requestedModel ? "configured" : "unknown",
+      ...(run.resolvedModel ? { resolvedModel: run.resolvedModel } : {}),
+      ...(resolvedOptions ? { resolvedOptions } : {}),
+      modelResolution: run.resolvedModel
+        ? "reported"
+        : run.requestedModel
+          ? "configured"
+          : "unknown",
       ...(run.lastSummary !== undefined ? { lastSummary: run.lastSummary } : {}),
       ...(run.error !== undefined ? { error: run.error } : {}),
       capabilities: {
@@ -1755,6 +2030,8 @@ function mapToRuntimeEvents(
   tracker: CodexNativeSubagentTracker,
 ): ReadonlyArray<ProviderRuntimeEvent> {
   const changedRuns: CodexNativeSubagentRecord[] = [];
+  const syntheticCollab = observeCollabAgentEvent(event, tracker);
+  if (syntheticCollab?.emitLifecycle) changedRuns.push(syntheticCollab.run);
   if (event.method === "item/started" || event.method === "item/completed") {
     const payload =
       readPayload(EffectCodexSchema.V2ItemStartedNotification, event.payload) ??
@@ -1815,6 +2092,9 @@ function mapToRuntimeEvents(
   return [
     ...uniqueRuns.map((run) => codexLifecycleEvent(event, canonicalThreadId, run)),
     ...baseEvents,
+    ...(syntheticCollab
+      ? mapCollabAgentTranscriptEvents(event, canonicalThreadId, syntheticCollab.run)
+      : []),
   ];
 }
 

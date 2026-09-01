@@ -60,6 +60,28 @@ function buildScript() {
         },
       },
     },
+    {
+      method: "item/agentMessage/delta",
+      params: {
+        threadId: CHILD_A,
+        turnId: `${CHILD_A}-turn-1`,
+        itemId: "child-message-1",
+        delta: "Child finding",
+      },
+    },
+    {
+      method: "item/completed",
+      params: {
+        threadId: CHILD_A,
+        turnId: `${CHILD_A}-turn-1`,
+        completedAtMs: 1_785_898_350_000,
+        item: {
+          type: "agentMessage",
+          id: "child-message-1",
+          text: "Child finding complete",
+        },
+      },
+    },
     // Child terminal lifecycle AFTER the receiver map knows the children —
     // pre-fix, the legacy suppressor dropped these before interception saw
     // them, so no synthetic agent events were emitted.
@@ -430,6 +452,8 @@ describe("CodexSessionRuntime collab integration", () => {
       // lifecycle — including terminal rows that arrive AFTER the receiver
       // map knows them (the ordering this test exists to pin).
       assert.include(methods, "collabAgent/activity");
+      assert.include(methods, "collabAgent/contentDelta");
+      assert.include(methods, "collabAgent/item");
       assert.include(methods, "collabAgent/turnCompleted");
       assert.include(methods, "collabAgent/closed");
 

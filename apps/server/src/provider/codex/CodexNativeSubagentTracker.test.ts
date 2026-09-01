@@ -73,4 +73,34 @@ describe("CodexNativeSubagentTracker", () => {
     expect(terminal?.status).toBe("completed");
     expect(terminal?.activeTurnId).toBeUndefined();
   });
+
+  it("correlates normalized child observations and preserves reported metadata", () => {
+    const tracker = new CodexNativeSubagentTracker();
+    const parent = tracker.observe({
+      providerThreadId: "parent-child",
+      providerParentThreadId: "root",
+      title: "schema-review",
+      resolvedModel: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      status: "running",
+      activeTurnId: TurnId.make("parent-turn"),
+    });
+    const child = tracker.observe({
+      providerThreadId: "nested-child",
+      providerParentThreadId: "parent-child",
+      title: "tests-review",
+      status: "running",
+    });
+    const completed = tracker.observe({
+      providerThreadId: "parent-child",
+      status: "completed",
+      activeTurnId: null,
+    });
+
+    expect(parent.resolvedModel).toBe("gpt-5.6-sol");
+    expect(parent.reasoningEffort).toBe("high");
+    expect(child.parentRunId).toBe("parent-child");
+    expect(child.depth).toBe(1);
+    expect(completed.activeTurnId).toBeUndefined();
+  });
 });

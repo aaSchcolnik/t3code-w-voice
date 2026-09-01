@@ -11,12 +11,31 @@ export interface CodexNativeSubagentRecord {
   readonly taskPreview: string;
   readonly agentType?: string;
   readonly requestedModel?: string;
+  readonly resolvedModel?: string;
   readonly reasoningEffort?: string;
   readonly path?: string;
   readonly status: SubagentStatus;
   readonly lastSummary?: string;
   readonly error?: string;
   readonly activeTurnId: TurnId | undefined;
+}
+
+export interface CodexNativeSubagentObservation {
+  readonly providerThreadId: string;
+  readonly providerParentThreadId?: string;
+  readonly depth?: number;
+  readonly title?: string;
+  readonly taskPreview?: string;
+  readonly agentType?: string;
+  readonly requestedModel?: string;
+  readonly resolvedModel?: string;
+  readonly reasoningEffort?: string;
+  readonly path?: string;
+  readonly status?: SubagentStatus;
+  readonly lastSummary?: string;
+  readonly error?: string;
+  /** `null` explicitly clears the active provider turn. */
+  readonly activeTurnId?: TurnId | null;
 }
 
 type CollabItem = Extract<
@@ -56,6 +75,40 @@ function terminal(status: SubagentStatus): boolean {
 
 export class CodexNativeSubagentTracker {
   readonly #runs = new Map<string, CodexNativeSubagentRecord>();
+
+  observe(input: CodexNativeSubagentObservation): CodexNativeSubagentRecord {
+    const current = this.#runs.get(input.providerThreadId);
+    const parent = input.providerParentThreadId
+      ? this.#runs.get(input.providerParentThreadId)
+      : undefined;
+    const next: CodexNativeSubagentRecord = {
+      ...current,
+      runId: SubagentRunId.make(input.providerThreadId),
+      providerThreadId: input.providerThreadId,
+      ...(input.providerParentThreadId
+        ? { providerParentThreadId: input.providerParentThreadId }
+        : {}),
+      ...(parent ? { parentRunId: parent.runId } : {}),
+      depth: input.depth ?? current?.depth ?? (parent ? parent.depth + 1 : 0),
+      title: text(input.title) ?? current?.title ?? "Codex subagent",
+      taskPreview: text(input.taskPreview) ?? current?.taskPreview ?? "Codex collaboration task",
+      ...(text(input.agentType) ? { agentType: text(input.agentType)! } : {}),
+      ...(text(input.requestedModel) ? { requestedModel: text(input.requestedModel)! } : {}),
+      ...(text(input.resolvedModel) ? { resolvedModel: text(input.resolvedModel)! } : {}),
+      ...(text(input.reasoningEffort) ? { reasoningEffort: text(input.reasoningEffort)! } : {}),
+      ...(text(input.path) ? { path: text(input.path)! } : {}),
+      status:
+        current && terminal(current.status)
+          ? current.status
+          : (input.status ?? current?.status ?? "unknown"),
+      ...(text(input.lastSummary) ? { lastSummary: text(input.lastSummary)! } : {}),
+      ...(text(input.error) ? { error: text(input.error)! } : {}),
+      activeTurnId:
+        input.activeTurnId === null ? undefined : (input.activeTurnId ?? current?.activeTurnId),
+    };
+    this.#runs.set(input.providerThreadId, next);
+    return next;
+  }
 
   fromCollabItem(item: CollabItem): ReadonlyArray<CodexNativeSubagentRecord> {
     return item.receiverThreadIds.map((providerThreadId) => {
@@ -112,7 +165,10 @@ export class CodexNativeSubagentTracker {
       providerThreadId: thread.id,
       ...(parentThreadId ? { providerParentThreadId: parentThreadId } : {}),
       ...(parent ? { parentRunId: parent.runId } : {}),
-      depth: spawn?.depth ?? current?.depth ?? (parent ? parent.depth + 1 : 0),
+      depth:
+        (spawn?.depth === undefined ? undefined : Math.max(0, spawn.depth - 1)) ??
+        current?.depth ??
+        (parent ? parent.depth + 1 : 0),
       title: nickname ?? role ?? current?.title ?? "Codex subagent",
       taskPreview: text(thread.preview) ?? current?.taskPreview ?? "Codex collaboration task",
       ...(role ? { agentType: role } : {}),

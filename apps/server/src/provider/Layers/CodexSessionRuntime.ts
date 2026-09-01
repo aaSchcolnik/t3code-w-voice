@@ -986,6 +986,17 @@ function readThreadSpawnSource(thread: { readonly source: unknown }):
   };
 }
 
+function normalizedCollabDepth(depth: number | undefined): number | undefined {
+  return depth === undefined ? undefined : Math.max(0, depth - 1);
+}
+
+function collabDepthFromAgentPath(agentPath: string): number | undefined {
+  const segments = agentPath.split("/").filter((segment) => segment.length > 0);
+  const rootIndex = segments.indexOf("root");
+  if (rootIndex < 0 || rootIndex === segments.length - 1) return undefined;
+  return Math.max(0, segments.length - rootIndex - 2);
+}
+
 function rememberCollabReceiverTurns(
   collabReceiverTurns: Map<string, TurnId>,
   notification: CodexServerNotification,
@@ -1056,17 +1067,17 @@ const CHILD_AGENT_EVENT_METHODS: ReadonlySet<string> = new Set([
   "model/rerouted",
   "item/started",
   "item/completed",
+  "item/agentMessage/delta",
+  "item/reasoning/textDelta",
+  "item/reasoning/summaryTextDelta",
+  "item/commandExecution/outputDelta",
+  "item/fileChange/outputDelta",
   "thread/closed",
   "error",
 ]);
 
 const CHILD_CHATTER_METHODS: ReadonlySet<string> = new Set([
-  "item/agentMessage/delta",
-  "item/reasoning/textDelta",
-  "item/reasoning/summaryTextDelta",
   "item/reasoning/summaryPartAdded",
-  "item/commandExecution/outputDelta",
-  "item/fileChange/outputDelta",
   "item/fileChange/patchUpdated",
   "item/plan/delta",
   "turn/plan/updated",
@@ -1557,7 +1568,7 @@ export const makeCodexSessionRuntime = (
             nickname: spawn.nickname ?? thread.agentNickname ?? existingChild?.nickname,
             role: spawn.role ?? thread.agentRole ?? existingChild?.role,
             agentPath: spawn.agentPath ?? existingChild?.agentPath,
-            depth: spawn.depth ?? existingChild?.depth,
+            depth: normalizedCollabDepth(spawn.depth) ?? existingChild?.depth,
             parentThreadId:
               spawn.parentThreadId ?? thread.parentThreadId ?? existingChild?.parentThreadId,
             spawnTurnId,
@@ -1568,6 +1579,7 @@ export const makeCodexSessionRuntime = (
             return next;
           });
           const metadata = (yield* Ref.get(collabChildMetadataRef)).get(thread.id);
+          const taskPreview = nonEmptyMetadataValue(thread.preview);
           yield* emitEvent({
             kind: "notification",
             threadId: options.threadId,
@@ -1577,6 +1589,7 @@ export const makeCodexSessionRuntime = (
               ...collabChildIdentity(state, metadata),
               ...(state.depth !== undefined ? { depth: state.depth } : {}),
               ...(state.parentThreadId ? { parentThreadId: state.parentThreadId } : {}),
+              ...(taskPreview ? { taskPreview } : {}),
             },
           });
           yield* startCollabChildMetadataLookup(thread.id);
@@ -1622,8 +1635,8 @@ export const makeCodexSessionRuntime = (
                 item.agentPath.split("/").findLast((segment) => segment.length > 0),
               role: existing?.role,
               agentPath: existing?.agentPath ?? item.agentPath,
-              depth: existing?.depth,
-              parentThreadId: existing?.parentThreadId,
+              depth: existing?.depth ?? collabDepthFromAgentPath(item.agentPath),
+              parentThreadId: existing?.parentThreadId ?? notification.params.threadId,
               spawnTurnId: existing ? existing.spawnTurnId : activitySpawnTurnId,
             });
             return next;
@@ -1715,7 +1728,10 @@ export const makeCodexSessionRuntime = (
               threadId: options.threadId,
               ...(child.spawnTurnId ? { turnId: child.spawnTurnId } : {}),
               method: "collabAgent/turnStarted",
-              payload: childIdentity,
+              payload: {
+                ...childIdentity,
+                ...(childTurnId ? { childTurnId } : {}),
+              },
             });
             return true;
           }
@@ -1732,6 +1748,7 @@ export const makeCodexSessionRuntime = (
               method: "collabAgent/turnCompleted",
               payload: {
                 ...childIdentity,
+                childTurnId: notification.params.turn.id,
                 turn: notification.params.turn,
               },
             });
@@ -1769,7 +1786,28 @@ export const makeCodexSessionRuntime = (
               method: "collabAgent/item",
               payload: {
                 ...childIdentity,
+                lifecycle: notification.method === "item/started" ? "started" : "completed",
+                childTurnId: notification.params.turnId,
                 item: notification.params.item,
+              },
+            });
+            return true;
+          case "item/agentMessage/delta":
+          case "item/reasoning/textDelta":
+          case "item/reasoning/summaryTextDelta":
+          case "item/commandExecution/outputDelta":
+          case "item/fileChange/outputDelta":
+            yield* emitEvent({
+              kind: "notification",
+              threadId: options.threadId,
+              ...(child.spawnTurnId ? { turnId: child.spawnTurnId } : {}),
+              method: "collabAgent/contentDelta",
+              payload: {
+                ...childIdentity,
+                childMethod: notification.method,
+                childTurnId: notification.params.turnId,
+                childItemId: notification.params.itemId,
+                delta: notification.params.delta,
               },
             });
             return true;

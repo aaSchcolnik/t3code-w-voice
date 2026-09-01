@@ -13,6 +13,7 @@ import {
   ProviderItemId,
   type ProviderApprovalDecision,
   type ProviderEvent,
+  type ProviderRuntimeEvent,
   type ProviderSession,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
@@ -696,10 +697,10 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
-  it.effect("carries child model metadata through every task event", () =>
+  it.effect("projects child metadata into normalized runs and the parent spawn card", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
-      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 10)).pipe(
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 20)).pipe(
         Effect.forkChild,
       );
 
@@ -749,8 +750,9 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       });
 
       const events = Array.from(yield* Fiber.join(eventsFiber));
+      const taskEvents = events.filter((event) => event.type.startsWith("task."));
       NodeAssert.deepStrictEqual(
-        events.map((event) => event.type),
+        taskEvents.map((event) => event.type),
         [
           "task.started",
           "task.started",
@@ -764,25 +766,56 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           "task.updated",
         ],
       );
-      for (const event of events.slice(0, -1)) {
+      for (const event of taskEvents.slice(0, -1)) {
         const payload = event.payload as Record<string, unknown>;
         NodeAssert.equal(payload.model, "gpt-5.6-sol");
         NodeAssert.equal(payload.effort, "high");
       }
 
-      const metadataPayload = events[8]?.payload as Record<string, unknown>;
+      const metadataPayload = taskEvents[8]?.payload as Record<string, unknown>;
       NodeAssert.equal("status" in metadataPayload, false);
-      const blankMetadataPayload = events[9]?.payload as Record<string, unknown>;
+      const blankMetadataPayload = taskEvents[9]?.payload as Record<string, unknown>;
       NodeAssert.equal("status" in blankMetadataPayload, false);
       NodeAssert.equal("model" in blankMetadataPayload, false);
       NodeAssert.equal("effort" in blankMetadataPayload, false);
+
+      const lifecycle = events.filter(
+        (
+          event,
+        ): event is Extract<
+          ProviderRuntimeEvent,
+          { type: "subagent.started" | "subagent.updated" | "subagent.completed" }
+        > =>
+          event.type === "subagent.started" ||
+          event.type === "subagent.updated" ||
+          event.type === "subagent.completed",
+      );
+      NodeAssert.equal(lifecycle.length, 7);
+      for (const event of lifecycle) {
+        NodeAssert.equal(event.executionScope?.subagentRunId, "child-model");
+        NodeAssert.equal(event.payload.resolvedModel, "gpt-5.6-sol");
+        NodeAssert.deepStrictEqual(event.payload.resolvedOptions, [
+          { id: "reasoningEffort", value: "high" },
+        ]);
+        NodeAssert.equal(event.payload.modelResolution, "reported");
+      }
+      NodeAssert.ok(
+        events.some(
+          (event) =>
+            event.type === "item.completed" &&
+            event.executionScope?.subagentRunId === "child-model",
+        ),
+      );
     }),
   );
 
   it.effect("does not reactivate an idle child after a parent interaction", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
-      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 3)).pipe(
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "task.updated"),
+        Stream.take(3),
+        Stream.runCollect,
         Effect.forkChild,
       );
 
@@ -837,6 +870,84 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           { taskId: "child-2", status: "running" },
         ],
       );
+    }),
+  );
+
+  it.effect("isolates Codex child output in the normalized subagent transcript", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const scopedEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.executionScope?.subagentRunId === "child-output"),
+        Stream.take(6),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const childEvent = (id: string, method: string, payload: Record<string, unknown>) => ({
+        id: asEventId(id),
+        kind: "notification" as const,
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method,
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("root-turn"),
+        payload: {
+          agentThreadId: "child-output",
+          agentPath: "/root/reviewer",
+          ...payload,
+        },
+      });
+
+      yield* runtime.emit(
+        childEvent("evt-child-output-start", "collabAgent/activity", {
+          activityKind: "started",
+          parentThreadId: "provider-root",
+          depth: 0,
+        }),
+      );
+      yield* runtime.emit(
+        childEvent("evt-child-output-turn", "collabAgent/turnStarted", {
+          childTurnId: "child-turn",
+        }),
+      );
+      yield* runtime.emit(
+        childEvent("evt-child-output-delta", "collabAgent/contentDelta", {
+          childMethod: "item/agentMessage/delta",
+          childTurnId: "child-turn",
+          childItemId: "child-message",
+          delta: "Reviewing the implementation",
+        }),
+      );
+      yield* runtime.emit(
+        childEvent("evt-child-output-item", "collabAgent/item", {
+          lifecycle: "completed",
+          childTurnId: "child-turn",
+          item: {
+            type: "agentMessage",
+            id: "child-message",
+            text: "Reviewing the implementation. No issues found.",
+          },
+        }),
+      );
+
+      const events = Array.from(yield* Fiber.join(scopedEventsFiber));
+      NodeAssert.deepStrictEqual(
+        events.map((event) => event.type),
+        [
+          "subagent.updated",
+          "subagent.updated",
+          "turn.started",
+          "content.delta",
+          "subagent.updated",
+          "item.completed",
+        ],
+      );
+      const delta = events.find((event) => event.type === "content.delta");
+      NodeAssert.equal(delta?.turnId, "child-turn");
+      NodeAssert.equal(delta?.itemId, "child-message");
+      if (delta?.type === "content.delta") {
+        NodeAssert.equal(delta.payload.delta, "Reviewing the implementation");
+      }
     }),
   );
 
