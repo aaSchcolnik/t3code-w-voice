@@ -21,6 +21,7 @@ effectIt.layer(NodeServices.layer)("dispatchServerTurnStart", (it) => {
           }),
         readEvents: () => Stream.empty,
         streamDomainEvents: Stream.empty,
+        subscribeDomainEvents: Effect.succeed(Stream.empty),
         latestSequence: Effect.succeed(0),
       });
       const systemEvent = {

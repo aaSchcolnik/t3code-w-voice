@@ -32,9 +32,9 @@ const OPENCODE_PRESENTATION = {
   displayName: "OpenCode",
   showInteractionModeToggle: false,
 } as const;
+const OPENCODE_VERSION_PROBE_TIMEOUT = "4 seconds";
 
-// Hard ceiling on the unbounded probe steps (`opencode --version` and the
-// provider/agent inventory load). Without this, a hung or unresponsive OpenCode
+// Hard ceiling on the unbounded provider/agent inventory load. Without this, a hung or unresponsive OpenCode
 // server freezes `checkOpenCodeProviderStatus` forever, which leaves the managed
 // snapshot stuck on its initial `makePendingOpenCodeProvider` placeholder ("…has
 // not been checked in this session yet") with zero models and no error the user
@@ -44,7 +44,7 @@ const OPENCODE_PROBE_TIMEOUT_SECONDS = 15;
 const OPENCODE_PROBE_TIMEOUT = `${OPENCODE_PROBE_TIMEOUT_SECONDS} seconds`;
 
 class OpenCodeProbeError extends Data.TaggedError("OpenCodeProbeError")<{
-  readonly cause: unknown;
+  readonly cause?: unknown;
   readonly detail: string;
 }> {}
 
@@ -271,9 +271,11 @@ function trimOptional(value: string | null | undefined): string | undefined {
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
 
-function flattenOpenCodeSkills(input: OpenCodeInventory): ReadonlyArray<ServerProviderSkill> {
+export function openCodeSkillsToServerProviderSkills(
+  input: OpenCodeInventory["skills"] | undefined,
+): ReadonlyArray<ServerProviderSkill> {
   const skills: ServerProviderSkill[] = [];
-  for (const skill of input.skills ?? []) {
+  for (const skill of input ?? []) {
     const name = trimOptional(skill.name);
     const path = trimOptional(skill.location);
     if (!name || !path) {
@@ -410,23 +412,21 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
           Effect.mapError(
             (cause) => new OpenCodeProbeError({ cause, detail: openCodeRuntimeErrorDetail(cause) }),
           ),
-          // `None` on timeout so a hung `opencode --version` becomes a retryable
-          // error rather than freezing the probe forever.
-          Effect.timeoutOption(OPENCODE_PROBE_TIMEOUT),
+          Effect.timeoutOrElse({
+            duration: OPENCODE_VERSION_PROBE_TIMEOUT,
+            orElse: () =>
+              Effect.fail(
+                new OpenCodeProbeError({
+                  detail: `OpenCode CLI version probe timed out after ${OPENCODE_VERSION_PROBE_TIMEOUT}.`,
+                }),
+              ),
+          }),
         ),
     );
     if (versionExit._tag === "Failure") {
       return fallback(Cause.squash(versionExit.cause));
     }
-    if (Option.isNone(versionExit.value)) {
-      return fallback(
-        new OpenCodeProbeError({
-          cause: undefined,
-          detail: `\`opencode --version\` did not respond within ${OPENCODE_PROBE_TIMEOUT_SECONDS}s.`,
-        }),
-      );
-    }
-    version = parseGenericCliVersion(versionExit.value.value.stdout) ?? null;
+    version = parseGenericCliVersion(versionExit.value.stdout) ?? null;
 
     if (!version) {
       return fallback(
@@ -512,7 +512,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     DEFAULT_OPENCODE_MODEL_CAPABILITIES,
   );
   const connectedCount = inventory.providerList.connected.length;
-  const skills = flattenOpenCodeSkills(inventory);
+  const skills = openCodeSkillsToServerProviderSkills(inventory.skills);
   return buildServerProvider({
     presentation: OPENCODE_PRESENTATION,
     enabled: true,

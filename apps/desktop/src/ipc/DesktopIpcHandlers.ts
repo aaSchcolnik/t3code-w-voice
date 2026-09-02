@@ -47,12 +47,16 @@ import {
 import { showNotification } from "./methods/notifications.ts";
 import * as PreviewIpc from "./methods/preview.ts";
 import * as TranscriptionIpc from "./methods/transcription.ts";
+import * as AppActivationIpc from "./methods/appActivation.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
   yield* PreviewIpc.installPreviewEventForwarding();
   yield* TranscriptionIpc.installTranscriptionEventForwarding();
+
+  yield* ipc.handle(AppActivationIpc.setReady);
+  yield* ipc.handle(AppActivationIpc.complete);
 
   yield* ipc.handleSync(getAppBranding);
   yield* ipc.handleSync(getSystemLocale);

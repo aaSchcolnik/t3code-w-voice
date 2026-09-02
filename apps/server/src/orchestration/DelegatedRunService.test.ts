@@ -118,6 +118,7 @@ const providerRegistryStub = (providers: ReadonlyArray<ServerProvider>) =>
       getProviders: Effect.succeed(providers),
       refresh: () => Effect.succeed(providers),
       refreshInstance: () => Effect.succeed(providers),
+      refreshWorkspaceSnapshot: () => Effect.succeed(providers),
       getProviderMaintenanceCapabilitiesForInstance: () => Effect.die("unused"),
       setProviderMaintenanceActionState: () => Effect.die("unused"),
       streamChanges: Stream.empty,
@@ -162,6 +163,7 @@ const makeStubbedEngine = (
   OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
     streamDomainEvents,
+    subscribeDomainEvents: Effect.succeed(streamDomainEvents),
     latestSequence: Effect.sync(() => commands.length),
     dispatch: (command) =>
       Effect.sync(() => {
@@ -593,6 +595,7 @@ it.effect("starts, projects, and cancels a delegated run", () => {
   const engine = OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
     streamDomainEvents: Stream.empty,
+    subscribeDomainEvents: Effect.succeed(Stream.empty),
     latestSequence: Effect.sync(() => commands.length),
     dispatch: (command) =>
       Effect.sync(() => {
@@ -1527,6 +1530,7 @@ it.effect("restores a wake when server turn-start dispatch is rejected", () =>
         OrchestrationEngineService.of({
           readEvents: () => Stream.empty,
           streamDomainEvents: Stream.empty,
+          subscribeDomainEvents: Effect.succeed(Stream.empty),
           latestSequence: Effect.sync(() => commands.length),
           dispatch: (command) =>
             Effect.gen(function* () {

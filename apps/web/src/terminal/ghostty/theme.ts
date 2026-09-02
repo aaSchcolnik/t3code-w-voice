@@ -40,7 +40,10 @@ export function terminalThemeFromApp(mountElement?: HTMLElement | null): Ghostty
   const isDark = document.documentElement.classList.contains("dark");
   const fallbackBackground = isDark ? "rgb(14, 18, 24)" : "rgb(255, 255, 255)";
   const fallbackForeground = isDark ? "rgb(237, 241, 247)" : "rgb(28, 33, 41)";
-  const surface = mountElement ?? document.body;
+  const surface =
+    mountElement?.closest(".thread-terminal-drawer") ??
+    document.querySelector(".thread-terminal-drawer") ??
+    document.body;
   const surfaceStyles = getComputedStyle(surface);
   const bodyStyles = getComputedStyle(document.body);
   const themeStyles = getComputedStyle(document.documentElement);
