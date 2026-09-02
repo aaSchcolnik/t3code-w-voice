@@ -359,6 +359,8 @@ export function toDesktopNotificationProvider(
       return "claudeAgent";
     case "cursor":
       return "cursor";
+    case "antigravity":
+      return "antigravity";
     case "grok":
       return "grok";
     case "opencode":

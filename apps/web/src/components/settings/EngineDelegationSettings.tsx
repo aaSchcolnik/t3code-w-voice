@@ -133,6 +133,7 @@ export function ChainEditor({
     { value: "cursor" as const, label: "Cursor" },
     { value: "codex" as const, label: "Codex" },
     { value: "claudeAgent" as const, label: "Claude" },
+    { value: "antigravity" as const, label: "Antigravity" },
   ];
   return (
     <FieldGroup className="w-full gap-3">
@@ -248,7 +249,8 @@ export function ChainEditor({
                       provider !== "inline" &&
                       provider !== "cursor" &&
                       provider !== "codex" &&
-                      provider !== "claudeAgent"
+                      provider !== "claudeAgent" &&
+                      provider !== "antigravity"
                     )
                       return;
                     onChange(replaceTarget(chain, index, { provider }));

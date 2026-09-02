@@ -342,6 +342,7 @@ export const McpSettings = Schema.Struct({
   codexAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   cursorAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   claudeAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  antigravityAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   engine: McpEngineSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type McpSettings = typeof McpSettings.Type;
@@ -416,6 +417,7 @@ export function resolveEffectiveMcpSettings(
     codexAgent: overrides.codexAgent ?? global.codexAgent,
     cursorAgent: overrides.cursorAgent ?? global.cursorAgent,
     claudeAgent: overrides.claudeAgent ?? global.claudeAgent,
+    antigravityAgent: overrides.antigravityAgent ?? global.antigravityAgent,
     engine: {
       planning: engineOverrides?.planning ?? global.engine.planning,
       consensus: engineOverrides?.consensus ?? global.engine.consensus,
@@ -834,6 +836,38 @@ export const CursorSettings = makeProviderSettingsSchema(
 );
 export type CursorSettings = typeof CursorSettings.Type;
 
+export const AntigravitySettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("agy").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the official Antigravity CLI binary.",
+        providerSettingsForm: { placeholder: "agy", clearWhenEmpty: "omit" },
+      }),
+    ),
+    dangerouslySkipPermissions: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "Skip permission prompts",
+        description:
+          "Pass --dangerously-skip-permissions to agy. This grants broad access beyond the workspace and should only be enabled in an isolated environment.",
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath", "dangerouslySkipPermissions"],
+  },
+);
+export type AntigravitySettings = typeof AntigravitySettings.Type;
+
 export const GrokSettings = makeProviderSettingsSchema(
   {
     // Off by default (like Cursor and OpenCode): the binding is not yet
@@ -1158,6 +1192,7 @@ export const ServerSettings = Schema.Struct({
     codex: CodexSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    antigravity: AntigravitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -1305,6 +1340,13 @@ const CursorSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const AntigravitySettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  dangerouslySkipPermissions: Schema.optionalKey(Schema.Boolean),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 const GrokSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
@@ -1365,6 +1407,7 @@ export const ServerSettingsPatch = Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
+      antigravity: Schema.optionalKey(AntigravitySettingsPatch),
       grok: Schema.optionalKey(GrokSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
     }),
@@ -1404,6 +1447,7 @@ export const ServerSettingsPatch = Schema.Struct({
       codexAgent: Schema.optionalKey(Schema.Boolean),
       cursorAgent: Schema.optionalKey(Schema.Boolean),
       claudeAgent: Schema.optionalKey(Schema.Boolean),
+      antigravityAgent: Schema.optionalKey(Schema.Boolean),
       engine: Schema.optionalKey(
         Schema.Struct({
           planning: Schema.optionalKey(Schema.Boolean),

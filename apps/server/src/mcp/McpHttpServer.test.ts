@@ -121,6 +121,7 @@ const makeAllToolkitTestLayer = (
     McpHttpServer.CodexAgentToolkitRegistrationLive,
     McpHttpServer.CursorAgentToolkitRegistrationLive,
     McpHttpServer.ClaudeAgentToolkitRegistrationLive,
+    McpHttpServer.AntigravityAgentToolkitRegistrationLive,
     McpHttpServer.EngineKnowledgeToolkitRegistrationLive,
     McpHttpServer.EngineToolkitRegistrationLive,
     Layer.succeed(

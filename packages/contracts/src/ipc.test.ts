@@ -147,6 +147,22 @@ describe("desktop notification IPC contracts", () => {
     ).toThrow();
   });
 
+  it("accepts Antigravity as a trusted subagent notification provider", () => {
+    expect(
+      decodeIntent({
+        type: "subagent",
+        event: "completed",
+        provider: "antigravity",
+        projectName: "t3code",
+        environmentId: "primary",
+        threadId: "thread-1",
+        runId: "run-1",
+        count: 1,
+        sound: false,
+      }).provider,
+    ).toBe("antigravity");
+  });
+
   it("accepts typed root and subagent activations", () => {
     expect(
       decodeActivation({

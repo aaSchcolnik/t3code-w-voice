@@ -11,6 +11,7 @@ provider:
 - `codex_start`
 - `cursor_start`
 - `claude_start`
+- `antigravity_start`
 
 When native subagent tracking is enabled for the parent provider, T3 Code omits that provider's
 start tool and tracks its native child mechanism instead. Cross-provider tools remain available.
@@ -27,6 +28,11 @@ options, interaction mode, execution profile, attachments, and an idempotency ke
 always use the workspace-write sandbox with automatic edit acceptance; ask for read-only behavior
 in the task itself when needed. A stable idempotency key makes retries safe: retrying the same
 request returns the existing run, while reusing the key for a different request is rejected.
+
+Antigravity also applies its own headless permission policy. Workspace file operations are allowed
+by the CLI, while commands that require review are denied unless an Antigravity permission rule
+allows them. Its optional **Skip permission prompts** setting grants broader access than T3 Code's
+workspace boundary, so use it only in an isolated environment.
 
 A newly returned run is allocated and persisted before its provider session starts. Allocation does
 not mean that the provider accepted the turn. Startup diagnostics distinguish allocation, session

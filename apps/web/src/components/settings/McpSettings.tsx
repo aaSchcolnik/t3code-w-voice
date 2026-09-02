@@ -17,7 +17,7 @@ import { primaryServerProvidersAtom } from "../../state/server";
 import { useProjects } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { ClaudeAI, CursorIcon, OpenAI } from "../Icons";
+import { AntigravityIcon, ClaudeAI, CursorIcon, OpenAI } from "../Icons";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Field, FieldDescription, FieldLabel } from "../ui/field";
@@ -39,7 +39,7 @@ import {
 } from "./settingsLayout";
 import { ComputerUseSettingsSection } from "./ComputerUseSettings";
 
-type McpBooleanKey = "preview" | "codexAgent" | "cursorAgent" | "claudeAgent";
+type McpBooleanKey = "preview" | "codexAgent" | "cursorAgent" | "claudeAgent" | "antigravityAgent";
 type DelegationRoleChain = Extract<EngineDelegationRole, "scout" | "worker">;
 type GlobalDelegationRolesPatch = Partial<
   Record<EngineDelegationRole, ReadonlyArray<EngineDelegationTarget>>
@@ -158,6 +158,14 @@ export function McpSettingsPanel() {
   const claudeAvailable = providerEntries.some(
     (entry) =>
       entry.driverKind === "claudeAgent" && entry.enabled && entry.installed && entry.isAvailable,
+  );
+  const antigravityAvailable = providerEntries.some(
+    (entry) =>
+      entry.driverKind === "antigravity" &&
+      entry.enabled &&
+      entry.installed &&
+      entry.isAvailable &&
+      entry.snapshot.delegation?.available !== false,
   );
 
   const updateMcp = (patch: NonNullable<ServerSettingsPatch["mcp"]>) =>
@@ -360,6 +368,33 @@ export function McpSettingsPanel() {
               label="Enable Claude Agent MCP toolkit"
               onGlobalChange={(claudeAgent) => updateMcp({ claudeAgent })}
               onProjectChange={(claudeAgent) => updateProjectBoolean("claudeAgent", claudeAgent)}
+            />
+          }
+        />
+        <SettingsRow
+          title={
+            <span className="inline-flex items-center gap-2">
+              <AntigravityIcon className="size-4 shrink-0" aria-hidden />
+              Antigravity Agent
+            </span>
+          }
+          description="Lets the current agent delegate one-shot tasks to the official Antigravity CLI as tracked subagents."
+          status={
+            antigravityAvailable
+              ? "Available for new sessions"
+              : "Not available: configure and enable an Antigravity provider under Providers."
+          }
+          control={
+            <McpBooleanControl
+              projectScoped={selectedProject !== undefined}
+              globalValue={settings.mcp.antigravityAgent}
+              projectValue={projectOverrides?.antigravityAgent}
+              disabled={!antigravityAvailable}
+              label="Enable Antigravity Agent MCP toolkit"
+              onGlobalChange={(antigravityAgent) => updateMcp({ antigravityAgent })}
+              onProjectChange={(antigravityAgent) =>
+                updateProjectBoolean("antigravityAgent", antigravityAgent)
+              }
             />
           }
         />

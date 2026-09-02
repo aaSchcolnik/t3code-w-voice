@@ -48,6 +48,7 @@ const delegationHeuristic = (
     capabilities.has("codex-agent") ? "`codex_start`" : undefined,
     capabilities.has("cursor-agent") ? "`cursor_start`" : undefined,
     capabilities.has("claude-agent") ? "`claude_start`" : undefined,
+    capabilities.has("antigravity-agent") ? "`antigravity_start`" : undefined,
   ].filter((tool): tool is string => tool !== undefined);
   const native =
     nativeSubagentTracking &&

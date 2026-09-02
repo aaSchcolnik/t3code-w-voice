@@ -143,4 +143,21 @@ describe("detectUntrackedDelegationAttempt", () => {
       ),
     ).toBeUndefined();
   });
+
+  it("routes headless Antigravity through the tracked tool without blocking diagnostics", () => {
+    expect(
+      detectUntrackedDelegationAttempt(
+        "Bash",
+        { command: "agy --model gemini-3.7-flash-high -p 'inspect this'" },
+        capabilities("antigravity-agent"),
+      ),
+    ).toEqual({ provider: "antigravity", trackedTool: "antigravity_start" });
+    expect(
+      detectUntrackedDelegationAttempt(
+        "Bash",
+        { command: "agy --version && agy models" },
+        capabilities("antigravity-agent"),
+      ),
+    ).toBeUndefined();
+  });
 });

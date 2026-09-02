@@ -222,6 +222,7 @@ export function buildServerProvider(input: {
   slashCommands?: ReadonlyArray<ServerProviderSlashCommand>;
   skills?: ReadonlyArray<ServerProviderSkill>;
   probe: ProviderProbeResult;
+  delegation?: ServerProvider["delegation"];
 }): ServerProviderDraft {
   const versionAdvisory = input.driver
     ? createProviderVersionAdvisory({
@@ -246,6 +247,7 @@ export function buildServerProvider(input: {
     auth: input.probe.auth,
     checkedAt: input.checkedAt,
     ...(input.probe.message ? { message: input.probe.message } : {}),
+    ...(input.delegation ? { delegation: input.delegation } : {}),
     models: input.models,
     slashCommands: [...(input.slashCommands ?? [])],
     skills: [...(input.skills ?? [])],

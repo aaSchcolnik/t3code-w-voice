@@ -19,6 +19,11 @@ restart, an unreconciled non-terminal Claude or Codex run appears as `unknown` u
 evidence arrives. Cursor has no child replay API, so T3 Code marks a native Cursor run failed after
 a restart instead of leaving it stuck as active.
 
+Cursor Task calls appear in the parent timeline at their launch point and open the normalized
+Subagents panel. Cursor's ACP interface currently reports task metadata and completion state, but it
+does not expose the child's tool activity or response text. When Cursor supplies no result, the run
+detail states that limitation instead of implying that T3 Code lost a reported response.
+
 ## Delegation policy rollout
 
 Same-provider MCP suppression is guarded independently for live authenticated acceptance testing:

@@ -66,7 +66,7 @@ const fakeEnvironment = ServerEnvironment.ServerEnvironment.of({
 });
 
 const makeProvider = (
-  driver: "claudeAgent" | "codex" | "cursor" | "grok" | "opencode",
+  driver: "claudeAgent" | "codex" | "cursor" | "antigravity" | "grok" | "opencode",
   overrides: Partial<ServerProvider> = {},
 ): ServerProvider => ({
   instanceId: ProviderInstanceId.make(driver),
@@ -94,6 +94,7 @@ const makeRegistry = (
       claudeAgent?: boolean;
       codexAgent?: boolean;
       cursorAgent?: boolean;
+      antigravityAgent?: boolean;
       engine?: Partial<{
         planning: boolean;
         consensus: boolean;
@@ -330,6 +331,42 @@ it.effect("restores the same-provider MCP path when a native tracking flag is di
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
     expect([...resolved!.capabilities]).toEqual(["codex-agent", "cursor-agent", "claude-agent"]);
+  }),
+);
+
+it.effect("grants Antigravity only when an enabled usable provider is present", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      providers: [makeProvider("antigravity")],
+      mcp: { preview: false, antigravityAgent: true },
+    });
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-antigravity"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect([...resolved!.capabilities]).toEqual(["antigravity-agent"]);
+  }),
+);
+
+it.effect("withholds Antigravity when its delegated backend is unavailable", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      providers: [
+        makeProvider("antigravity", {
+          delegation: { available: false, reason: "Upgrade agy." },
+        }),
+      ],
+      mcp: { preview: false, antigravityAgent: true },
+    });
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-antigravity-unavailable"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect([...resolved!.capabilities]).toEqual([]);
   }),
 );
 

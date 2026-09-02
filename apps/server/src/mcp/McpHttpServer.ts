@@ -41,6 +41,8 @@ import { CursorAgentToolkitHandlersLive } from "./toolkits/cursorAgent/handlers.
 import { CursorAgentToolkit } from "./toolkits/cursorAgent/tools.ts";
 import { ClaudeAgentToolkitHandlersLive } from "./toolkits/claudeAgent/handlers.ts";
 import { ClaudeAgentToolkit } from "./toolkits/claudeAgent/tools.ts";
+import { AntigravityAgentToolkitHandlersLive } from "./toolkits/antigravityAgent/handlers.ts";
+import { AntigravityAgentToolkit } from "./toolkits/antigravityAgent/tools.ts";
 import { EngineKnowledgeToolkitHandlersLive } from "./toolkits/engineKnowledge/handlers.ts";
 import { EngineKnowledgeToolkit } from "./toolkits/engineKnowledge/tools.ts";
 import { EngineToolkitHandlersLive } from "./toolkits/engine/handlers.ts";
@@ -429,6 +431,10 @@ export const ClaudeAgentToolkitRegistrationLive = McpServer.toolkit(ClaudeAgentT
   Layer.provide(ClaudeAgentToolkitHandlersLive),
 );
 
+export const AntigravityAgentToolkitRegistrationLive = McpServer.toolkit(
+  AntigravityAgentToolkit,
+).pipe(Layer.provide(AntigravityAgentToolkitHandlersLive));
+
 export const EngineKnowledgeToolkitRegistrationLive = McpServer.toolkit(
   EngineKnowledgeToolkit,
 ).pipe(Layer.provide(EngineKnowledgeToolkitHandlersLive));
@@ -453,6 +459,7 @@ export const layer = Layer.mergeAll(
   CodexAgentToolkitRegistrationLive,
   CursorAgentToolkitRegistrationLive,
   ClaudeAgentToolkitRegistrationLive,
+  AntigravityAgentToolkitRegistrationLive,
   EngineKnowledgeToolkitRegistrationLive,
   EngineToolkitRegistrationLive,
   McpGatewayLive,

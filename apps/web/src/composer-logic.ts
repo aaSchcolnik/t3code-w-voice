@@ -20,6 +20,18 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
+export interface TerminalSubmissionErrorSnapshot {
+  readonly prompt: string;
+  readonly message: string;
+}
+
+export function terminalSubmissionErrorForPrompt(
+  error: TerminalSubmissionErrorSnapshot | null,
+  prompt: string,
+): string | null {
+  return error?.prompt === prompt ? error.message : null;
+}
+
 /** Bang mode is deliberately separate from token/command trigger detection. */
 export function isTerminalCommandDraft(text: string): boolean {
   return text.startsWith("!");

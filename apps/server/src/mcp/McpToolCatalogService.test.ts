@@ -35,11 +35,17 @@ describe("buildMcpToolCatalog", () => {
 
   it("advertises only provider-specific delegation tools", () => {
     const catalog = buildMcpToolCatalog({
-      capabilities: capabilities("codex-agent", "cursor-agent", "claude-agent"),
+      capabilities: capabilities(
+        "codex-agent",
+        "cursor-agent",
+        "claude-agent",
+        "antigravity-agent",
+      ),
     });
     expect(catalog.tools).toContain("codex_start");
     expect(catalog.tools).toContain("cursor_start");
     expect(catalog.tools).toContain("claude_start");
+    expect(catalog.tools).toContain("antigravity_start");
     expect(catalog.tools.some((tool) => tool.startsWith("delegate_"))).toBe(false);
   });
 });

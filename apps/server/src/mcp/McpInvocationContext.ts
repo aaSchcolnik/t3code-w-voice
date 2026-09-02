@@ -15,6 +15,7 @@ export type McpCapability =
   | "codex-agent"
   | "cursor-agent"
   | "claude-agent"
+  | "antigravity-agent"
   | "engine-planning"
   | "engine-consensus"
   | "engine-enrich"

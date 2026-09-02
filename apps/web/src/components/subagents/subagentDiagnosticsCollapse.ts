@@ -8,6 +8,13 @@ export type DiagnosticsCollapseAction =
   | { readonly type: "user-scroll"; readonly atTop: boolean }
   | { readonly type: "reset" };
 
+/** Lets one direct interaction affect diagnostics without admitting follow-up layout scrolls. */
+export function consumeUserScrollIntent(intent: { current: boolean }): boolean {
+  if (!intent.current) return false;
+  intent.current = false;
+  return true;
+}
+
 export function updateDiagnosticsCollapse(
   state: DiagnosticsCollapseState,
   action: DiagnosticsCollapseAction,

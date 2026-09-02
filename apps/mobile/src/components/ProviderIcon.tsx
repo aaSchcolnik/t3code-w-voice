@@ -1,4 +1,4 @@
-import { Path, Svg } from "react-native-svg";
+import { Defs, LinearGradient, Path, Stop, Svg } from "react-native-svg";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
 import { useUniwindTheme } from "../lib/useUniwindTheme";
@@ -36,6 +36,25 @@ export function ProviderIcon(props: ProviderIconProps) {
         <Path
           fill={foregroundColor}
           d="M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257"
+        />
+      </Svg>
+    );
+  }
+
+  if (props.provider === "antigravity") {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <Defs>
+          <LinearGradient id="antigravity-gradient" x1="4" y1="3" x2="20" y2="22">
+            <Stop offset="0" stopColor="#FBBC04" />
+            <Stop offset="0.35" stopColor="#FC413D" />
+            <Stop offset="0.68" stopColor="#749BFF" />
+            <Stop offset="1" stopColor="#3186FF" />
+          </LinearGradient>
+        </Defs>
+        <Path
+          fill="url(#antigravity-gradient)"
+          d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715Z"
         />
       </Svg>
     );

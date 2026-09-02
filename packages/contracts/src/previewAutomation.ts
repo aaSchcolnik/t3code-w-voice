@@ -639,6 +639,7 @@ export class PreviewAutomationUnavailableError extends Schema.TaggedErrorClass<P
       "codex-agent",
       "cursor-agent",
       "claude-agent",
+      "antigravity-agent",
       "engine-planning",
       "engine-consensus",
       "engine-enrich",

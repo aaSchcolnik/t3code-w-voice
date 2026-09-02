@@ -634,6 +634,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           `Provider instance '${resolvedInstanceId}' is disabled in T3 Code settings.`,
         );
       }
+      if (
+        instanceInfo.supportedSessionKinds !== undefined &&
+        !instanceInfo.supportedSessionKinds.includes(ownership.sessionKind)
+      ) {
+        return yield* toValidationError(
+          "ProviderService.startSession",
+          `Provider '${resolvedProvider}' does not support ${ownership.sessionKind} sessions.`,
+        );
+      }
       const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
       const effectiveResumeCursor =
         input.resumeCursor ??

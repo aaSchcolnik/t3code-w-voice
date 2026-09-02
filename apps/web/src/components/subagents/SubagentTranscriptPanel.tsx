@@ -13,6 +13,7 @@ import {
   buildSubagentInputAnswers,
   setSubagentInputCustomAnswer,
   subagentRespondInput,
+  subagentUnavailableResultMessage,
   type SubagentInputDraftAnswer,
 } from "@t3tools/client-runtime/state/subagents";
 import {
@@ -51,6 +52,7 @@ import {
   subagentPhaseLabel,
 } from "./subagentRunPresentation";
 import {
+  consumeUserScrollIntent,
   updateDiagnosticsCollapse,
   type DiagnosticsCollapseState,
 } from "./subagentDiagnosticsCollapse";
@@ -182,7 +184,7 @@ function RunSummary({
       onTouchMove={markUserScrollIntent}
       onWheel={markUserScrollIntent}
       onScroll={(event) => {
-        if (!userScrollIntent.current) return;
+        if (!consumeUserScrollIntent(userScrollIntent)) return;
         onUserScrollPositionChange?.(event.currentTarget.scrollTop <= 1);
       }}
     >
@@ -213,9 +215,7 @@ function RunSummary({
         ) : isActiveSubagentStatus(run.status) ? (
           <p className="text-xs text-muted-foreground">The subagent is still working.</p>
         ) : (
-          <p className="text-xs text-muted-foreground">
-            This provider did not report a result or detailed activity for this run.
-          </p>
+          <p className="text-xs text-muted-foreground">{subagentUnavailableResultMessage(run)}</p>
         )}
       </div>
     </div>

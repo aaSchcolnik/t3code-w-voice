@@ -36,7 +36,10 @@ import {
   SubagentInputResponseForm,
   SubagentRunDiagnostics,
 } from "./subagents/SubagentTranscriptPanel";
-import { updateDiagnosticsCollapse } from "./subagents/subagentDiagnosticsCollapse";
+import {
+  consumeUserScrollIntent,
+  updateDiagnosticsCollapse,
+} from "./subagents/subagentDiagnosticsCollapse";
 
 const run = (id: string, overrides: Partial<SubagentRun> = {}): SubagentRun => ({
   id: SubagentRunId.make(id),
@@ -547,6 +550,13 @@ describe("delegated run diagnostics", () => {
 });
 
 describe("subagent diagnostics collapse behavior", () => {
+  it("consumes user scroll intent before layout-driven scroll events can reuse it", () => {
+    const intent = { current: true };
+
+    expect(consumeUserScrollIntent(intent)).toBe(true);
+    expect(consumeUserScrollIntent(intent)).toBe(false);
+  });
+
   it("auto-collapses after user scrolling and expands again at the top", () => {
     const initial = { manual: false, automatic: false };
     const scrolled = updateDiagnosticsCollapse(initial, {

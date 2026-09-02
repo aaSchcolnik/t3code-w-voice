@@ -46,7 +46,9 @@ import {
   isTerminalCommandDraft,
   formatAssistantCitationForComposer,
   replaceTextRange,
+  type TerminalSubmissionErrorSnapshot,
   terminalCommandFromDraft,
+  terminalSubmissionErrorForPrompt,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
@@ -331,6 +333,7 @@ import {
   RotateCcwIcon,
   ScanSearchIcon,
   SparklesIcon,
+  TerminalIcon,
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
@@ -1305,6 +1308,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [composerSubmissionError, setComposerSubmissionError] = useState<string | null>(null);
+  const [terminalSubmissionError, setTerminalSubmissionError] =
+    useState<TerminalSubmissionErrorSnapshot | null>(null);
   const [providerInputSubmissionError, setProviderInputSubmissionError] = useState<string | null>(
     null,
   );
@@ -2433,10 +2438,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ? "Type a command after !."
                     : null;
         if (blockedReason) {
-          setComposerSubmissionError(blockedReason);
+          setTerminalSubmissionError({ prompt: promptRef.current, message: blockedReason });
           return;
         }
-        setComposerSubmissionError(null);
+        setTerminalSubmissionError(null);
         onRunTerminalCommand(command);
         if (shouldBlurMobileComposerOnSubmit()) blurMobileComposerAfterSend();
         return;
@@ -4029,9 +4034,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               ref={composerSurfaceRef}
               data-chat-composer-surface="true"
               data-chat-composer-mobile-collapsed={isComposerCollapsedMobile ? "true" : "false"}
+              data-chat-composer-terminal-mode={isTerminalMode ? "true" : "false"}
               className={cn(
                 "rounded-[20px] transition-[background-color] duration-200",
                 isDragOverComposer ? "bg-accent/45 ring-1 ring-primary/70" : null,
+                isTerminalMode ? "bg-info/[0.04] ring-1 ring-info/35" : null,
                 projectSelectionRequired ? "opacity-75" : null,
                 composerProviderState.composerSurfaceClassName,
               )}
@@ -4541,7 +4548,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               </div>
 
               <ComposerPromptLengthValidation
-                message={providerInputSubmissionError ?? composerSubmissionError}
+                message={
+                  providerInputSubmissionError ??
+                  terminalSubmissionErrorForPrompt(terminalSubmissionError, prompt) ??
+                  composerSubmissionError
+                }
               />
 
               {/* Bottom toolbar */}
@@ -4557,109 +4568,123 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   )}
                 >
                   <div className="-m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    {_isLocalDraftThread && knowledgeScanAvailability !== null ? (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={
-                                !knowledgeScanAvailability.engineKnowledgeEnabled ||
-                                !knowledgeScanAvailability.hasCodebase ||
-                                isSendBusy ||
-                                isConnecting
-                              }
-                              onClick={startKnowledgeScan}
-                            />
-                          }
-                        >
-                          <ScanSearchIcon data-icon="inline-start" />
-                          Scan codebase
-                          {knowledgeScanAvailability.knowledgePopulated ? (
-                            <Badge size="sm" variant="secondary">
-                              Re-scan
-                            </Badge>
-                          ) : null}
-                        </TooltipTrigger>
-                        <TooltipPopup>
-                          {knowledgeScanAvailability.knowledgePopulated
-                            ? "Knowledge base already populated. Re-scan the codebase to refresh it."
-                            : "Build a knowledge map of this project for delegated agents."}
-                        </TooltipPopup>
-                      </Tooltip>
-                    ) : null}
-                    {showTopModelPicker ? null : noProviderAvailable ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        disabled
-                        data-chat-provider-unavailable="true"
-                        className="shrink-0 gap-2 px-2 text-secondary-label sm:px-3"
+                    {isTerminalMode ? (
+                      <Badge
+                        size="lg"
+                        variant="info"
+                        className="h-7 gap-1.5 rounded-lg px-2.5 text-xs sm:h-7 sm:text-xs"
+                        data-chat-composer-terminal-indicator="true"
                       >
-                        <CircleAlertIcon className="size-4" />
-                        No provider available
-                      </Button>
-                    ) : (
-                      <ProviderModelPicker
-                        compact={isComposerFooterCompact}
-                        activeInstanceId={selectedInstanceId}
-                        model={selectedModelForPickerWithCustomFallback}
-                        lockedProvider={lockedProvider}
-                        lockedContinuationGroupKey={lockedContinuationGroupKey}
-                        instanceEntries={providerInstanceEntries}
-                        keybindings={keybindings}
-                        modelOptionsByInstance={modelOptionsByInstance}
-                        triggerClassName="-ms-2.5"
-                        terminalOpen={terminalOpen}
-                        open={isComposerModelPickerOpen}
-                        {...(composerProviderState.modelPickerIconClassName
-                          ? {
-                              activeProviderIconClassName:
-                                composerProviderState.modelPickerIconClassName,
-                            }
-                          : {})}
-                        onOpenChange={(open) => {
-                          setIsComposerModelPickerOpen(open);
-                        }}
-                        getModelDisabledReason={getModelDisabledReason}
-                        onInstanceModelChange={onProviderModelSelect}
-                      />
-                    )}
-
-                    {isComposerFooterCompact ? (
-                      <CompactComposerControlsMenu
-                        interactionMode={interactionMode}
-                        runtimeMode={runtimeMode}
-                        showInteractionModeToggle={
-                          composerProviderControls.showInteractionModeToggle
-                        }
-                        traitsMenuContent={providerTraitsMenuContent}
-                        onToggleInteractionMode={toggleInteractionMode}
-                        onRuntimeModeChange={handleRuntimeModeChange}
-                      />
+                        <TerminalIcon className="size-3.5" />
+                        Terminal command
+                      </Badge>
                     ) : (
                       <>
-                        {providerTraitsPicker ? (
-                          <>
-                            <Separator
-                              orientation="vertical"
-                              className="mx-0.5 hidden h-4 sm:block"
-                            />
-                            {providerTraitsPicker}
-                          </>
+                        {_isLocalDraftThread && knowledgeScanAvailability !== null ? (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={
+                                    !knowledgeScanAvailability.engineKnowledgeEnabled ||
+                                    !knowledgeScanAvailability.hasCodebase ||
+                                    isSendBusy ||
+                                    isConnecting
+                                  }
+                                  onClick={startKnowledgeScan}
+                                />
+                              }
+                            >
+                              <ScanSearchIcon data-icon="inline-start" />
+                              Scan codebase
+                              {knowledgeScanAvailability.knowledgePopulated ? (
+                                <Badge size="sm" variant="secondary">
+                                  Re-scan
+                                </Badge>
+                              ) : null}
+                            </TooltipTrigger>
+                            <TooltipPopup>
+                              {knowledgeScanAvailability.knowledgePopulated
+                                ? "Knowledge base already populated. Re-scan the codebase to refresh it."
+                                : "Build a knowledge map of this project for delegated agents."}
+                            </TooltipPopup>
+                          </Tooltip>
                         ) : null}
-                        <ComposerFooterModeControls
-                          showInteractionModeToggle={
-                            composerProviderControls.showInteractionModeToggle
-                          }
-                          interactionMode={interactionMode}
-                          runtimeMode={runtimeMode}
-                          onToggleInteractionMode={toggleInteractionMode}
-                          onRuntimeModeChange={handleRuntimeModeChange}
-                        />
+                        {showTopModelPicker ? null : noProviderAvailable ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled
+                            data-chat-provider-unavailable="true"
+                            className="shrink-0 gap-2 px-2 text-secondary-label sm:px-3"
+                          >
+                            <CircleAlertIcon className="size-4" />
+                            No provider available
+                          </Button>
+                        ) : (
+                          <ProviderModelPicker
+                            compact={isComposerFooterCompact}
+                            activeInstanceId={selectedInstanceId}
+                            model={selectedModelForPickerWithCustomFallback}
+                            lockedProvider={lockedProvider}
+                            lockedContinuationGroupKey={lockedContinuationGroupKey}
+                            instanceEntries={providerInstanceEntries}
+                            keybindings={keybindings}
+                            modelOptionsByInstance={modelOptionsByInstance}
+                            triggerClassName="-ms-2.5"
+                            terminalOpen={terminalOpen}
+                            open={isComposerModelPickerOpen}
+                            {...(composerProviderState.modelPickerIconClassName
+                              ? {
+                                  activeProviderIconClassName:
+                                    composerProviderState.modelPickerIconClassName,
+                                }
+                              : {})}
+                            onOpenChange={(open) => {
+                              setIsComposerModelPickerOpen(open);
+                            }}
+                            getModelDisabledReason={getModelDisabledReason}
+                            onInstanceModelChange={onProviderModelSelect}
+                          />
+                        )}
+
+                        {isComposerFooterCompact ? (
+                          <CompactComposerControlsMenu
+                            interactionMode={interactionMode}
+                            runtimeMode={runtimeMode}
+                            showInteractionModeToggle={
+                              composerProviderControls.showInteractionModeToggle
+                            }
+                            traitsMenuContent={providerTraitsMenuContent}
+                            onToggleInteractionMode={toggleInteractionMode}
+                            onRuntimeModeChange={handleRuntimeModeChange}
+                          />
+                        ) : (
+                          <>
+                            {providerTraitsPicker ? (
+                              <>
+                                <Separator
+                                  orientation="vertical"
+                                  className="mx-0.5 hidden h-4 sm:block"
+                                />
+                                {providerTraitsPicker}
+                              </>
+                            ) : null}
+                            <ComposerFooterModeControls
+                              showInteractionModeToggle={
+                                composerProviderControls.showInteractionModeToggle
+                              }
+                              interactionMode={interactionMode}
+                              runtimeMode={runtimeMode}
+                              onToggleInteractionMode={toggleInteractionMode}
+                              onRuntimeModeChange={handleRuntimeModeChange}
+                            />
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -4672,7 +4697,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                   >
-                    {fileStagingLimit !== null && pendingUserInputs.length === 0 ? (
+                    {!isTerminalMode &&
+                    fileStagingLimit !== null &&
+                    pendingUserInputs.length === 0 ? (
                       <>
                         <input
                           ref={attachmentInputRef}
@@ -4705,17 +4732,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         </Tooltip>
                       </>
                     ) : null}
-                    <MicButton
-                      state={voiceState}
-                      voiceEnabled={voiceAvailability.available}
-                      disabled={voiceStartDisabled}
-                      preserveFocusOnPointerDown
-                      onToggle={handleToggleVoiceDictation}
-                    />
+                    {isTerminalMode ? null : (
+                      <MicButton
+                        state={voiceState}
+                        voiceEnabled={voiceAvailability.available}
+                        disabled={voiceStartDisabled}
+                        preserveFocusOnPointerDown
+                        onToggle={handleToggleVoiceDictation}
+                      />
+                    )}
                     <ComposerFooterPrimaryActions
                       compact={isComposerPrimaryActionsCompact}
                       activeContextWindow={
-                        settings.contextWindowMeterEnabled ? activeContextWindow : null
+                        !isTerminalMode && settings.contextWindowMeterEnabled
+                          ? activeContextWindow
+                          : null
                       }
                       activeThreadModelDisplayName={activeThreadModelDisplayName}
                       pendingAction={pendingPrimaryAction}
@@ -4729,8 +4760,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isConnecting={isConnecting}
                       isEnvironmentUnavailable={
                         environmentUnavailable !== null ||
-                        noProviderAvailable ||
-                        projectSelectionRequired
+                        (!isTerminalMode && (noProviderAvailable || projectSelectionRequired))
                       }
                       isPreparingWorktree={isPreparingWorktree}
                       hasSendableContent={composerSendState.hasSendableContent}

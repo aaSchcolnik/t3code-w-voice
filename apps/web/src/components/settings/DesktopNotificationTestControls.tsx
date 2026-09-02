@@ -20,6 +20,7 @@ const TEST_PROVIDERS = [
   { value: "codex", label: "OpenAI" },
   { value: "claudeAgent", label: "Claude" },
   { value: "cursor", label: "Cursor" },
+  { value: "antigravity", label: "Antigravity" },
   { value: "grok", label: "Grok" },
   { value: "opencode", label: "OpenCode" },
   { value: "unknown", label: "Fallback" },

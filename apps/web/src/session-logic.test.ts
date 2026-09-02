@@ -2955,6 +2955,44 @@ describe("deriveWorkLogEntries quiet-timeline guarantee", () => {
     expect(entries[0]!.agentSpawn?.agentTaskIds).toEqual(["child-1", "child-2"]);
   });
 
+  it("anchors a Cursor subagent CTA to the Task launch", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        kind: "task.started",
+        summary: "Task started",
+        tone: "info",
+        payload: {
+          taskId: "cursor-task-1",
+          taskType: "subagent",
+          agentKind: "agent",
+          title: "Review the adapter",
+          toolUseId: "cursor-task-1",
+        },
+        turnId: "turn-spawn",
+        sequence: 1,
+      }),
+      makeActivity({
+        kind: "task.completed",
+        summary: "Task completed",
+        tone: "info",
+        payload: {
+          taskId: "cursor-task-1",
+          taskType: "subagent",
+          agentKind: "agent",
+          status: "completed",
+          title: "Review the adapter",
+          toolUseId: "cursor-task-1",
+        },
+        turnId: "turn-spawn",
+        sequence: 2,
+      }),
+    ]);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.turnId).toBe("turn-spawn");
+    expect(entries[0]?.agentSpawn?.agentTaskIds).toEqual(["cursor-task-1"]);
+  });
+
   it("timelineBypass non-agent rows (background shells) stay suppressed", () => {
     const entries = deriveWorkLogEntries([
       makeActivity({

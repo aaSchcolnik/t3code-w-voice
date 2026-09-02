@@ -18,6 +18,7 @@ import {
   isTerminalCommandDraft,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
+  terminalSubmissionErrorForPrompt,
   terminalCommandFromDraft,
 } from "./composer-logic";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
@@ -120,6 +121,13 @@ describe("terminal command drafts", () => {
 
   it("removes only the bang so multiline scripts keep their exact whitespace", () => {
     expect(terminalCommandFromDraft("!  npm test\n")).toBe("  npm test\n");
+  });
+
+  it("keeps a blocked submission error visible until the command draft changes", () => {
+    const error = { prompt: "! npm test", message: "Terminal command is blocked." };
+
+    expect(terminalSubmissionErrorForPrompt(error, "! npm test")).toBe(error.message);
+    expect(terminalSubmissionErrorForPrompt(error, "! npm test --run")).toBeNull();
   });
 });
 

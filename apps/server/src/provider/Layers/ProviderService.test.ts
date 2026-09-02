@@ -88,6 +88,7 @@ const claudeAgentInstanceId = ProviderInstanceId.make("claudeAgent");
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
+const ANTIGRAVITY_DRIVER = ProviderDriverKind.make("antigravity");
 
 const assistantQuoteText = 'Keep the shared parser for "résumé".\nPreserve line breaks.';
 const assistantCitation = {
@@ -482,6 +483,83 @@ it.effect("ProviderServiceLive rejects new sessions for disabled providers", () 
     assert.instanceOf(failure, ProviderValidationError);
     assert.include(failure.issue, "Provider instance 'claudeAgent' is disabled");
     assert.equal(claude.startSession.mock.calls.length, 0);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("ProviderServiceLive enforces delegated-only provider session kinds", () =>
+  Effect.gen(function* () {
+    const instanceId = ProviderInstanceId.make("antigravity");
+    const antigravity = makeFakeCodexAdapter(ANTIGRAVITY_DRIVER);
+    const registryBase = makeAdapterRegistryMock({ [instanceId]: antigravity.adapter });
+    const registry: ProviderAdapterRegistry.ProviderAdapterRegistry["Service"] = {
+      ...registryBase,
+      getInstanceInfo: (requestedInstanceId) =>
+        requestedInstanceId === instanceId
+          ? Effect.succeed({
+              instanceId,
+              driverKind: ANTIGRAVITY_DRIVER,
+              displayName: "Antigravity",
+              enabled: true,
+              supportedSessionKinds: ["delegated"],
+              continuationIdentity: {
+                driverKind: ANTIGRAVITY_DRIVER,
+                continuationKey: "antigravity:instance:antigravity",
+              },
+            })
+          : registryBase.getInstanceInfo(requestedInstanceId),
+    };
+    const providerAdapterLayer = Layer.succeed(
+      ProviderAdapterRegistry.ProviderAdapterRegistry,
+      registry,
+    );
+    const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+      Layer.provide(SqlitePersistenceMemory),
+    );
+    const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
+    const providerLayer = makeProviderServiceLive().pipe(
+      Layer.provide(providerAdapterLayer),
+      Layer.provide(directoryLayer),
+      Layer.provide(defaultServerSettingsLayer),
+      Layer.provide(serverConfigTestLayer),
+      Layer.provide(AnalyticsService.layerTest),
+      Layer.provide(
+        Layer.succeed(
+          ProviderEventLoggers.ProviderEventLoggers,
+          ProviderEventLoggers.NoOpProviderEventLoggers,
+        ),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const failure = yield* Effect.flip(
+        provider.startSession(asThreadId("antigravity-standard"), {
+          provider: ANTIGRAVITY_DRIVER,
+          providerInstanceId: instanceId,
+          threadId: asThreadId("antigravity-standard"),
+          runtimeMode: "auto-accept-edits",
+        }),
+      );
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, "does not support standard sessions");
+      assert.equal(antigravity.startSession.mock.calls.length, 0);
+
+      const delegated = yield* provider.startSession(
+        asThreadId("antigravity-delegated"),
+        {
+          provider: ANTIGRAVITY_DRIVER,
+          providerInstanceId: instanceId,
+          threadId: asThreadId("antigravity-delegated"),
+          runtimeMode: "auto-accept-edits",
+        },
+        {
+          sessionKind: "delegated",
+          ownerThreadId: asThreadId("antigravity-parent"),
+        },
+      );
+      assert.equal(delegated.provider, ANTIGRAVITY_DRIVER);
+      assert.equal(antigravity.startSession.mock.calls.length, 1);
+    }).pipe(Effect.provide(providerLayer));
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 

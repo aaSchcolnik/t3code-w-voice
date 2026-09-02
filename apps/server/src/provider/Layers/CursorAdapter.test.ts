@@ -259,7 +259,10 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       const settings = yield* ServerSettingsService;
       const threadId = ThreadId.make("cursor-background-subagent-thread");
       const wrapperPath = yield* Effect.promise(() =>
-        makeMockAgentWrapper({ T3_ACP_EMIT_CURSOR_BACKGROUND_TASK: "1" }),
+        makeMockAgentWrapper({
+          T3_ACP_EMIT_CURSOR_BACKGROUND_TASK: "1",
+          T3_ACP_EMIT_CURSOR_TASK_NOTIFICATION: "1",
+        }),
       );
       yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
 
@@ -284,10 +287,31 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
           event.type === "subagent.completed",
       );
       assert.deepStrictEqual(
-        lifecycle.map((event) => event.payload.status),
-        ["starting", "running", "completed"],
+        lifecycle
+          .map((event) => event.payload.status)
+          .filter((status, index, statuses) => index === 0 || statuses[index - 1] !== status),
+        ["unknown", "starting", "running", "completed"],
       );
+      const enriched = lifecycle.find((event) => event.payload.agentType === "reviewer");
+      assert.equal(enriched?.payload.requestedModel, "gpt-5.6-sol");
       assert.equal(lifecycle.at(-1)?.type, "subagent.completed");
+      const taskLifecycle = events.filter(
+        (event) => event.type === "task.started" || event.type === "task.completed",
+      );
+      assert.deepStrictEqual(
+        taskLifecycle.map((event) => event.type),
+        ["task.started", "task.completed"],
+      );
+      assert.equal(taskLifecycle[0]?.payload.taskId, "cursor-background-task-1");
+      assert.equal(taskLifecycle[0]?.payload.taskType, "subagent");
+      assert.equal(taskLifecycle[0]?.payload.toolUseId, "cursor-background-task-1");
+      assert.isUndefined(
+        events.find(
+          (event) =>
+            (event.type === "item.updated" || event.type === "item.completed") &&
+            event.itemId === "cursor-background-task-1",
+        ),
+      );
       assert.isBelow(
         events.findIndex((event) => event.type === "subagent.completed"),
         events.findIndex((event) => event.type === "turn.completed"),

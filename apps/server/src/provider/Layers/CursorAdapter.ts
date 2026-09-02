@@ -17,6 +17,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   RuntimeRequestId,
+  RuntimeTaskId,
   type RuntimeMode,
   type ThreadId,
   TurnId,
@@ -138,6 +139,7 @@ interface CursorSessionContext {
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{ id: TurnId; items: Array<unknown> }>;
   readonly nativeSubagents: CursorNativeSubagentTracker;
+  readonly nativeSubagentTimelineStatuses: Map<string, CursorNativeSubagentRecord["status"]>;
   lastPlanFingerprint: string | undefined;
   activeTurnId: TurnId | undefined;
   /** Number of sendTurn prompts currently in flight or being prepared.
@@ -430,6 +432,78 @@ export function makeCursorAdapter(
           payload: rawPayload,
         },
       });
+
+      const previousTimelineStatus = ctx.nativeSubagentTimelineStatuses.get(run.toolCallId);
+      if (previousTimelineStatus === undefined) {
+        yield* offerRuntimeEvent({
+          type: "task.started",
+          ...(yield* makeEventStamp()),
+          provider: PROVIDER,
+          providerInstanceId: boundInstanceId,
+          threadId: ctx.threadId,
+          ...(ctx.activeTurnId ? { turnId: ctx.activeTurnId } : {}),
+          payload: {
+            taskId: RuntimeTaskId.make(run.toolCallId),
+            taskType: "subagent",
+            description: run.title,
+            title: run.title,
+            ...(run.agentType ? { role: run.agentType } : {}),
+            ...(run.requestedModel ? { model: run.requestedModel } : {}),
+            toolUseId: run.toolCallId,
+          },
+          providerRefs: {
+            providerToolUseId: run.toolCallId,
+            ...(run.agentId ? { providerAgentId: run.agentId } : {}),
+          },
+          raw: {
+            source: method === "cursor/task" ? "acp.cursor.extension" : "acp.jsonrpc",
+            method,
+            payload: rawPayload,
+          },
+        });
+      }
+
+      const previousWasTerminal =
+        previousTimelineStatus === "completed" ||
+        previousTimelineStatus === "failed" ||
+        previousTimelineStatus === "cancelled";
+      if (terminal && !previousWasTerminal) {
+        yield* offerRuntimeEvent({
+          type: "task.completed",
+          ...(yield* makeEventStamp()),
+          provider: PROVIDER,
+          providerInstanceId: boundInstanceId,
+          threadId: ctx.threadId,
+          ...(ctx.activeTurnId ? { turnId: ctx.activeTurnId } : {}),
+          payload: {
+            taskId: RuntimeTaskId.make(run.toolCallId),
+            taskType: "subagent",
+            status:
+              run.status === "failed"
+                ? "failed"
+                : run.status === "cancelled"
+                  ? "stopped"
+                  : "completed",
+            ...((run.finalMessage ?? run.lastSummary)
+              ? { summary: run.finalMessage ?? run.lastSummary }
+              : {}),
+            title: run.title,
+            ...(run.agentType ? { role: run.agentType } : {}),
+            ...(run.requestedModel ? { model: run.requestedModel } : {}),
+            toolUseId: run.toolCallId,
+          },
+          providerRefs: {
+            providerToolUseId: run.toolCallId,
+            ...(run.agentId ? { providerAgentId: run.agentId } : {}),
+          },
+          raw: {
+            source: method === "cursor/task" ? "acp.cursor.extension" : "acp.jsonrpc",
+            method,
+            payload: rawPayload,
+          },
+        });
+      }
+      ctx.nativeSubagentTimelineStatuses.set(run.toolCallId, run.status);
     });
 
     const settleNativeSubagents = Effect.fn("settleNativeSubagents")(function* (
@@ -597,6 +671,10 @@ export function makeCursorAdapter(
           const pendingApprovals = new Map<ApprovalRequestId, PendingApproval>();
           const pendingUserInputs = new Map<ApprovalRequestId, PendingUserInput>();
           const nativeSubagents = new CursorNativeSubagentTracker();
+          const nativeSubagentTimelineStatuses = new Map<
+            string,
+            CursorNativeSubagentRecord["status"]
+          >();
           const sessionScope = yield* Scope.make("sequential");
           let sessionScopeTransferred = false;
           yield* Effect.addFinalizer(() =>
@@ -731,23 +809,26 @@ export function makeCursorAdapter(
                 }),
               ),
             );
+            const ingestCursorTask = Effect.fn("ingestCursorTask")(function* (
+              params: CursorTaskRequest,
+            ) {
+              yield* logNative(input.threadId, "cursor/task", params, "acp.cursor.extension");
+              const run = nativeSubagents.enrich(params);
+              if (run && ctx) {
+                if (nativeSubagents.recordMissingParentCorrelation(run.toolCallId)) {
+                  yield* increment(nativeSubagentCorrelationMissingTotal, {
+                    provider: "cursor",
+                    protocol: "cursor/task",
+                  });
+                }
+                yield* emitNativeSubagentLifecycle(ctx, run, "cursor/task", params);
+              }
+            });
             yield* acp.handleExtRequest("cursor/task", CursorTaskRequest, (params) =>
-              mapExtensionFailure(
-                Effect.gen(function* () {
-                  yield* logNative(input.threadId, "cursor/task", params, "acp.cursor.extension");
-                  const run = nativeSubagents.enrich(params);
-                  if (run && ctx) {
-                    if (nativeSubagents.recordMissingParentCorrelation(run.toolCallId)) {
-                      yield* increment(nativeSubagentCorrelationMissingTotal, {
-                        provider: "cursor",
-                        protocol: "cursor/task",
-                      });
-                    }
-                    yield* emitNativeSubagentLifecycle(ctx, run, "cursor/task", params);
-                  }
-                  return {};
-                }),
-              ),
+              mapExtensionFailure(ingestCursorTask(params).pipe(Effect.as({}))),
+            );
+            yield* acp.handleExtNotification("cursor/task", CursorTaskRequest, (params) =>
+              mapExtensionFailure(ingestCursorTask(params)),
             );
             yield* acp.handleExtNotification(
               "cursor/update_todos",
@@ -887,6 +968,7 @@ export function makeCursorAdapter(
             pendingUserInputs,
             turns: [],
             nativeSubagents,
+            nativeSubagentTimelineStatuses,
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
             promptsInFlight: 0,
@@ -963,6 +1045,7 @@ export function makeCursorAdapter(
                           "session/update/task",
                           event.rawPayload,
                         );
+                        return;
                       }
                     }
                     yield* offerRuntimeEvent(

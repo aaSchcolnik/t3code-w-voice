@@ -288,8 +288,11 @@ export function SubagentRunDetailsRouteScreen({ route }: Props) {
 }
 
 function RunResult({ run }: { readonly run: SubagentRun }) {
-  const result = mobileSubagentRunPresentation(run).result;
-  if (!result && run.resultCompleteness === undefined) return null;
+  const presentation = mobileSubagentRunPresentation(run);
+  const result = presentation.result;
+  if (!result && !presentation.unavailableResultMessage && run.resultCompleteness === undefined) {
+    return null;
+  }
   const completeness =
     run.resultCompleteness === "terminal_message"
       ? "Terminal message"
@@ -301,6 +304,11 @@ function RunResult({ run }: { readonly run: SubagentRun }) {
   return (
     <DetailSection title="Result">
       {result ? <Text className="text-sm leading-normal text-foreground">{result}</Text> : null}
+      {presentation.unavailableResultMessage ? (
+        <Text className="text-sm leading-normal text-foreground-muted">
+          {presentation.unavailableResultMessage}
+        </Text>
+      ) : null}
       {completeness ? (
         <Text className="text-xs text-foreground-muted">
           {completeness}

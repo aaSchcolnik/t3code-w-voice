@@ -1637,6 +1637,12 @@ const make = Effect.gen(function* () {
     sandboxMode = DELEGATED_SANDBOX_MODE;
     runtimeMode = DELEGATED_RUNTIME_MODE;
     attachments = profile?.attachments ?? input.attachments ?? [];
+    if (input.provider === "antigravity" && attachments.length > 0) {
+      return yield* new DelegatedRunError({
+        operation: "start",
+        message: "Antigravity delegated runs do not support attachments.",
+      });
+    }
     const providerSnapshots = yield* providerRegistry.getProviders;
     const resolution = resolveDelegatedProvider({
       providers: providerSnapshots,

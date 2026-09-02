@@ -50,6 +50,9 @@ export const instanceUnusableReason = (instance: ServerProvider): string | undef
   if (!instance.installed) {
     return "The provider CLI is not installed.";
   }
+  if (instance.delegation?.available === false) {
+    return instance.delegation.reason ?? "The provider cannot run delegated tasks.";
+  }
   return undefined;
 };
 
@@ -61,7 +64,9 @@ export const instanceUnusableReasonCode = (
 > => {
   if (instance.availability === "unavailable") return "provider_unavailable";
   if (!instance.enabled) return "provider_disabled";
-  return "provider_uninstalled";
+  if (!instance.installed) return "provider_uninstalled";
+  if (instance.delegation?.available === false) return "provider_unavailable";
+  return "provider_unavailable";
 };
 
 const instanceDisplayName = (instance: ServerProvider): string =>
@@ -216,7 +221,9 @@ export function resolveDelegatedProvider(
           ? "provider_unavailable"
           : candidates.some((candidate) => !candidate.enabled)
             ? "provider_disabled"
-            : "provider_uninstalled",
+            : candidates.some((candidate) => !candidate.installed)
+              ? "provider_uninstalled"
+              : "provider_unavailable",
         `No ${input.provider} provider instance can run delegated tasks. ${reasons}`,
       );
     }

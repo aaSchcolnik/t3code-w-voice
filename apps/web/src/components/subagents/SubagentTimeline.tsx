@@ -23,6 +23,7 @@ import {
   type StableSubagentTimelineRowsState,
   type SubagentTimelineRow,
 } from "./SubagentTimeline.logic";
+import { consumeUserScrollIntent } from "./subagentDiagnosticsCollapse";
 
 interface SubagentTimelineProps {
   transcript: SubagentTranscript;
@@ -170,7 +171,7 @@ export const SubagentTimeline = memo(function SubagentTimeline({
           const state = listRef.current?.getState?.();
           const next = state?.isNearEnd ?? state?.isAtEnd;
           if (next !== undefined) setIsAtEnd(next);
-          if (state && userScrollIntentRef.current) {
+          if (state && consumeUserScrollIntent(userScrollIntentRef)) {
             onUserScrollPositionChange?.(state.isAtStart || state.scroll <= 1);
           }
         }}

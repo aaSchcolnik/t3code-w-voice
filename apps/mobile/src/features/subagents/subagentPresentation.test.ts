@@ -119,4 +119,29 @@ describe("mobile subagent presentation", () => {
       canCancel: false,
     });
   });
+
+  it("uses the summary when a provider omits a final message", () => {
+    expect(
+      mobileSubagentRunPresentation({
+        ...baseRun,
+        status: "completed",
+        lastSummary: "Reviewed the adapter.",
+      }),
+    ).toMatchObject({
+      result: "Reviewed the adapter.",
+      unavailableResultMessage: null,
+    });
+  });
+
+  it("explains an empty native Cursor result", () => {
+    expect(
+      mobileSubagentRunPresentation({
+        ...baseRun,
+        source: "native",
+        provider: ProviderDriverKind.make("cursor"),
+        providerInstanceId: ProviderInstanceId.make("cursor"),
+        status: "completed",
+      }).unavailableResultMessage,
+    ).toContain("ACP interface did not expose");
+  });
 });

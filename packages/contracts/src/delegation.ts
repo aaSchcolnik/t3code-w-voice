@@ -19,7 +19,12 @@ export const DelegationRequestHash = TrimmedNonEmptyString.pipe(
 );
 export type DelegationRequestHash = typeof DelegationRequestHash.Type;
 
-export const DelegationProvider = Schema.Literals(["codex", "cursor", "claudeAgent"]);
+export const DelegationProvider = Schema.Literals([
+  "codex",
+  "cursor",
+  "claudeAgent",
+  "antigravity",
+]);
 export type DelegationProvider = typeof DelegationProvider.Type;
 
 export const DelegationTarget = Schema.Struct({

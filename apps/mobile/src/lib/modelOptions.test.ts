@@ -12,6 +12,35 @@ import {
 } from "./modelOptions";
 
 describe("mobile model options", () => {
+  it("does not expose delegated-only Antigravity models as main-thread choices", () => {
+    const config = {
+      providers: [
+        {
+          instanceId: "antigravity",
+          driver: "antigravity",
+          enabled: true,
+          installed: true,
+          auth: { status: "unknown" },
+          models: [
+            {
+              slug: "gemini-3.7-flash-high",
+              name: "Gemini 3.7 Flash (High)",
+              isCustom: false,
+              capabilities: null,
+            },
+          ],
+        },
+      ],
+    } as unknown as ServerConfig;
+    const selection = {
+      instanceId: ProviderInstanceId.make("antigravity"),
+      model: "gemini-3.7-flash-high",
+    };
+
+    expect(buildModelOptions(config, selection)).toEqual([]);
+    expect(resolveSelectableModelSelection(config, selection)).toBeNull();
+  });
+
   it("groups models by provider and flags legacy entries", () => {
     const config = {
       providers: [

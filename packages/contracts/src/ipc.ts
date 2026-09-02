@@ -1036,6 +1036,7 @@ export const DesktopNotificationProvider = Schema.Literals([
   "codex",
   "claudeAgent",
   "cursor",
+  "antigravity",
   "grok",
   "opencode",
   "unknown",

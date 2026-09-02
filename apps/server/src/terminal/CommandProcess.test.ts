@@ -234,7 +234,11 @@ it.layer(realTestLayer)("TerminalCommandProcess with node-pty", (it) => {
       );
       yield* fileSystem.writeFileString(
         path.join(zdotdir, ".zshrc"),
-        "function t3_bang_rc_function() { printf '%s loaded-from-zshrc\\n' \"$T3_BANG_ZPROFILE_LOADED\" }\n",
+        [
+          "function t3_bang_rc_function() { printf '%s loaded-from-zshrc\\n' \"$T3_BANG_ZPROFILE_LOADED\" }",
+          "alias t3_bang_rc_alias=\"printf 'alias-loaded\\\\n'\"",
+          "",
+        ].join("\n"),
       );
       const adapter = yield* PtyAdapter.PtyAdapter;
       const processDriver = yield* make({
@@ -246,11 +250,12 @@ it.layer(realTestLayer)("TerminalCommandProcess with node-pty", (it) => {
           output += chunk;
         }),
         cwd: process.cwd(),
-        command: "t3_bang_rc_function",
+        command: "t3_bang_rc_function; t3_bang_rc_alias",
       });
 
       expect((yield* handle.completed).exitCode).toBe(0);
       expect(output).toContain("yes loaded-from-zshrc\r\n");
+      expect(output).toContain("alias-loaded\r\n");
     }),
   );
 });

@@ -22,6 +22,7 @@ const providerCapability = {
   codex: "codex-agent",
   cursor: "cursor-agent",
   claudeAgent: "claude-agent",
+  antigravity: "antigravity-agent",
 } as const;
 
 const targetAvailable = (
@@ -69,6 +70,7 @@ export function resolveDelegationChains(input: {
   if (input.capabilities.has("codex-agent")) availableProviders.add("codex");
   if (input.capabilities.has("cursor-agent")) availableProviders.add("cursor");
   if (input.capabilities.has("claude-agent")) availableProviders.add("claudeAgent");
+  if (input.capabilities.has("antigravity-agent")) availableProviders.add("antigravity");
   availableProviders.add("inline");
   const delegationChain = (role: EngineDelegationRole) =>
     resolveDelegationChain({
@@ -303,7 +305,7 @@ ${targets.join("\n")}
 ${roleSteps.join("\n")}
 
 ### Guardrails
-- Call the resolved provider-specific \`cursor_start\`, \`codex_start\`, or \`claude_start\` tool with a stable idempotency key. Start every selected independent target, then end the main-thread turn; results arrive automatically after runs finish.
+- Call the resolved provider-specific \`cursor_start\`, \`codex_start\`, \`claude_start\`, or \`antigravity_start\` tool with a stable idempotency key. Start every selected independent target, then end the main-thread turn; results arrive automatically after runs finish.
 - Never wait, poll, sleep, or create background polling commands while delegated runs are active.
 - Subagents report findings or diffs to the Judge. They never mark chunks complete, write engine artifacts, or adjudicate findings.
 - Parallelize only independent lanes. Concurrent Workers require dependency-ready chunks with complete, disjoint intentional edit sets; T3 does not reserve or enforce file ownership.

@@ -25,6 +25,10 @@ const TRACKED_PROVIDER_TOOLS = {
     label: "Claude",
     start: "claude_start",
   },
+  "antigravity-agent": {
+    label: "Antigravity",
+    start: "antigravity_start",
+  },
 } as const;
 
 const sameProviderNativeInstruction = (
@@ -224,8 +228,8 @@ export const makeMcpSessionInstructionBuilder = Effect.fn("makeMcpSessionInstruc
 );
 
 export interface UntrackedDelegationAttempt {
-  readonly provider: "codex" | "cursor" | "claude";
-  readonly trackedTool: "codex_start" | "cursor_start" | "claude_start";
+  readonly provider: "codex" | "cursor" | "claude" | "antigravity";
+  readonly trackedTool: "codex_start" | "cursor_start" | "claude_start" | "antigravity_start";
 }
 
 /**
@@ -268,6 +272,14 @@ export function detectUntrackedDelegationAttempt(
     /(?:^|\s)(?:-p|--print)(?:\s|$)/u.test(command)
   ) {
     return { provider: "claude", trackedTool: "claude_start" };
+  }
+
+  if (
+    capabilities.has("antigravity-agent") &&
+    /(?:^|[;&|()\s])(?:[^\s/]+\/)*agy(?:\s|$)/u.test(command) &&
+    /(?:^|\s)(?:-p|--print|--prompt)(?:\s|$)/u.test(command)
+  ) {
+    return { provider: "antigravity", trackedTool: "antigravity_start" };
   }
 
   if (

@@ -2,6 +2,7 @@ import {
   buildSubagentInputAnswers,
   isActiveSubagentStatus,
   subagentPhaseLabel,
+  subagentUnavailableResultMessage,
   type SubagentInputDraftAnswer,
 } from "@t3tools/client-runtime/state/subagents";
 import type { SubagentRun, UserInputQuestion } from "@t3tools/contracts";
@@ -10,7 +11,11 @@ export function mobileSubagentRunPresentation(run: SubagentRun) {
   return {
     active: isActiveSubagentStatus(run.status),
     phaseLabel: subagentPhaseLabel(run),
-    result: run.status === "failed" ? (run.error ?? run.finalMessage) : run.finalMessage,
+    result:
+      run.status === "failed"
+        ? (run.error ?? run.finalMessage ?? run.lastSummary)
+        : (run.finalMessage ?? run.lastSummary ?? run.error),
+    unavailableResultMessage: subagentUnavailableResultMessage(run),
     canCancel: run.capabilities.canCancel && isActiveSubagentStatus(run.status),
     canRespond: run.status === "waiting_for_input" && run.capabilities.canRespond,
   };

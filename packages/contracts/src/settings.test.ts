@@ -474,11 +474,12 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
 });
 
 describe("provider enabled defaults", () => {
-  it("keeps Grok and OpenCode opt-in by default", () => {
+  it("keeps Antigravity, Grok, and OpenCode opt-in by default", () => {
     const decoded = decodeServerSettings({});
     expect(decoded.providers.codex.enabled).toBe(true);
     expect(decoded.providers.claudeAgent.enabled).toBe(true);
     expect(decoded.providers.cursor.enabled).toBe(false);
+    expect(decoded.providers.antigravity.enabled).toBe(false);
     expect(decoded.providers.grok.enabled).toBe(false);
     expect(decoded.providers.opencode.enabled).toBe(false);
   });
@@ -486,6 +487,7 @@ describe("provider enabled defaults", () => {
   it("derives per-driver defaults from the settings schemas", () => {
     expect(defaultEnabledForDriver(ProviderDriverKind.make("codex"))).toBe(true);
     expect(defaultEnabledForDriver(ProviderDriverKind.make("cursor"))).toBe(false);
+    expect(defaultEnabledForDriver(ProviderDriverKind.make("antigravity"))).toBe(false);
     expect(defaultEnabledForDriver(ProviderDriverKind.make("grok"))).toBe(false);
     // Unknown fork drivers stay enabled; their own build decides otherwise.
     expect(defaultEnabledForDriver(ProviderDriverKind.make("ollama"))).toBe(true);
@@ -720,6 +722,16 @@ describe("per-project MCP settings", () => {
     expect(decodeServerSettings({}).mcp.claudeAgent).toBe(true);
     expect(decodeServerSettingsPatch({ mcp: { claudeAgent: false } }).mcp?.claudeAgent).toBe(false);
     expect(decodeProjectMcpOverrides({ claudeAgent: false })).toEqual({ claudeAgent: false });
+  });
+
+  it("defaults and round-trips the Antigravity delegation toggle", () => {
+    expect(decodeServerSettings({}).mcp.antigravityAgent).toBe(true);
+    expect(
+      decodeServerSettingsPatch({ mcp: { antigravityAgent: false } }).mcp?.antigravityAgent,
+    ).toBe(false);
+    expect(decodeProjectMcpOverrides({ antigravityAgent: false })).toEqual({
+      antigravityAgent: false,
+    });
   });
 
   it("decodes an empty override as inherit-all", () => {

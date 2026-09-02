@@ -20,6 +20,7 @@ import {
   setSubagentInputCustomAnswer,
   subagentRespondInput,
   subagentPhaseLabel,
+  subagentUnavailableResultMessage,
   toggleSubagentInputOption,
 } from "./subagents.ts";
 
@@ -93,6 +94,23 @@ describe("subagent environment state", () => {
     expect(stale).toBe(snapshot);
     expect(subagentPhaseLabel(run)).toBe("Session starting");
     expect(subagentPhaseLabel({ ...run, status: "waiting_for_input" })).toBe("Waiting for input");
+  });
+
+  it("explains when native Cursor omits the child response", () => {
+    expect(
+      subagentUnavailableResultMessage({
+        ...run,
+        source: "native",
+        provider: ProviderDriverKind.make("cursor"),
+        providerInstanceId: ProviderInstanceId.make("cursor"),
+        status: "completed",
+      }),
+    ).toBe(
+      "Cursor reported that this task finished, but its ACP interface did not expose the subagent's response or activity.",
+    );
+    expect(
+      subagentUnavailableResultMessage({ ...run, status: "completed", finalMessage: "Done" }),
+    ).toBeNull();
   });
 
   it("builds typed response inputs with real multi-select and custom-answer semantics", () => {

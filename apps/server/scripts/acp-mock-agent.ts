@@ -29,6 +29,7 @@ const emitContentThenHang = process.env.T3_ACP_EMIT_CONTENT_THEN_HANG === "1";
 const emitPlanThenHang = process.env.T3_ACP_EMIT_PLAN_THEN_HANG === "1";
 const emitActiveToolThenHang = process.env.T3_ACP_EMIT_ACTIVE_TOOL_THEN_HANG === "1";
 const emitCursorBackgroundTask = process.env.T3_ACP_EMIT_CURSOR_BACKGROUND_TASK === "1";
+const emitCursorTaskNotification = process.env.T3_ACP_EMIT_CURSOR_TASK_NOTIFICATION === "1";
 const emitForeignSessionUpdates = process.env.T3_ACP_EMIT_FOREIGN_SESSION_UPDATES === "1";
 const hangPromptForever = process.env.T3_ACP_HANG_PROMPT_FOREVER === "1";
 const hangFirstPromptForever = process.env.T3_ACP_HANG_FIRST_PROMPT_FOREVER === "1";
@@ -635,6 +636,16 @@ const program = Effect.gen(function* () {
             },
           },
         });
+        if (emitCursorTaskNotification) {
+          writeJsonRpcNotification("cursor/task", {
+            toolCallId,
+            description: "Background review",
+            prompt: "Review the implementation in the background.",
+            subagentType: "reviewer",
+            model: "gpt-5.6-sol",
+            agentId: "cursor-agent-1",
+          });
+        }
         yield* agent.client.sessionUpdate({
           sessionId: requestedSessionId,
           update: {

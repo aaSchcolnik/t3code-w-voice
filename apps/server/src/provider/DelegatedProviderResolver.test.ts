@@ -95,6 +95,30 @@ describe("resolveDelegatedProvider", () => {
     expect(result.value.requestedModel).toBeUndefined();
   });
 
+  it("resolves an Antigravity instance and preserves its discovered model slug", () => {
+    const result = resolveDelegatedProvider({
+      providers: [
+        makeSnapshot({
+          instanceId: "antigravity",
+          driver: ProviderDriverKind.make("antigravity"),
+          models: [
+            {
+              slug: "gemini-3.7-flash-high",
+              name: "Gemini 3.7 Flash (High)",
+              isCustom: false,
+              capabilities: {},
+            },
+          ],
+        }),
+      ],
+      provider: "antigravity",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.instance.instanceId).toBe("antigravity");
+    expect(result.value.resolvedModel).toBe("gemini-3.7-flash-high");
+  });
+
   it("honors an explicit instance selection", () => {
     const result = resolveDelegatedProvider({
       providers: [
@@ -159,6 +183,22 @@ describe("resolveDelegatedProvider", () => {
     });
     expect(!unavailable.ok && unavailable.message).toContain("not registered in this build");
     expect(!unavailable.ok && unavailable.reasonCode).toBe("provider_unavailable");
+
+    const delegationUnavailable = resolveDelegatedProvider({
+      providers: [
+        makeSnapshot({
+          instanceId: "cursor",
+          delegation: { available: false, reason: "Upgrade the provider CLI." },
+        }),
+      ],
+      provider: "cursor",
+    });
+    expect(!delegationUnavailable.ok && delegationUnavailable.message).toContain(
+      "Upgrade the provider CLI",
+    );
+    expect(!delegationUnavailable.ok && delegationUnavailable.reasonCode).toBe(
+      "provider_unavailable",
+    );
 
     const missing = resolveDelegatedProvider({ providers: [], provider: "cursor" });
     expect(!missing.ok && missing.message).toContain("No cursor provider instance is configured");

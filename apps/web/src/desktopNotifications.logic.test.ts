@@ -564,6 +564,9 @@ describe("desktop notification policy and batching", () => {
 
   it("maps only trusted providers and falls back to a neutral provider", () => {
     expect(toDesktopNotificationProvider(ProviderDriverKind.make("codex"))).toBe("codex");
+    expect(toDesktopNotificationProvider(ProviderDriverKind.make("antigravity"))).toBe(
+      "antigravity",
+    );
     expect(toDesktopNotificationProvider(ProviderDriverKind.make("forkAgent"))).toBe("unknown");
   });
 });

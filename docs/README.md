@@ -15,7 +15,7 @@
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Background service (Linux)](./user/background-service.md)
-- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md)
+- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Antigravity](./user/providers-antigravity.md) · [OpenCode](./user/providers-opencode.md)
 - [Project skills and knowledge](./user/project-skills-and-knowledge.md)
 - [Subagents](./user/subagents.md)
 - [Native provider subagents](./user/native-subagents.md)

@@ -39,6 +39,7 @@ const DELEGATION_TOOLS = {
   "codex-agent": ["codex_capabilities", "codex_start", "codex_cancel"],
   "cursor-agent": ["cursor_capabilities", "cursor_start", "cursor_cancel", "cursor_respond"],
   "claude-agent": ["claude_capabilities", "claude_start", "claude_cancel"],
+  "antigravity-agent": ["antigravity_capabilities", "antigravity_start", "antigravity_cancel"],
 } as const satisfies Partial<Record<McpCapability, ReadonlyArray<string>>>;
 
 const ENGINE_WORKFLOW_TOOLS = {
@@ -92,6 +93,8 @@ const settingAllows = (capability: McpCapability, settings: McpSettings | undefi
       return settings.cursorAgent;
     case "claude-agent":
       return settings.claudeAgent;
+    case "antigravity-agent":
+      return settings.antigravityAgent;
     case "engine-planning":
       return settings.engine.planning;
     case "engine-consensus":

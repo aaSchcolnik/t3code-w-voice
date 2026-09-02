@@ -187,6 +187,10 @@ describe("DesktopNotifications formatting", () => {
       title: "Cursor",
       assetFile: "cursor.png",
     });
+    assert.deepEqual(providerNotificationMetadata("antigravity"), {
+      title: "Antigravity",
+      assetFile: "antigravity.png",
+    });
     assert.deepEqual(providerNotificationMetadata("grok"), {
       title: "Grok",
       assetFile: "grok.png",

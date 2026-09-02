@@ -606,6 +606,7 @@ export const DESKTOP_NOTIFICATION_ASSET_FILES = [
   "agent.png",
   "claude.png",
   "cursor.png",
+  "antigravity.png",
   "grok.png",
   "openai.png",
   "opencode.png",

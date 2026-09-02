@@ -70,6 +70,8 @@ export interface ProviderInstance {
   readonly displayName: string | undefined;
   readonly accentColor?: string | undefined;
   readonly enabled: boolean;
+  /** Omitted means the instance accepts both standard and delegated sessions. */
+  readonly supportedSessionKinds?: ReadonlyArray<"standard" | "delegated">;
   readonly snapshot: ServerProviderShape;
   readonly snapshotForCwd?: (cwd: string) => Effect.Effect<ServerProvider, ProviderDriverError>;
   readonly adapter: ProviderAdapterShape<ProviderAdapterError>;

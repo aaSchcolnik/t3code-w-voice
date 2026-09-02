@@ -23,6 +23,7 @@ export interface ProviderInstanceRoutingInfo {
   readonly displayName: string | undefined;
   readonly accentColor?: string | undefined;
   readonly enabled: boolean;
+  readonly supportedSessionKinds?: ReadonlyArray<"standard" | "delegated">;
   readonly continuationIdentity: ProviderContinuationIdentity;
 }
 

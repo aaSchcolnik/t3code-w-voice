@@ -138,6 +138,12 @@ export type ServerProviderWorkspaceSnapshot = typeof ServerProviderWorkspaceSnap
 export const ServerProviderAvailability = Schema.Literals(["available", "unavailable"]);
 export type ServerProviderAvailability = typeof ServerProviderAvailability.Type;
 
+export const ServerProviderDelegation = Schema.Struct({
+  available: Schema.Boolean,
+  reason: Schema.optional(TrimmedNonEmptyString),
+});
+export type ServerProviderDelegation = typeof ServerProviderDelegation.Type;
+
 export const ServerProviderContinuation = Schema.Struct({
   groupKey: TrimmedNonEmptyString,
 });
@@ -209,6 +215,7 @@ export const ServerProvider = Schema.Struct({
   // Human-readable reason populated when `availability === "unavailable"`.
   // Surfaces in the UI alongside the missing-driver affordance.
   unavailableReason: Schema.optional(TrimmedNonEmptyString),
+  delegation: Schema.optional(ServerProviderDelegation),
   models: Schema.Array(ServerProviderModel),
   slashCommands: Schema.Array(ServerProviderSlashCommand).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),

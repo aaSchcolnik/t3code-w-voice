@@ -35,6 +35,7 @@ function providerDisplayLabel(provider: {
   if (provider.displayName) return provider.displayName;
   if (provider.driver === "codex") return "Codex";
   if (provider.driver === "claudeAgent") return "Claude";
+  if (provider.driver === "antigravity") return "Antigravity";
   return provider.instanceId;
 }
 
@@ -78,6 +79,7 @@ export function resolveSelectableModelSelection(
     (candidate) => candidate.instanceId === selection.instanceId,
   );
   return provider &&
+    provider.driver !== "antigravity" &&
     provider.enabled &&
     provider.installed &&
     provider.auth.status !== "unauthenticated"
@@ -128,7 +130,12 @@ export function buildModelOptions(
   const options = new Map<string, ModelOption>();
 
   for (const provider of config?.providers ?? []) {
-    if (!provider.enabled || !provider.installed || provider.auth.status === "unauthenticated") {
+    if (
+      provider.driver === "antigravity" ||
+      !provider.enabled ||
+      !provider.installed ||
+      provider.auth.status === "unauthenticated"
+    ) {
       continue;
     }
 
@@ -156,7 +163,10 @@ export function buildModelOptions(
     }
   }
 
-  if (fallbackModelSelection) {
+  const fallbackProvider = config?.providers.find(
+    (provider) => provider.instanceId === fallbackModelSelection?.instanceId,
+  );
+  if (fallbackModelSelection && fallbackProvider?.driver !== "antigravity") {
     const key = `${fallbackModelSelection.instanceId}:${fallbackModelSelection.model}`;
     const existing = options.get(key);
     if (existing) {

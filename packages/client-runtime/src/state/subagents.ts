@@ -125,6 +125,21 @@ export function subagentPhaseLabel(run: SubagentRun): string {
   return subagentStatusLabel(run.status);
 }
 
+export function subagentUnavailableResultMessage(run: SubagentRun): string | null {
+  if (
+    isActiveSubagentStatus(run.status) ||
+    run.finalMessage !== null ||
+    run.lastSummary !== null ||
+    run.error !== null
+  ) {
+    return null;
+  }
+  if (run.source === "native" && run.provider === "cursor") {
+    return "Cursor reported that this task finished, but its ACP interface did not expose the subagent's response or activity.";
+  }
+  return "This provider did not report a result or detailed activity for this run.";
+}
+
 export function subagentControlInput(rootThreadId: ThreadId, run: SubagentRun) {
   return {
     rootThreadId,

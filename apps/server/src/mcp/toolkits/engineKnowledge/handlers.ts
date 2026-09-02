@@ -70,6 +70,7 @@ const providerCapability = {
   codex: "codex-agent",
   cursor: "cursor-agent",
   claudeAgent: "claude-agent",
+  antigravity: "antigravity-agent",
 } as const;
 
 const targetAvailable = (
@@ -91,6 +92,7 @@ const availableDelegationProviders = (
   }
   if (capabilities.has("codex-agent")) providers.add("codex");
   if (capabilities.has("cursor-agent")) providers.add("cursor");
+  if (capabilities.has("antigravity-agent")) providers.add("antigravity");
   return providers;
 };
 

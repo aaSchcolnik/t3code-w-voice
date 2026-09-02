@@ -162,6 +162,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           provider.driver === ProviderDriverKind.make(driver) &&
           provider.enabled &&
           provider.installed &&
+          provider.delegation?.available !== false &&
           provider.availability !== "unavailable",
       );
     const capabilities = new Set<McpInvocationContext.McpCapability>();
@@ -197,6 +198,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       )
     ) {
       capabilities.add("claude-agent");
+    }
+    if (effectiveMcp.antigravityAgent && providerAvailable("antigravity")) {
+      capabilities.add("antigravity-agent");
     }
     const engineCapabilities = [
       ["planning", "engine-planning"],
@@ -285,9 +289,11 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           (provider) =>
             (provider.driver === ProviderDriverKind.make("codex") ||
               provider.driver === ProviderDriverKind.make("cursor") ||
-              provider.driver === ProviderDriverKind.make("claudeAgent")) &&
+              provider.driver === ProviderDriverKind.make("claudeAgent") ||
+              provider.driver === ProviderDriverKind.make("antigravity")) &&
             provider.enabled &&
             provider.installed &&
+            provider.delegation?.available !== false &&
             provider.availability !== "unavailable",
         )
         .map((provider) => provider.instanceId);
