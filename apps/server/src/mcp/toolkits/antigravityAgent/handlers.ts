@@ -42,12 +42,6 @@ export const antigravityAgentHandlers = AntigravityAgentToolkit.of({
   antigravity_start: (input) =>
     Effect.gen(function* () {
       const scope = yield* requireCapability;
-      if (input.attachments && input.attachments.length > 0) {
-        return yield* new DelegatedRunError({
-          operation: "start",
-          message: "Antigravity delegated runs do not support attachments.",
-        });
-      }
       const { idempotencyKey, ...startInput } = input;
       return yield* startActiveDelegatedRun({
         ...startInput,

@@ -4,10 +4,19 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   RightPanelTabs,
+  shouldOpenDefaultBrowserProfileFromMenuClick,
   surfaceShortcutActionForKey,
   surfaceShortcutTargetsTypingContext,
   tabMuteMenuItem,
 } from "./RightPanelTabs";
+
+describe("browser profile submenu", () => {
+  it("reserves touch clicks for opening the choices while mouse clicks use the default", () => {
+    expect(shouldOpenDefaultBrowserProfileFromMenuClick("touch")).toBe(false);
+    expect(shouldOpenDefaultBrowserProfileFromMenuClick("mouse")).toBe(true);
+    expect(shouldOpenDefaultBrowserProfileFromMenuClick(undefined)).toBe(true);
+  });
+});
 
 function shortcutEvent(
   key: string,
@@ -89,6 +98,7 @@ function renderTabs(
     <RightPanelTabs
       mode="inline"
       surfaces={options?.empty ? [] : second ? [previewSurface, secondSurface] : [previewSurface]}
+      environmentId={null}
       activeSurfaceId={options?.empty ? null : previewSurface.id}
       pendingSurfaceIds={new Set()}
       previewSessions={sessions}
@@ -105,6 +115,7 @@ function renderTabs(
       onCloseAllSurfaces={() => undefined}
       onCopyFilePath={() => undefined}
       onAddBrowser={() => undefined}
+      onAddBrowserInProfile={() => undefined}
       onAddTerminal={() => undefined}
       onAddPullRequest={() => undefined}
       onAddDiff={() => undefined}

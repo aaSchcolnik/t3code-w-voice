@@ -25,7 +25,7 @@ export const AntigravityCapabilitiesTool = Tool.make("antigravity_capabilities",
 
 export const AntigravityStartTool = Tool.make("antigravity_start", {
   description:
-    "Start a one-shot Antigravity subagent in the parent thread workspace. The provider's own permission settings still apply. Provide a stable idempotencyKey for retry-safe calls. Always use this tool instead of launching agy -p through a shell. Returns immediately with tracked allocation state; provider acceptance happens later. Start every needed run, then end your turn; the server delivers results automatically.",
+    "Start a tracked Antigravity ACP subagent in the parent thread workspace. The provider's configured Google identity and permission settings apply. Provide a stable idempotencyKey for retry-safe calls. Always use this tool instead of launching the ACP executable through a shell. Returns immediately with tracked allocation state; provider acceptance happens later. Start every needed run, then end your turn; the server delivers results automatically.",
   parameters: DelegatedRunToolStartInput,
   success: DelegatedRun,
   failure: DelegatedRunError,

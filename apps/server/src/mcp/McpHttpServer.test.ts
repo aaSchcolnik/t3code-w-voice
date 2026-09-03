@@ -159,6 +159,7 @@ const ProjectOverridesToolkitTestLayer = makeAllToolkitTestLayer(({ projectId })
       workspaceRoot: "/tmp/project-mcp-test",
       defaultModelSelection: null,
       defaultThreadEnvMode: null,
+      autoPull: false,
       scripts: [],
       mcpOverrides: overridesRef.current,
       createdAt: "2026-01-01T00:00:00.000Z",

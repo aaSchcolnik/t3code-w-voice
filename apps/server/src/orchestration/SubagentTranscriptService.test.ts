@@ -48,6 +48,7 @@ const makeProviderServiceStub = (events: Stream.Stream<ProviderRuntimeEvent>) =>
     listSessions: () => Effect.succeed([]),
     getCapabilities: () => Effect.die("unused"),
     getInstanceInfo: () => Effect.die("unused"),
+    assertConversationRollbackSupported: () => Effect.die("unused"),
     respondToRequest: () => Effect.die("unused"),
     respondToUserInput: () => Effect.die("unused"),
     rollbackConversation: () => Effect.die("unused"),

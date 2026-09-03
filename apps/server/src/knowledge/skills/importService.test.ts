@@ -42,6 +42,7 @@ const setupProject = Effect.gen(function* () {
     workspaceRoot: root,
     defaultModelSelection: null,
     defaultThreadEnvMode: null,
+    autoPull: false,
     scripts: [],
     mcpOverrides: null,
     createdAt: "2026-01-01T00:00:00.000Z",

@@ -36,6 +36,7 @@ import type { ProviderAdapterError, ProviderDriverError } from "./Errors.ts";
 import type { ProviderAdapterShape } from "./Services/ProviderAdapter.ts";
 import type { ServerProviderShape } from "./Services/ServerProvider.ts";
 import type { ComputerUseCapabilityShape } from "./computerUseCapability.ts";
+import type { ProviderAuthController } from "./Services/ProviderAuthService.ts";
 
 /**
  * Static metadata advertised by a driver. Used for default presentation
@@ -74,9 +75,11 @@ export interface ProviderInstance {
   readonly supportedSessionKinds?: ReadonlyArray<"standard" | "delegated">;
   readonly snapshot: ServerProviderShape;
   readonly snapshotForCwd?: (cwd: string) => Effect.Effect<ServerProvider, ProviderDriverError>;
+  readonly refreshModels?: () => Effect.Effect<void, ProviderDriverError>;
   readonly adapter: ProviderAdapterShape<ProviderAdapterError>;
   readonly textGeneration: TextGeneration.TextGeneration["Service"];
   readonly computerUse?: ComputerUseCapabilityShape;
+  readonly auth?: ProviderAuthController;
 }
 
 export interface ProviderContinuationIdentity {

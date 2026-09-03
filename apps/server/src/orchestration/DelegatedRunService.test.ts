@@ -111,21 +111,6 @@ const cursorSnapshot = {
   ],
 } as ServerProvider;
 
-const antigravitySnapshot = {
-  ...codexSnapshot,
-  instanceId: ProviderInstanceId.make("antigravity"),
-  driver: ProviderDriverKind.make("antigravity"),
-  auth: { status: "unknown" },
-  models: [
-    {
-      slug: "gemini-3.7-flash-high",
-      name: "Gemini 3.7 Flash (High)",
-      isCustom: false,
-      capabilities: {},
-    },
-  ],
-} as ServerProvider;
-
 const providerRegistryStub = (providers: ReadonlyArray<ServerProvider>) =>
   Layer.succeed(
     ProviderRegistry,
@@ -164,6 +149,7 @@ const makeStubbedProviderService = (
     listSessions: () => Effect.succeed([]),
     getCapabilities: () => Effect.die("unused"),
     getInstanceInfo: () => Effect.die("unused"),
+    assertConversationRollbackSupported: () => Effect.die("unused"),
     respondToRequest: onRespondToRequest,
     respondToUserInput: () => Effect.die("unused"),
     rollbackConversation: () => Effect.die("unused"),
@@ -601,6 +587,7 @@ it.effect("starts, projects, and cancels a delegated run", () => {
     listSessions: () => Effect.succeed([]),
     getCapabilities: () => Effect.die("unused"),
     getInstanceInfo: () => Effect.die("unused"),
+    assertConversationRollbackSupported: () => Effect.die("unused"),
     respondToRequest: () => Effect.die("unused"),
     respondToUserInput: () => Effect.die("unused"),
     rollbackConversation: () => Effect.die("unused"),
@@ -780,46 +767,6 @@ it.effect("propagates and records validated options at both execution boundaries
         Layer.succeed(OrchestrationEngineService, makeStubbedEngine(commands)),
         Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
         providerRegistryStub([codexSnapshot]),
-        subagentRunLayer,
-        configLayer,
-        ServerSettings.layerTest(),
-        NodeServices.layer,
-        repositoryLayer,
-      ),
-    ),
-    Effect.scoped,
-  );
-});
-
-it.effect("rejects Antigravity attachments before provider session allocation", () => {
-  const commands: OrchestrationCommand[] = [];
-  return Effect.gen(function* () {
-    const service = yield* DelegatedRunService.__testing.make;
-    const error = yield* Effect.flip(
-      service.start({
-        provider: "antigravity",
-        parentThreadId,
-        task: "Inspect the diagram",
-        attachments: [
-          {
-            type: "image",
-            id: "diagram",
-            name: "diagram.png",
-            mimeType: "image/png",
-            sizeBytes: 42,
-          },
-        ],
-      }),
-    );
-    expect(error.message).toContain("do not support attachments");
-  }).pipe(
-    Effect.scoped,
-    Effect.provide(
-      Layer.mergeAll(
-        Layer.succeed(ProviderService, makeStubbedProviderService()),
-        Layer.succeed(OrchestrationEngineService, makeStubbedEngine(commands)),
-        Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
-        providerRegistryStub([antigravitySnapshot]),
         subagentRunLayer,
         configLayer,
         ServerSettings.layerTest(),

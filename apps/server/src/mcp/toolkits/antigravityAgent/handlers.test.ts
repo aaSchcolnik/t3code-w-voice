@@ -81,11 +81,11 @@ it.effect("starts a tracked Antigravity run for the MCP owner", () => {
   );
 });
 
-it.effect("rejects attachments before allocating a run", () => {
-  let starts = 0;
+it.effect("forwards attachments to the official ACP delegated run", () => {
+  let received: StartDelegatedRunInput | undefined;
   const service = {
-    start: () => {
-      starts += 1;
+    start: (input) => {
+      received = input;
       return Effect.succeed(run);
     },
     reconcileParentDelivery: () => Effect.void,
@@ -98,22 +98,22 @@ it.effect("rejects attachments before allocating a run", () => {
   return withService(
     service,
     Effect.gen(function* () {
-      const error = yield* Effect.flip(
-        antigravityAgentHandlers.antigravity_start({
-          task: "Inspect the image",
-          attachments: [
-            {
-              type: "image",
-              id: "diagram",
-              name: "diagram.png",
-              mimeType: "image/png",
-              sizeBytes: 42,
-            },
-          ],
-        }),
-      );
-      expect(error.message).toContain("do not support attachments");
-      expect(starts).toBe(0);
+      yield* antigravityAgentHandlers.antigravity_start({
+        task: "Inspect the image",
+        attachments: [
+          {
+            type: "image",
+            id: "diagram",
+            name: "diagram.png",
+            mimeType: "image/png",
+            sizeBytes: 42,
+          },
+        ],
+      });
+      expect(received).toMatchObject({
+        provider: "antigravity",
+        attachments: [{ id: "diagram" }],
+      });
     }),
   );
 });
