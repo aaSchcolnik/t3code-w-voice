@@ -4,6 +4,8 @@ import type {
   DesktopTranscriptionErrorEvent,
   ModelDownloadProgressEvent,
   DesktopPreviewPointerEvent,
+  DesktopPreviewRemoteHostStateEvent,
+  DesktopPreviewRemoteSourceMetadataEvent,
   DesktopPreviewRecordingFrame,
   DesktopPreviewTabState,
   TranscriptionUpdate,
@@ -359,6 +361,46 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ipcRenderer.on(IpcChannels.PREVIEW_RECORDING_FRAME_CHANNEL, wrappedListener);
         return () =>
           ipcRenderer.removeListener(IpcChannels.PREVIEW_RECORDING_FRAME_CHANNEL, wrappedListener);
+      },
+    },
+    remote: {
+      startCapture: (tabId) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_START_CAPTURE_CHANNEL, { tabId }),
+      stopCapture: (tabId) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_STOP_CAPTURE_CHANNEL, { tabId }),
+      dispatchInput: (tabId, message) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_DISPATCH_INPUT_CHANNEL, { tabId, message }),
+      setPresence: (tabId, viewerCount, controller) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_SET_PRESENCE_CHANNEL, {
+          tabId,
+          viewerCount,
+          controller,
+        }),
+      readSourceMetadata: (tabId) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_READ_SOURCE_METADATA_CHANNEL, { tabId }),
+      onSourceMetadata: (listener) => {
+        const wrappedListener = (_event: Electron.IpcRendererEvent, update: unknown) => {
+          if (typeof update !== "object" || update === null) return;
+          listener(update as DesktopPreviewRemoteSourceMetadataEvent);
+        };
+        ipcRenderer.on(IpcChannels.PREVIEW_REMOTE_SOURCE_METADATA_CHANNEL, wrappedListener);
+        return () =>
+          ipcRenderer.removeListener(
+            IpcChannels.PREVIEW_REMOTE_SOURCE_METADATA_CHANNEL,
+            wrappedListener,
+          );
+      },
+      onHostState: (listener) => {
+        const wrappedListener = (_event: Electron.IpcRendererEvent, update: unknown) => {
+          if (typeof update !== "object" || update === null) return;
+          listener(update as DesktopPreviewRemoteHostStateEvent);
+        };
+        ipcRenderer.on(IpcChannels.PREVIEW_REMOTE_HOST_STATE_CHANNEL, wrappedListener);
+        return () =>
+          ipcRenderer.removeListener(
+            IpcChannels.PREVIEW_REMOTE_HOST_STATE_CHANNEL,
+            wrappedListener,
+          );
       },
     },
     automation: {

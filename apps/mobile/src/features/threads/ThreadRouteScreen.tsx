@@ -71,6 +71,7 @@ import {
 } from "../layout/AdaptiveWorkspaceLayout";
 import { withNativeGlassHeaderItem } from "../layout/native-glass-header-items";
 import { ThreadFileNavigatorPane } from "../files/thread-file-navigator-pane";
+import { ThreadBrowserInspector } from "../preview/ThreadBrowserRouteScreen";
 import {
   ThreadInspectorContentStack,
   type ThreadInspectorMode,
@@ -460,6 +461,16 @@ function ThreadRouteContent(
       selectedThreadProject?.title,
     ],
   );
+  const BrowserInspector = useCallback(
+    () =>
+      selectedThread === null ? null : (
+        <ThreadBrowserInspector
+          environmentId={selectedThread.environmentId}
+          threadId={selectedThread.id}
+        />
+      ),
+    [selectedThread],
+  );
   const RouteInspector = useCallback(
     () => props.renderInspector?.(inspectorHeaderInset),
     [inspectorHeaderInset, props.renderInspector],
@@ -468,13 +479,21 @@ function ThreadRouteContent(
     () =>
       inspectorMode === null ? null : (
         <ThreadInspectorContentStack
+          Browser={BrowserInspector}
           Files={FilesInspector}
           Git={GitInspector}
           mode={inspectorMode}
           Route={props.renderInspector ? RouteInspector : undefined}
         />
       ),
-    [FilesInspector, GitInspector, RouteInspector, inspectorMode, props.renderInspector],
+    [
+      BrowserInspector,
+      FilesInspector,
+      GitInspector,
+      RouteInspector,
+      inspectorMode,
+      props.renderInspector,
+    ],
   );
   const activeInspectorRenderer = inspectorMode === null ? undefined : renderInspectorStack;
   // Hand the inspector to the workspace so it renders beside the navigator,
@@ -545,6 +564,12 @@ function ThreadRouteContent(
       terminalId: nextId,
     });
   }, [navigation, selectedThread, selectedThreadProject?.workspaceRoot, terminalMenuSessions]);
+
+  const handleOpenBrowser = useCallback(() => {
+    if (!selectedThread) return;
+    setInspectorSelection({ routeThreadIdentity, mode: "browser" });
+    showAuxiliaryPane("inspector");
+  }, [routeThreadIdentity, selectedThread, showAuxiliaryPane]);
 
   const handleRunProjectScript = useCallback(
     async (script: ProjectScript) => {
@@ -633,11 +658,13 @@ function ThreadRouteContent(
     gitOperationLabel: gitState.gitOperationLabel,
     canOpenTerminal: Boolean(selectedThreadProject?.workspaceRoot),
     canOpenFiles: Boolean(selectedThreadProject?.workspaceRoot),
+    canOpenBrowser: panes.supportsAuxiliaryPane,
     projectScripts: selectedThreadProject?.scripts ?? [],
     terminalSessions: terminalMenuSessions,
     showDirectFileControl: layout.usesSplitView,
     onOpenTerminal: handleOpenTerminal,
     onOpenNewTerminal: handleOpenNewTerminal,
+    onOpenBrowser: panes.supportsAuxiliaryPane ? handleOpenBrowser : undefined,
     onRunProjectScript: handleRunProjectScript,
     onPull: gitActions.onPullSelectedThreadBranch,
     onRunAction: gitActions.onRunSelectedThreadGitAction,

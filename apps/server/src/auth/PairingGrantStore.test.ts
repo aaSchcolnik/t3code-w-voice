@@ -78,6 +78,8 @@ it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
         "orchestration:read",
         "orchestration:operate",
         "terminal:operate",
+        "preview:view",
+        "preview:control",
         "review:write",
         "relay:read",
       ]);
@@ -149,6 +151,8 @@ it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
         "orchestration:read",
         "orchestration:operate",
         "terminal:operate",
+        "preview:view",
+        "preview:control",
         "review:write",
         "relay:read",
         "access:read",

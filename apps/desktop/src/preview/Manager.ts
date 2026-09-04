@@ -5,7 +5,10 @@
  * elements live in the renderer; we only attach listeners and forward state
  * here). Single layer-scoped browser session partition.
  */
-import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@t3tools/contracts";
+import {
+  DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER,
+  RemotePreviewGeneration,
+} from "@t3tools/contracts";
 import type {
   DesktopPreviewAnnotationTheme,
   DesktopPreviewAutomationStatus,
@@ -29,10 +32,22 @@ import type {
   PreviewAutomationSnapshot,
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
+  RemotePreviewControllerIdentity,
+  RemotePreviewHostState,
+  RemotePreviewInputMessage,
+  RemotePreviewSourceMetadata,
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
-import { BrowserWindow, type Session, clipboard, nativeImage, shell, webContents } from "electron";
+import {
+  BrowserWindow,
+  type Session,
+  clipboard,
+  nativeImage,
+  powerSaveBlocker,
+  shell,
+  webContents,
+} from "electron";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -67,6 +82,7 @@ import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
 import { playwrightInjectedRuntimeInstallExpression } from "./PlaywrightInjectedRuntime.ts";
 import { makePreviewAutomationKeySequence } from "./PreviewKeyboard.ts";
 import { captureFavicon, safeHttpOrigin, selectFaviconCandidates } from "./FaviconCapture.ts";
+import { HumanInputDispatcher } from "./HumanInputDispatcher.ts";
 
 export type PreviewNavStatus =
   | { kind: "Idle" }
@@ -94,6 +110,8 @@ export interface PreviewTabState {
   /** Observed from Chromium. Stays true while a muted tab keeps playing. */
   audible: boolean;
   controller: "human" | "agent" | "none";
+  remoteViewerCount: number;
+  remoteController: RemotePreviewControllerIdentity | null;
   favicon?: DesktopPreviewFavicon;
   updatedAt: string;
 }
@@ -407,13 +425,14 @@ interface ManagedListeners {
   readonly webContents: Electron.WebContents;
 }
 
-type FrameCaptureConsumer = "picture-in-picture" | "recording";
+type FrameCaptureConsumer = "picture-in-picture" | "recording" | "remote-view";
 
 interface FrameCaptureSession {
   readonly scope: Scope.Closeable | null;
   readonly consumers: ReadonlySet<FrameCaptureConsumer>;
   readonly unthrottledWebContentsIds: ReadonlySet<number>;
   readonly lastPictureInPictureFrame: Buffer | null;
+  readonly mediaCaptureWebContentsId: number | null;
 }
 
 interface PictureInPictureSession {
@@ -453,6 +472,14 @@ interface BrowserDiagnostics {
 }
 
 type PointerEventListener = (event: DesktopPreviewPointerEvent) => Effect.Effect<void>;
+type RemoteSourceMetadataListener = (
+  tabId: string,
+  metadata: RemotePreviewSourceMetadata,
+) => Effect.Effect<void>;
+type RemoteHostStateListener = (
+  tabId: string,
+  state: RemotePreviewHostState,
+) => Effect.Effect<void>;
 
 interface ExpectedAgentInput {
   readonly signal: PreviewInputSignal;
@@ -585,6 +612,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const parentScope = yield* Scope.Scope;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
+  const runPromise = Effect.runPromiseWith(context);
   const resolvedArtifactDirectory = path.resolve(artifactDirectory);
   const playwrightInstallExpression = yield* Effect.cached(
     playwrightInjectedRuntimeInstallExpression(),
@@ -596,6 +624,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const attachedRef = yield* Ref.make<ReadonlyMap<number, ManagedListeners>>(new Map());
   const listenersRef = yield* Ref.make<ReadonlySet<Listener>>(new Set());
   const pointerEventListenersRef = yield* Ref.make<ReadonlySet<PointerEventListener>>(new Set());
+  const remoteSourceMetadataListenersRef = yield* Ref.make<
+    ReadonlySet<RemoteSourceMetadataListener>
+  >(new Set());
+  const remoteHostStateListenersRef = yield* Ref.make<ReadonlySet<RemoteHostStateListener>>(
+    new Set(),
+  );
   const recordingFrameListenersRef = yield* Ref.make<ReadonlySet<RecordingFrameListener>>(
     new Set(),
   );
@@ -608,6 +642,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     ReadonlyMap<string, ReadonlyArray<ExpectedAgentInput>>
   >(new Map());
   const controlEpochRef = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
+  const localHumanInputUntilRef = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
   const actionTimelineRef = yield* Ref.make<
     ReadonlyMap<string, ReadonlyArray<PreviewAutomationActionEvent>>
   >(new Map());
@@ -620,6 +655,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     ReadonlyMap<string, PictureInPictureSession>
   >(new Map());
   const pictureInPictureAspectRatiosRef = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
+  const remoteSourceMetadataRef = yield* Ref.make<
+    ReadonlyMap<
+      string,
+      { readonly webContentsId: number; readonly metadata: RemotePreviewSourceMetadata }
+    >
+  >(new Map());
+  const remoteInputDispatchersRef = yield* Ref.make<
+    ReadonlyMap<string, { readonly webContentsId: number; readonly value: HumanInputDispatcher }>
+  >(new Map());
+  const popupCountsRef = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
+  const crashedTabIdsRef = yield* Ref.make<ReadonlySet<string>>(new Set());
+  const mainWindowHiddenRef = yield* Ref.make(false);
   const pictureInPictureMutationSemaphore = yield* Semaphore.make(1);
   const closingTabIdsRef = yield* Ref.make<ReadonlySet<string>>(new Set());
   // Tab recording uses `setDisplayMediaRequestHandler` because Electron's legacy
@@ -627,6 +674,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   // (electron#44618) and now always rejects with NotAllowedError.
   let pendingRecording: PendingRecording | null = null;
   const displayMediaHandlerSessions = new WeakSet<Session>();
+  let remoteViewPowerSaveBlockerId: number | null = null;
   let frameCaptureWindowOpen = true;
   let currentMainWindow: BrowserWindow | undefined;
   let mainWindowCleanupFiber: Fiber.Fiber<void, never> | undefined;
@@ -760,6 +808,27 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       );
     });
   });
+  const syncRemoteViewPowerSaveBlocker = Effect.fnUntraced(function* (
+    sessions: ReadonlyMap<string, FrameCaptureSession>,
+  ) {
+    const hasRemoteView = Array.from(sessions.values()).some((session) =>
+      session.consumers.has("remote-view"),
+    );
+    if (hasRemoteView && remoteViewPowerSaveBlockerId === null) {
+      remoteViewPowerSaveBlockerId = yield* attempt(
+        { operation: "remoteCapture.startPowerSaveBlocker" },
+        () => powerSaveBlocker.start("prevent-display-sleep"),
+      );
+      return;
+    }
+    if (!hasRemoteView && remoteViewPowerSaveBlockerId !== null) {
+      const blockerId = remoteViewPowerSaveBlockerId;
+      remoteViewPowerSaveBlockerId = null;
+      yield* attempt({ operation: "remoteCapture.stopPowerSaveBlocker" }, () =>
+        powerSaveBlocker.stop(blockerId),
+      ).pipe(Effect.ignore);
+    }
+  });
   const stopFrameCapture = Effect.fn("PreviewManager.stopFrameCapture")(function* (
     tabId: string,
     consumer: FrameCaptureConsumer,
@@ -773,22 +842,29 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         const consumers = new Set(current.consumers);
         consumers.delete(consumer);
         if (consumers.size > 0) {
+          const nextSessions = replaceMap(sessions, (copy) => {
+            copy.set(tabId, {
+              ...current,
+              scope: consumer === "picture-in-picture" ? null : current.scope,
+              consumers,
+              lastPictureInPictureFrame:
+                consumer === "picture-in-picture" ? null : current.lastPictureInPictureFrame,
+              mediaCaptureWebContentsId:
+                consumers.has("recording") || consumers.has("remote-view")
+                  ? current.mediaCaptureWebContentsId
+                  : null,
+            });
+          });
+          yield* syncRemoteViewPowerSaveBlocker(nextSessions);
           return [
             consumer === "picture-in-picture" ? current.scope : undefined,
-            replaceMap(sessions, (copy) => {
-              copy.set(tabId, {
-                ...current,
-                scope: consumer === "picture-in-picture" ? null : current.scope,
-                consumers,
-                lastPictureInPictureFrame:
-                  consumer === "picture-in-picture" ? null : current.lastPictureInPictureFrame,
-              });
-            }),
+            nextSessions,
           ] as const;
         }
         const remainingSessions = replaceMap(sessions, (copy) => {
           copy.delete(tabId);
         });
+        yield* syncRemoteViewPowerSaveBlocker(remainingSessions);
         yield* restoreFrameCaptureWebContentsBackgroundThrottling(
           current.unthrottledWebContentsIds,
         );
@@ -814,6 +890,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     pendingRecording = null;
     const sessions = yield* SynchronizedRef.get(frameCaptureSessionsRef);
     yield* Effect.forEach(sessions.keys(), (tabId) => stopFrameCapture(tabId, "recording"), {
+      concurrency: "unbounded",
+      discard: true,
+    });
+  });
+
+  const stopAllRemoteCaptures = Effect.fn("PreviewManager.stopAllRemoteCaptures")(function* () {
+    const sessions = yield* SynchronizedRef.get(frameCaptureSessionsRef);
+    yield* Effect.forEach(sessions.keys(), (tabId) => stopFrameCapture(tabId, "remote-view"), {
       concurrency: "unbounded",
       discard: true,
     });
@@ -1188,6 +1272,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             method: string,
             params: Record<string, unknown>,
           ) {
+            if (method === "Page.frameResized") {
+              const tabId = yield* tabIdForWebContents(wc.id);
+              if (tabId) {
+                yield* refreshRemoteSourceMetadata(tabId).pipe(Effect.ignore);
+              }
+            }
             if (method === "Page.screencastFrame") {
               const sessionId = params["sessionId"];
               if (typeof sessionId === "number") {
@@ -1272,12 +1362,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               wc.debugger.attach("1.3");
             });
             yield* Effect.all(
-              ["Runtime.enable", "Accessibility.enable", "Network.enable", "Log.enable"].map(
-                (method) =>
-                  attemptPromise(
-                    { operation: `initializeDebugger.${method}`, webContentsId: wc.id },
-                    () => wc.debugger.sendCommand(method),
-                  ),
+              [
+                "Runtime.enable",
+                "Accessibility.enable",
+                "Network.enable",
+                "Log.enable",
+                "Page.enable",
+              ].map((method) =>
+                attemptPromise(
+                  { operation: `initializeDebugger.${method}`, webContentsId: wc.id },
+                  () => wc.debugger.sendCommand(method),
+                ),
               ),
               { concurrency: "unbounded", discard: true },
             );
@@ -1430,6 +1525,164 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     return yield* control.semaphore.withPermit(execute().pipe(Effect.onExit(finalize)));
   });
 
+  const emitRemoteSourceMetadata = Effect.fn("PreviewManager.emitRemoteSourceMetadata")(function* (
+    tabId: string,
+    metadata: RemotePreviewSourceMetadata,
+  ) {
+    const listeners = yield* Ref.get(remoteSourceMetadataListenersRef);
+    yield* Effect.forEach(
+      listeners,
+      (listener) => deliverEvent("state-change", tabId, () => listener(tabId, metadata)),
+      { discard: true },
+    );
+  });
+
+  const emitRemoteHostState = Effect.fn("PreviewManager.emitRemoteHostState")(function* (
+    tabId: string,
+    state: RemotePreviewHostState,
+  ) {
+    const listeners = yield* Ref.get(remoteHostStateListenersRef);
+    yield* Effect.forEach(
+      listeners,
+      (listener) => deliverEvent("state-change", tabId, () => listener(tabId, state)),
+      { discard: true },
+    );
+  });
+
+  const readCurrentRemoteHostState = Effect.fn("PreviewManager.readCurrentRemoteHostState")(
+    function* (tabId: string) {
+      if ((yield* Ref.get(crashedTabIdsRef)).has(tabId)) return "crashed" as const;
+      const wc = yield* requireWebContents(tabId);
+      if ((yield* Ref.get(popupCountsRef)).get(tabId)) return "popup-open" as const;
+      if (wc.isDevToolsOpened()) return "devtools" as const;
+      if (!frameCaptureWindowOpen || (yield* Ref.get(mainWindowHiddenRef))) {
+        return "paused" as const;
+      }
+      return "streaming" as const;
+    },
+  );
+
+  const clearCrashedTab = (tabId: string) =>
+    Ref.update(crashedTabIdsRef, (tabIds) => {
+      if (!tabIds.has(tabId)) return tabIds;
+      const next = new Set(tabIds);
+      next.delete(tabId);
+      return next;
+    });
+
+  const refreshRemoteSourceMetadata = Effect.fn("PreviewManager.refreshRemoteSourceMetadata")(
+    function* (tabId: string) {
+      const wc = yield* requireWebContents(tabId);
+      const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+      if (!tab) return yield* new PreviewTabNotFoundError({ tabId });
+      const rendererMetrics = yield* attemptPromise(
+        { operation: "remoteSourceMetadata.readRendererMetrics", tabId, webContentsId: wc.id },
+        () =>
+          wc.executeJavaScript(
+            "({ width: window.innerWidth, height: window.innerHeight, deviceScaleFactor: window.devicePixelRatio })",
+          ),
+      );
+      const cdpMetrics = yield* Effect.gen(function* () {
+        yield* ensureControlSession(wc);
+        return yield* attemptPromise(
+          { operation: "remoteSourceMetadata.getLayoutMetrics", tabId, webContentsId: wc.id },
+          () => wc.debugger.sendCommand("Page.getLayoutMetrics"),
+        );
+      }).pipe(Effect.orElseSucceed(() => null));
+      const renderer =
+        typeof rendererMetrics === "object" && rendererMetrics !== null
+          ? (rendererMetrics as Record<string, unknown>)
+          : {};
+      const cssViewport = (key: "cssVisualViewport" | "cssLayoutViewport") => {
+        if (typeof cdpMetrics !== "object" || cdpMetrics === null || !(key in cdpMetrics)) {
+          return {};
+        }
+        const value = (cdpMetrics as Record<string, unknown>)[key];
+        return typeof value === "object" && value !== null
+          ? (value as Record<string, unknown>)
+          : {};
+      };
+      // Capture is the guest's visible compositor output. cssVisualViewport matches
+      // that surface; cssLayoutViewport and innerWidth are fallbacks for a
+      // fixed-size webview where the two viewports are usually equal.
+      const visualViewport = cssViewport("cssVisualViewport");
+      const layoutViewport = cssViewport("cssLayoutViewport");
+      const cssWidth =
+        typeof visualViewport["clientWidth"] === "number"
+          ? visualViewport["clientWidth"]
+          : typeof layoutViewport["clientWidth"] === "number"
+            ? layoutViewport["clientWidth"]
+            : renderer["width"];
+      const cssHeight =
+        typeof visualViewport["clientHeight"] === "number"
+          ? visualViewport["clientHeight"]
+          : typeof layoutViewport["clientHeight"] === "number"
+            ? layoutViewport["clientHeight"]
+            : renderer["height"];
+      if (
+        typeof cssWidth !== "number" ||
+        !Number.isFinite(cssWidth) ||
+        cssWidth <= 0 ||
+        typeof cssHeight !== "number" ||
+        !Number.isFinite(cssHeight) ||
+        cssHeight <= 0
+      ) {
+        return yield* new PreviewOperationError({
+          operation: "remoteSourceMetadata.invalidLayoutMetrics",
+          tabId,
+          webContentsId: wc.id,
+          cause: rendererMetrics,
+        });
+      }
+      const rawDeviceScaleFactor = renderer["deviceScaleFactor"];
+      const deviceScaleFactor =
+        typeof rawDeviceScaleFactor === "number" &&
+        Number.isFinite(rawDeviceScaleFactor) &&
+        rawDeviceScaleFactor > 0
+          ? rawDeviceScaleFactor / tab.zoomFactor
+          : 1;
+      const metadata = yield* Ref.modify(remoteSourceMetadataRef, (allMetadata) => {
+        const previous = allMetadata.get(tabId)?.metadata;
+        const next: RemotePreviewSourceMetadata = {
+          cssWidth,
+          cssHeight,
+          deviceScaleFactor,
+          zoomFactor: tab.zoomFactor,
+          generation: RemotePreviewGeneration.make((previous?.generation ?? 0) + 1),
+        };
+        return [
+          next,
+          replaceMap(allMetadata, (copy) => {
+            copy.set(tabId, { webContentsId: wc.id, metadata: next });
+          }),
+        ] as const;
+      });
+      yield* emitRemoteSourceMetadata(tabId, metadata);
+      return metadata;
+    },
+  );
+
+  const readRemoteSourceMetadata = Effect.fn("PreviewManager.readRemoteSourceMetadata")(function* (
+    tabId: string,
+  ) {
+    const wc = yield* requireWebContents(tabId);
+    const cached = (yield* Ref.get(remoteSourceMetadataRef)).get(tabId);
+    return cached?.webContentsId === wc.id
+      ? cached.metadata
+      : yield* refreshRemoteSourceMetadata(tabId);
+  });
+
+  const setRemotePresence = Effect.fn("PreviewManager.setRemotePresence")(function* (
+    tabId: string,
+    viewerCount: number,
+    controller: RemotePreviewControllerIdentity | null,
+  ) {
+    yield* update(tabId, {
+      remoteViewerCount: Math.max(0, Math.floor(viewerCount)),
+      remoteController: controller,
+    });
+  });
+
   const evaluateWithDebugger = <A = unknown>(
     tabId: string,
     send: SendCommand,
@@ -1580,6 +1833,49 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         );
         copy.set(tabId, [...pending, { signal, expiresAt: now + 1_000 }]);
       }),
+    );
+  });
+
+  const markHumanInput = Effect.fn("PreviewManager.markHumanInput")(function* (
+    tabId: string,
+    source: "local" | "remote",
+  ) {
+    if (source === "local") {
+      const now = yield* currentMillis;
+      yield* Ref.update(localHumanInputUntilRef, (deadlines) =>
+        replaceMap(deadlines, (copy) => {
+          copy.set(tabId, now + 750);
+        }),
+      );
+      const dispatcher = (yield* Ref.get(remoteInputDispatchersRef)).get(tabId);
+      const sourceMetadata = (yield* Ref.get(remoteSourceMetadataRef)).get(tabId);
+      if (dispatcher && sourceMetadata) {
+        yield* attemptPromise({ operation: "remoteInput.releaseAll.localHuman", tabId }, () =>
+          dispatcher.value.dispatch(
+            { type: "releaseAll", generation: sourceMetadata.metadata.generation },
+            sourceMetadata.metadata,
+          ),
+        ).pipe(Effect.ignore);
+      }
+    }
+    yield* Ref.update(controlEpochRef, (epochs) =>
+      replaceMap(epochs, (copy) => {
+        copy.set(tabId, (epochs.get(tabId) ?? 0) + 1);
+      }),
+    );
+    yield* update(tabId, { controller: "human" });
+    yield* Effect.forkIn(
+      Effect.sleep(750).pipe(
+        Effect.andThen(
+          Effect.gen(function* () {
+            const tabs = yield* SynchronizedRef.get(tabsRef);
+            if (tabs.get(tabId)?.controller === "human") {
+              yield* update(tabId, { controller: "none" });
+            }
+          }),
+        ),
+      ),
+      parentScope,
     );
   });
 
@@ -1780,17 +2076,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       if (isPreviewInputSignal(rawSignal) && (yield* consumeExpectedAgentInput(tabId, rawSignal))) {
         return;
       }
-      yield* Ref.update(controlEpochRef, (epochs) =>
-        replaceMap(epochs, (copy) => {
-          copy.set(tabId, (epochs.get(tabId) ?? 0) + 1);
-        }),
-      );
-      yield* update(tabId, { controller: "human" });
-      yield* Effect.sleep(750);
-      const tabs = yield* SynchronizedRef.get(tabsRef);
-      if (tabs.get(tabId)?.controller === "human") {
-        yield* update(tabId, { controller: "none" });
-      }
+      yield* markHumanInput(tabId, "local");
     });
     const humanInput = (_event: unknown, rawSignal?: unknown): void => {
       runFork(handleHumanInput(rawSignal));
@@ -1836,6 +2122,51 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     // opens a second popup, so the chain stops at the first one.
     const windowCreated = (window: Electron.BrowserWindow): void => {
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      runFork(
+        Ref.update(popupCountsRef, (popupCounts) =>
+          replaceMap(popupCounts, (copy) => {
+            copy.set(tabId, (popupCounts.get(tabId) ?? 0) + 1);
+          }),
+        ).pipe(Effect.andThen(emitRemoteHostState(tabId, "popup-open"))),
+      );
+      window.once("closed", () => {
+        runFork(
+          Ref.update(popupCountsRef, (popupCounts) =>
+            replaceMap(popupCounts, (copy) => {
+              const nextCount = Math.max(0, (popupCounts.get(tabId) ?? 1) - 1);
+              if (nextCount === 0) copy.delete(tabId);
+              else copy.set(tabId, nextCount);
+            }),
+          ).pipe(
+            Effect.andThen(readCurrentRemoteHostState(tabId)),
+            Effect.flatMap((state) => emitRemoteHostState(tabId, state)),
+            Effect.ignore,
+          ),
+        );
+      });
+    };
+    const devtoolsOpened = (): void => {
+      runFork(
+        readCurrentRemoteHostState(tabId).pipe(
+          Effect.flatMap((state) => emitRemoteHostState(tabId, state)),
+          Effect.ignore,
+        ),
+      );
+    };
+    const devtoolsClosed = (): void => {
+      runFork(
+        readCurrentRemoteHostState(tabId).pipe(
+          Effect.flatMap((state) => emitRemoteHostState(tabId, state)),
+          Effect.ignore,
+        ),
+      );
+    };
+    const renderProcessGone = (): void => {
+      runFork(
+        Ref.update(crashedTabIdsRef, (tabIds) => new Set([...tabIds, tabId])).pipe(
+          Effect.andThen(emitRemoteHostState(tabId, "crashed")),
+        ),
+      );
     };
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
       if (isPreviewRefreshShortcut(input)) {
@@ -1863,6 +2194,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.off("did-fail-load", failed as never);
         wc.off("audio-state-changed", audioStateChanged);
         wc.off("did-create-window", windowCreated);
+        wc.off("devtools-opened", devtoolsOpened);
+        wc.off("devtools-closed", devtoolsClosed);
+        wc.off("render-process-gone", renderProcessGone);
         wc.off("before-input-event", beforeInput);
         wc.ipc.off(HUMAN_INPUT_CHANNEL, humanInput);
         wc.ipc.off(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
@@ -1879,6 +2213,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.on("did-stop-loading", sync);
         wc.on("did-fail-load", failed as never);
         wc.on("audio-state-changed", audioStateChanged);
+        wc.on("devtools-opened", devtoolsOpened);
+        wc.on("devtools-closed", devtoolsClosed);
+        wc.on("render-process-gone", renderProcessGone);
         wc.ipc.on(HUMAN_INPUT_CHANNEL, humanInput);
         wc.ipc.on(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
         wc.setWindowOpenHandler((details) => {
@@ -1917,16 +2254,55 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           yield* setWindowBackgroundThrottling(window, false);
         }
         yield* Ref.set(mainWindowRef, Option.some(window));
+        yield* Ref.set(mainWindowHiddenRef, false);
         currentMainWindow = window;
         frameCaptureWindowOpen = true;
+        const emitVisibility = (hidden: boolean) => {
+          if (currentMainWindow !== window) return;
+          runFork(
+            Ref.set(mainWindowHiddenRef, hidden).pipe(
+              Effect.andThen(SynchronizedRef.get(tabsRef)),
+              Effect.flatMap((tabs) =>
+                Effect.forEach(
+                  tabs.keys(),
+                  (tabId) =>
+                    readCurrentRemoteHostState(tabId).pipe(
+                      Effect.flatMap((state) => emitRemoteHostState(tabId, state)),
+                      Effect.ignore,
+                    ),
+                  { discard: true },
+                ),
+              ),
+              Effect.ignore,
+            ),
+          );
+        };
+        if (typeof window.on === "function") {
+          window.on("hide", () => emitVisibility(true));
+          window.on("show", () => emitVisibility(false));
+          window.on("minimize", () => emitVisibility(true));
+          window.on("restore", () => emitVisibility(false));
+        }
         window.once("closed", () => {
           if (currentMainWindow !== window) return;
           currentMainWindow = undefined;
           frameCaptureWindowOpen = false;
           mainWindowCleanupFiber = runFork(
-            Effect.all([closeAllPictureInPicture(), stopAllRecordings()], {
-              concurrency: "unbounded",
-              discard: true,
+            Effect.gen(function* () {
+              yield* Ref.set(mainWindowHiddenRef, false);
+              const tabs = yield* SynchronizedRef.get(tabsRef);
+              yield* Effect.forEach(
+                tabs.keys(),
+                (tabId) => emitRemoteHostState(tabId, "host-gone"),
+                { discard: true },
+              );
+              yield* Effect.all(
+                [closeAllPictureInPicture(), stopAllRecordings(), stopAllRemoteCaptures()],
+                {
+                  concurrency: "unbounded",
+                  discard: true,
+                },
+              );
             }).pipe(Effect.ignore),
           );
         });
@@ -1962,6 +2338,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           audioMuted: false,
           audible: false,
           controller: "none",
+          remoteViewerCount: 0,
+          remoteController: null,
           updatedAt,
         };
         return [
@@ -1988,15 +2366,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const closeTabUnlocked = Effect.fn("PreviewManager.closeTabUnlocked")(function* (tabId: string) {
     if (!(yield* SynchronizedRef.get(tabsRef)).has(tabId)) return;
+    yield* emitRemoteHostState(tabId, "host-gone").pipe(Effect.ignore);
     clearPendingRecording(tabId);
     yield* Effect.all(
       [
         cancelPickElement(tabId),
         closePictureInPicture(tabId),
         stopFrameCapture(tabId, "recording"),
+        stopFrameCapture(tabId, "remote-view"),
       ],
       {
-        concurrency: 3,
+        concurrency: 4,
         discard: true,
       },
     );
@@ -2018,6 +2398,24 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         { concurrency: 2, discard: true },
       );
     }
+    yield* Effect.all(
+      [
+        Ref.update(remoteInputDispatchersRef, (dispatchers) =>
+          replaceMap(dispatchers, (copy) => copy.delete(tabId)),
+        ),
+        Ref.update(remoteSourceMetadataRef, (allMetadata) =>
+          replaceMap(allMetadata, (copy) => copy.delete(tabId)),
+        ),
+        Ref.update(popupCountsRef, (popupCounts) =>
+          replaceMap(popupCounts, (copy) => copy.delete(tabId)),
+        ),
+        Ref.update(localHumanInputUntilRef, (deadlines) =>
+          replaceMap(deadlines, (copy) => copy.delete(tabId)),
+        ),
+        clearCrashedTab(tabId),
+      ],
+      { discard: true },
+    );
     const updatedAt = yield* currentIso;
     const closed: PreviewTabState = {
       ...closedTab,
@@ -2031,6 +2429,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       audioMuted: false,
       audible: false,
       controller: "none",
+      remoteViewerCount: 0,
+      remoteController: null,
       updatedAt,
     };
     yield* emit(tabId, closed);
@@ -2089,6 +2489,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       yield* attempt({ operation: "registerWebview.sendTheme", tabId, webContentsId }, () =>
         wc.send(ANNOTATION_THEME_CHANNEL, annotationTheme),
       );
+      yield* clearCrashedTab(tabId);
+      runFork(refreshRemoteSourceMetadata(tabId).pipe(Effect.ignore));
+      runFork(
+        readCurrentRemoteHostState(tabId).pipe(
+          Effect.flatMap((state) => emitRemoteHostState(tabId, state)),
+          Effect.ignore,
+        ),
+      );
       return;
     }
     const replacedWebContentsId =
@@ -2104,8 +2512,20 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           detachControlSession(replacedWebContentsId),
           detachListeners(replacedWebContentsId),
           cancelPickElement(tabId),
+          Ref.update(remoteInputDispatchersRef, (dispatchers) =>
+            replaceMap(dispatchers, (copy) => {
+              copy.delete(tabId);
+            }),
+          ),
+          SynchronizedRef.update(frameCaptureSessionsRef, (sessions) => {
+            const current = sessions.get(tabId);
+            if (!current?.mediaCaptureWebContentsId) return sessions;
+            return replaceMap(sessions, (copy) => {
+              copy.set(tabId, { ...current, mediaCaptureWebContentsId: null });
+            });
+          }),
         ],
-        { concurrency: 3, discard: true },
+        { concurrency: 5, discard: true },
       );
     }
     const currentTab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
@@ -2198,6 +2618,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     yield* attempt({ operation: "registerWebview.sendTheme", tabId, webContentsId }, () =>
       wc.send(ANNOTATION_THEME_CHANNEL, annotationTheme),
     );
+    yield* clearCrashedTab(tabId);
+    runFork(refreshRemoteSourceMetadata(tabId).pipe(Effect.ignore));
+    runFork(
+      readCurrentRemoteHostState(tabId).pipe(
+        Effect.flatMap((state) => emitRemoteHostState(tabId, state)),
+        Effect.ignore,
+      ),
+    );
     const latestNavStatus = (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.navStatus;
     if (
       pendingUrl &&
@@ -2218,10 +2646,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     webContentsId: number,
   ) {
     const expectedGeneration = tabLifecycleGenerations.get(tabId);
-    return yield* withTabLifecycleLock(
+    yield* withTabLifecycleLock(
       tabId,
       registerWebviewUnlocked(tabId, webContentsId, expectedGeneration),
     );
+    const session = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+    if (
+      session?.consumers.has("remote-view") &&
+      session.mediaCaptureWebContentsId !== webContentsId
+    ) {
+      yield* startRemoteCapture(tabId).pipe(Effect.ignore);
+    }
   });
 
   const navigate = Effect.fn("PreviewManager.navigate")(function* (tabId: string, rawUrl: string) {
@@ -2251,6 +2686,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         audioMuted: current?.audioMuted ?? false,
         audible: current?.audible ?? false,
         controller: current?.controller ?? "none",
+        remoteViewerCount: current?.remoteViewerCount ?? 0,
+        remoteController: current?.remoteController ?? null,
         ...(current?.favicon ? { favicon: current.favicon } : {}),
         updatedAt,
       };
@@ -2349,6 +2786,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.devToolsWebContents?.focus(),
       );
       return;
+    }
+    const remoteDispatcher = (yield* Ref.get(remoteInputDispatchersRef)).get(tabId);
+    const sourceMetadata = (yield* Ref.get(remoteSourceMetadataRef)).get(tabId);
+    if (remoteDispatcher?.webContentsId === wc.id && sourceMetadata?.webContentsId === wc.id) {
+      yield* attemptPromise(
+        { operation: "openDevTools.releaseRemoteInput", tabId, webContentsId: wc.id },
+        () =>
+          remoteDispatcher.value.dispatch(
+            { type: "releaseAll", generation: sourceMetadata.metadata.generation },
+            sourceMetadata.metadata,
+          ),
+      ).pipe(Effect.ignore);
     }
     yield* detachControlSession(wc.id);
     yield* attempt({ operation: "openDevTools", tabId, webContentsId: wc.id }, () => {
@@ -2568,6 +3017,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       }
     }
     yield* update(tabId, { zoomFactor: next });
+    yield* refreshRemoteSourceMetadata(tabId).pipe(Effect.ignore);
   });
 
   // Emulated media lives on the CDP debugger session, not the WebContents, so
@@ -2900,7 +3350,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           const current = sessions.get(tabId);
           if (current) {
             if (current.consumers.has(consumer)) {
-              return [false, sessions] as const;
+              return [
+                {
+                  captureInitialFrame: false,
+                  // An explicit start for an already-active media consumer is the
+                  // ended-track / render-process-gone re-arm path. A new consumer
+                  // joining a live grant still skips this branch.
+                  needsMediaGrant: consumer !== "picture-in-picture",
+                },
+                sessions,
+              ] as const;
             }
             if (!current.unthrottledWebContentsIds.has(wc.id)) {
               yield* setFrameCaptureWebContentsBackgroundThrottling(wc, false);
@@ -2910,16 +3369,23 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
               scope = yield* Scope.fork(parentScope, "sequential");
               yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
             }
+            const needsMediaGrant =
+              consumer !== "picture-in-picture" && current.mediaCaptureWebContentsId !== wc.id;
+            const nextSessions = replaceMap(sessions, (copy) => {
+              copy.set(tabId, {
+                ...current,
+                scope,
+                consumers: new Set([...current.consumers, consumer]),
+                unthrottledWebContentsIds: new Set([...current.unthrottledWebContentsIds, wc.id]),
+              });
+            });
+            yield* syncRemoteViewPowerSaveBlocker(nextSessions);
             return [
-              consumer === "picture-in-picture",
-              replaceMap(sessions, (copy) => {
-                copy.set(tabId, {
-                  ...current,
-                  scope,
-                  consumers: new Set([...current.consumers, consumer]),
-                  unthrottledWebContentsIds: new Set([...current.unthrottledWebContentsIds, wc.id]),
-                });
-              }),
+              {
+                captureInitialFrame: consumer === "picture-in-picture",
+                needsMediaGrant,
+              },
+              nextSessions,
             ] as const;
           }
           if (sessions.size === 0) {
@@ -2937,30 +3403,38 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           if (scope !== null) {
             yield* Effect.forkIn(Effect.forever(captureNextFrame), scope);
           }
+          const nextSessions = replaceMap(sessions, (copy) => {
+            copy.set(tabId, {
+              scope,
+              consumers: new Set([consumer]),
+              unthrottledWebContentsIds: new Set([wc.id]),
+              lastPictureInPictureFrame: null,
+              mediaCaptureWebContentsId: null,
+            });
+          });
+          yield* syncRemoteViewPowerSaveBlocker(nextSessions);
           return [
-            consumer === "picture-in-picture",
-            replaceMap(sessions, (copy) => {
-              copy.set(tabId, {
-                scope,
-                consumers: new Set([consumer]),
-                unthrottledWebContentsIds: new Set([wc.id]),
-                lastPictureInPictureFrame: null,
-              });
-            }),
+            {
+              captureInitialFrame: consumer === "picture-in-picture",
+              needsMediaGrant: consumer !== "picture-in-picture",
+            },
+            nextSessions,
           ] as const;
         });
       },
     ).pipe(Effect.uninterruptible);
-    if (!captureInitialFrame) return;
-    yield* capturePreviewFrame(tabId).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("Initial background preview frame was not ready; capture will retry.", {
-          tabId,
-          consumer,
-          error,
-        }),
-      ),
-    );
+    if (captureInitialFrame.captureInitialFrame) {
+      yield* capturePreviewFrame(tabId).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Initial background preview frame was not ready; capture will retry.", {
+            tabId,
+            consumer,
+            error,
+          }),
+        ),
+      );
+    }
+    return captureInitialFrame.needsMediaGrant;
   });
 
   const releasePictureInPicture = Effect.fn("PreviewManager.releasePictureInPicture")(function* (
@@ -3336,14 +3810,21 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     });
   };
 
-  const startRecording = Effect.fn("PreviewManager.startRecording")(function* (tabId: string) {
+  const startMediaCapture = Effect.fn("PreviewManager.startMediaCapture")(function* (
+    tabId: string,
+    consumer: "recording" | "remote-view",
+  ) {
     if ((yield* Ref.get(closingTabIdsRef)).has(tabId)) {
       return yield* new PreviewTabNotFoundError({ tabId });
     }
+    let consumerAlreadyActive = false;
     return yield* withTabLifecycleLock(
       tabId,
       Effect.gen(function* () {
-        yield* startFrameCapture(tabId, "recording");
+        const existingSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+        consumerAlreadyActive = existingSession?.consumers.has(consumer) ?? false;
+        const needsMediaGrant = yield* startFrameCapture(tabId, consumer);
+        if (needsMediaGrant !== true) return;
         const wc = yield* requireWebContents(tabId);
         const requestWebContents = wc.hostWebContents;
         if (requestWebContents === null) {
@@ -3351,7 +3832,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         }
         yield* attemptPromise(
           {
-            operation: "recording.warmSource",
+            operation: `${consumer}.warmSource`,
             tabId,
             webContentsId: wc.id,
           },
@@ -3371,7 +3852,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         yield* armPendingRecording(tabId, wc, requestWebContents.mainFrame.frameTreeNodeId);
         const captureRequested = yield* attemptPromise(
           {
-            operation: "recording.requestCapture",
+            operation: `${consumer}.requestCapture`,
             tabId,
             webContentsId: requestWebContents.id,
           },
@@ -3384,24 +3865,55 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             webContentsId: requestWebContents.id,
           });
         }
+        yield* SynchronizedRef.update(frameCaptureSessionsRef, (sessions) => {
+          const current = sessions.get(tabId);
+          if (!current?.consumers.has(consumer)) return sessions;
+          return replaceMap(sessions, (copy) => {
+            copy.set(tabId, { ...current, mediaCaptureWebContentsId: wc.id });
+          });
+        });
       }).pipe(
         Effect.onError(() => {
           clearPendingRecording(tabId);
-          return stopFrameCapture(tabId, "recording").pipe(Effect.ignore);
+          return consumerAlreadyActive
+            ? Effect.void
+            : stopFrameCapture(tabId, consumer).pipe(Effect.ignore);
         }),
       ),
     );
   });
 
+  const startRecording = Effect.fn("PreviewManager.startRecording")((tabId: string) =>
+    startMediaCapture(tabId, "recording"),
+  );
+
+  const startRemoteCapture = Effect.fn("PreviewManager.startRemoteCapture")(function* (
+    tabId: string,
+  ) {
+    yield* startMediaCapture(tabId, "remote-view");
+    yield* emitRemoteHostState(tabId, yield* readCurrentRemoteHostState(tabId));
+  });
+
+  const stopMediaCaptureConsumer = Effect.fn("PreviewManager.stopMediaCaptureConsumer")(function* (
+    tabId: string,
+    consumer: "recording" | "remote-view",
+  ) {
+    yield* stopFrameCapture(tabId, consumer);
+    const remaining = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+    if (!remaining?.consumers.has("recording") && !remaining?.consumers.has("remote-view")) {
+      clearPendingRecording(tabId);
+    }
+  });
+
   const stopRecording = Effect.fn("PreviewManager.stopRecording")(function* (tabId: string) {
     // Clearing runs under the tab lock so it cannot land before an in-flight start arms.
-    yield* withTabLifecycleLock(
-      tabId,
-      Effect.suspend(() => {
-        clearPendingRecording(tabId);
-        return stopFrameCapture(tabId, "recording");
-      }),
-    );
+    yield* withTabLifecycleLock(tabId, stopMediaCaptureConsumer(tabId, "recording"));
+  });
+
+  const stopRemoteCapture = Effect.fn("PreviewManager.stopRemoteCapture")(function* (
+    tabId: string,
+  ) {
+    yield* withTabLifecycleLock(tabId, stopMediaCaptureConsumer(tabId, "remote-view"));
   });
 
   const saveRecording = Effect.fn("PreviewManager.saveRecording")(function* (
@@ -3851,6 +4363,61 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  const remoteInputDispatcher = Effect.fn("PreviewManager.remoteInputDispatcher")(function* (
+    tabId: string,
+    wc: Electron.WebContents,
+  ) {
+    const existing = (yield* Ref.get(remoteInputDispatchersRef)).get(tabId);
+    yield* ensureControlSession(wc);
+    if (existing?.webContentsId === wc.id) return existing.value;
+    const directSend: SendCommand = Effect.fn("PreviewManager.sendRemoteInputCommand")(
+      function* (method, commandParams) {
+        return yield* attemptPromise(
+          { operation: `remoteInput.${method}`, tabId, webContentsId: wc.id },
+          () => wc.debugger.sendCommand(method, commandParams),
+        );
+      },
+    );
+    const dispatcher = new HumanInputDispatcher({
+      send: (method, commandParams) => runPromise(directSend(method, commandParams)),
+      onFirstInput: () => runPromise(markHumanInput(tabId, "remote")),
+      focus: () =>
+        runPromise(
+          attempt({ operation: "remoteInput.focus", tabId, webContentsId: wc.id }, () =>
+            wc.focus(),
+          ),
+        ),
+      insertTextBeforeActivation: (text) =>
+        runPromise(typeIntoAutomationTarget(tabId, directSend, { text })),
+      isMac: hostPlatform === "darwin",
+    });
+    yield* Ref.update(remoteInputDispatchersRef, (dispatchers) =>
+      replaceMap(dispatchers, (copy) => {
+        copy.set(tabId, { webContentsId: wc.id, value: dispatcher });
+      }),
+    );
+    return dispatcher;
+  });
+
+  const dispatchRemoteInput = Effect.fn("PreviewManager.dispatchRemoteInput")(function* (
+    tabId: string,
+    message: RemotePreviewInputMessage,
+  ) {
+    const wc = yield* requireWebContents(tabId);
+    if (wc.isDevToolsOpened()) {
+      yield* emitRemoteHostState(tabId, "devtools");
+      return;
+    }
+    const localHumanInputUntil = (yield* Ref.get(localHumanInputUntilRef)).get(tabId) ?? 0;
+    if (message.type !== "releaseAll" && (yield* currentMillis) < localHumanInputUntil) return;
+    const metadata = yield* readRemoteSourceMetadata(tabId);
+    const dispatcher = yield* remoteInputDispatcher(tabId, wc);
+    yield* attemptPromise(
+      { operation: `remoteInput.${message.type}`, tabId, webContentsId: wc.id },
+      () => dispatcher.dispatch(message, metadata),
+    );
+  });
+
   const performAutomationPress = Effect.fn("PreviewManager.performAutomationPress")(function* (
     tabId: string,
     wc: Electron.WebContents,
@@ -4123,6 +4690,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         Ref.set(listenersRef, new Set()),
         Ref.set(expectedAgentInputsRef, new Map()),
         Ref.set(pointerEventListenersRef, new Set()),
+        Ref.set(remoteSourceMetadataListenersRef, new Set()),
+        Ref.set(remoteHostStateListenersRef, new Set()),
         Ref.set(recordingFrameListenersRef, new Set()),
       ],
       { discard: true },
@@ -4161,14 +4730,23 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     setAnnotationTheme,
     setAudioMuted,
     setColorScheme,
+    setRemotePresence,
     setMainWindow,
     startRecording,
+    startRemoteCapture,
     closePictureInPicture,
+    dispatchRemoteInput,
+    readRemoteSourceMetadata,
     stopRecording,
+    stopRemoteCapture,
     subscribePointerEvents: (listener: PointerEventListener) =>
       subscribe(pointerEventListenersRef, listener),
     subscribeRecordingFrames: (listener: RecordingFrameListener) =>
       subscribe(recordingFrameListenersRef, listener),
+    subscribeRemoteSourceMetadata: (listener: RemoteSourceMetadataListener) =>
+      subscribe(remoteSourceMetadataListenersRef, listener),
+    subscribeRemoteHostState: (listener: RemoteHostStateListener) =>
+      subscribe(remoteHostStateListenersRef, listener),
     subscribeStateChanges: (listener: Listener) => subscribe(listenersRef, listener),
     zoomIn: (tabId: string) => applyZoom(tabId, (current) => nextZoomLevel(current, "in")),
     zoomOut: (tabId: string) => applyZoom(tabId, (current) => nextZoomLevel(current, "out")),
@@ -4536,6 +5114,20 @@ export class PreviewManager extends Context.Service<
     readonly closePictureInPicture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly startRecording: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly stopRecording: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
+    readonly startRemoteCapture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
+    readonly stopRemoteCapture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
+    readonly dispatchRemoteInput: (
+      tabId: string,
+      message: RemotePreviewInputMessage,
+    ) => Effect.Effect<void, PreviewManagerError>;
+    readonly readRemoteSourceMetadata: (
+      tabId: string,
+    ) => Effect.Effect<RemotePreviewSourceMetadata, PreviewManagerError>;
+    readonly setRemotePresence: (
+      tabId: string,
+      viewerCount: number,
+      controller: RemotePreviewControllerIdentity | null,
+    ) => Effect.Effect<void, PreviewManagerError>;
     readonly saveRecording: (
       tabId: string,
       mimeType: string,
@@ -4577,6 +5169,12 @@ export class PreviewManager extends Context.Service<
     ) => Effect.Effect<void, never, Scope.Scope>;
     readonly subscribeRecordingFrames: (
       listener: RecordingFrameListener,
+    ) => Effect.Effect<void, never, Scope.Scope>;
+    readonly subscribeRemoteSourceMetadata: (
+      listener: RemoteSourceMetadataListener,
+    ) => Effect.Effect<void, never, Scope.Scope>;
+    readonly subscribeRemoteHostState: (
+      listener: RemoteHostStateListener,
     ) => Effect.Effect<void, never, Scope.Scope>;
   }
 >()("@t3tools/desktop/preview/Manager/PreviewManager") {}
@@ -4655,6 +5253,11 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     closePictureInPicture: operations.closePictureInPicture,
     startRecording: operations.startRecording,
     stopRecording: operations.stopRecording,
+    startRemoteCapture: operations.startRemoteCapture,
+    stopRemoteCapture: operations.stopRemoteCapture,
+    dispatchRemoteInput: operations.dispatchRemoteInput,
+    readRemoteSourceMetadata: operations.readRemoteSourceMetadata,
+    setRemotePresence: operations.setRemotePresence,
     saveRecording: operations.saveRecording,
     automationStatus: operations.automationStatus,
     automationSnapshot: operations.automationSnapshot,
@@ -4667,6 +5270,8 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     subscribeStateChanges: operations.subscribeStateChanges,
     subscribePointerEvents: operations.subscribePointerEvents,
     subscribeRecordingFrames: operations.subscribeRecordingFrames,
+    subscribeRemoteSourceMetadata: operations.subscribeRemoteSourceMetadata,
+    subscribeRemoteHostState: operations.subscribeRemoteHostState,
   });
 }).pipe(Effect.withSpan("PreviewManager.make"));
 

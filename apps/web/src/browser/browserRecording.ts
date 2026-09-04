@@ -121,6 +121,7 @@ interface ActiveRecording {
   readonly startedAt: string;
   readonly startupSettled: Promise<void>;
   releaseSurfaceActivity: (() => void) | null;
+  captureLease: TabMediaCaptureLease | null;
   stream: MediaStream | null;
   recorder: MediaRecorder | null;
   lifecycle: BrowserRecordingLifecycle;
@@ -146,6 +147,26 @@ export function useActiveBrowserRecordingTabIds(): ReadonlySet<string> {
 const activeRecordings = new Map<string, ActiveRecording>();
 let displayMediaGrantTail = Promise.resolve();
 let displayMediaGrantQueueDepth = 0;
+
+export type TabMediaCaptureConsumer = "recording" | "remote-view";
+
+export interface TabMediaCaptureLease {
+  readonly stream: MediaStream;
+  readonly release: () => Promise<void>;
+}
+
+interface SharedTabMediaCapture {
+  readonly tabId: string;
+  readonly capturePromise: Promise<MediaStream>;
+  readonly consumerCounts: Map<TabMediaCaptureConsumer, number>;
+  readonly stopConsumers: Map<TabMediaCaptureConsumer, () => Promise<void>>;
+  readonly startedConsumers: Set<TabMediaCaptureConsumer>;
+  leaseCount: number;
+  stream: MediaStream | null;
+  replacementPromise: Promise<MediaStream> | null;
+}
+
+const sharedTabMediaCaptures = new Map<string, SharedTabMediaCapture>();
 
 const makeStartingBrowserRecordingLifecycle = (): StartingBrowserRecordingLifecycle => {
   let signalCancellation!: () => void;
@@ -278,7 +299,7 @@ interface PendingTabMediaCapture {
 
 const pendingTabMediaCaptures = new Map<string, PendingTabMediaCapture>();
 
-const prepareTabMediaCapture = (tabId: string, frameRate: number) => {
+const prepareNewTabMediaCapture = (tabId: string, frameRate: number) => {
   let acceptStream = true;
   let capturedStream: MediaStream | null = null;
   let resolveCapture!: (stream: MediaStream | PromiseLike<MediaStream>) => void;
@@ -338,15 +359,10 @@ const captureTabMediaStreamWithTimeout = async (
   tabId: string,
   capturePromise: Promise<MediaStream>,
 ): Promise<MediaStream> => {
-  let acceptStream = true;
   let timeoutId: number | null = null;
-  const streamPromise = capturePromise.then((stream) => {
-    if (!acceptStream) stopMediaStream(stream);
-    return stream;
-  });
   try {
     return await Promise.race([
-      streamPromise,
+      capturePromise,
       new Promise<never>((_, reject) => {
         timeoutId = window.setTimeout(
           () =>
@@ -361,10 +377,150 @@ const captureTabMediaStreamWithTimeout = async (
       }),
     ]);
   } finally {
-    acceptStream = false;
     if (timeoutId !== null) window.clearTimeout(timeoutId);
   }
 };
+
+const acquireTabMediaCaptureUnqueued = async (options: {
+  readonly tabId: string;
+  readonly consumer: TabMediaCaptureConsumer;
+  readonly frameRate: number;
+  readonly startCapture: () => Promise<void>;
+  readonly stopCapture: () => Promise<void>;
+}): Promise<TabMediaCaptureLease> => {
+  const { tabId, consumer } = options;
+  let shared = sharedTabMediaCaptures.get(tabId);
+  let pendingCapture: ReturnType<typeof prepareNewTabMediaCapture> | null = null;
+  if (!shared) {
+    pendingCapture = prepareNewTabMediaCapture(tabId, options.frameRate);
+    shared = {
+      tabId,
+      capturePromise: pendingCapture.capturePromise,
+      consumerCounts: new Map(),
+      stopConsumers: new Map(),
+      startedConsumers: new Set(),
+      leaseCount: 0,
+      stream: null,
+      replacementPromise: null,
+    };
+    sharedTabMediaCaptures.set(tabId, shared);
+  }
+
+  const capture = shared;
+  const previousConsumerCount = capture.consumerCounts.get(consumer) ?? 0;
+  capture.consumerCounts.set(consumer, previousConsumerCount + 1);
+  capture.stopConsumers.set(consumer, options.stopCapture);
+  capture.leaseCount += 1;
+  let released = false;
+
+  const release = async (): Promise<void> => {
+    if (released) return;
+    released = true;
+    const currentConsumerCount = capture.consumerCounts.get(consumer) ?? 0;
+    let stopConsumer: (() => Promise<void>) | undefined;
+    if (currentConsumerCount <= 1) {
+      capture.consumerCounts.delete(consumer);
+      stopConsumer = capture.stopConsumers.get(consumer);
+      capture.stopConsumers.delete(consumer);
+      if (!capture.startedConsumers.delete(consumer)) stopConsumer = undefined;
+    } else {
+      capture.consumerCounts.set(consumer, currentConsumerCount - 1);
+    }
+    capture.leaseCount = Math.max(0, capture.leaseCount - 1);
+    if (capture.leaseCount === 0 && sharedTabMediaCaptures.get(tabId) === capture) {
+      sharedTabMediaCaptures.delete(tabId);
+      stopMediaStream(capture.stream);
+    }
+    await stopConsumer?.();
+  };
+
+  try {
+    if (previousConsumerCount === 0) {
+      await options.startCapture();
+      capture.startedConsumers.add(consumer);
+    }
+    const stream = await captureTabMediaStreamWithTimeout(tabId, capture.capturePromise);
+    capture.stream ??= stream;
+    return { stream: capture.stream, release };
+  } catch (cause) {
+    pendingCapture?.cancel();
+    await release().catch(() => undefined);
+    throw cause;
+  }
+};
+
+export function acquireTabMediaCapture(options: {
+  readonly tabId: string;
+  readonly consumer: TabMediaCaptureConsumer;
+  readonly frameRate: number;
+  readonly startCapture: () => Promise<void>;
+  readonly stopCapture: () => Promise<void>;
+}): Promise<TabMediaCaptureLease> {
+  const shared = sharedTabMediaCaptures.get(options.tabId);
+  if (shared?.stream) {
+    return acquireTabMediaCaptureUnqueued(options).then(async (lease) => {
+      if (hasLiveVideoTrack(lease.stream)) return lease;
+      try {
+        const stream = await refreshTabMediaCapture(
+          options.tabId,
+          options.frameRate,
+          options.startCapture,
+        );
+        return { stream, release: lease.release };
+      } catch (cause) {
+        await lease.release().catch(() => undefined);
+        throw cause;
+      }
+    });
+  }
+  return queueDisplayMediaGrant(() => acquireTabMediaCaptureUnqueued(options)).result;
+}
+
+const hasLiveVideoTrack = (stream: MediaStream | null): boolean => {
+  if (!stream) return false;
+  if (typeof stream.getVideoTracks !== "function") return true;
+  const track = stream.getVideoTracks()[0];
+  return Boolean(track && track.readyState !== "ended");
+};
+
+export async function refreshTabMediaCapture(
+  tabId: string,
+  frameRate: number,
+  startCapture: () => Promise<void>,
+): Promise<MediaStream> {
+  const capture = sharedTabMediaCaptures.get(tabId);
+  if (!capture) {
+    throw new BrowserRecordingUnavailableError({ tabId });
+  }
+  if (hasLiveVideoTrack(capture.stream)) return capture.stream!;
+  if (capture.replacementPromise) return capture.replacementPromise;
+  const replacement = queueDisplayMediaGrant(async () => {
+    if (sharedTabMediaCaptures.get(tabId) !== capture || capture.leaseCount === 0) {
+      throw new BrowserRecordingUnavailableError({ tabId });
+    }
+    const pending = prepareNewTabMediaCapture(tabId, frameRate);
+    try {
+      await startCapture();
+      const stream = await captureTabMediaStreamWithTimeout(tabId, pending.capturePromise);
+      if (sharedTabMediaCaptures.get(tabId) !== capture) {
+        stopMediaStream(stream);
+        throw new BrowserRecordingUnavailableError({ tabId });
+      }
+      const previous = capture.stream;
+      capture.stream = stream;
+      stopMediaStream(previous);
+      return stream;
+    } catch (cause) {
+      pending.cancel();
+      throw cause;
+    }
+  }).result;
+  const trackedReplacement = replacement.finally(() => {
+    if (capture.replacementPromise === trackedReplacement) capture.replacementPromise = null;
+  });
+  capture.replacementPromise = trackedReplacement;
+  return capture.replacementPromise;
+}
 
 const clearActiveRecording = (recording: ActiveRecording): void => {
   recording.releaseSurfaceActivity?.();
@@ -400,22 +556,17 @@ const waitForBrowserRecordingPaint = async (): Promise<void> => {
 };
 
 const cleanupFailedRecordingStart = async (
-  bridge: NonNullable<typeof previewBridge>,
+  _bridge: NonNullable<typeof previewBridge>,
   recording: ActiveRecording,
 ): Promise<unknown | undefined> => {
   const errors: unknown[] = [];
-  try {
-    await bridge.recording.stopScreencast(recording.tabId);
-  } catch (error) {
-    errors.push(error);
-  }
   try {
     await stopMediaRecorder(recording.recorder);
   } catch (error) {
     errors.push(error);
   }
   try {
-    stopMediaStream(recording.stream);
+    await recording.captureLease?.release();
   } catch (error) {
     errors.push(error);
   } finally {
@@ -439,9 +590,6 @@ const recordingStartupCancelledError = (
     tabId: recording.tabId,
     cause,
   });
-
-const isRecordingStarting = (recording: ActiveRecording): boolean =>
-  activeRecordings.get(recording.tabId) === recording && recording.lifecycle.phase === "starting";
 
 const waitForRecordingStartupToSettle = async (recording: ActiveRecording): Promise<void> => {
   let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -509,6 +657,7 @@ export async function startBrowserRecording(
     startedAt,
     startupSettled,
     releaseSurfaceActivity,
+    captureLease: null,
     stream: null,
     recorder: null,
     lifecycle: startingLifecycle,
@@ -546,29 +695,16 @@ export async function startBrowserRecording(
       }
       startingLifecycle.grantStarted = true;
       await throwIfStartupCancelled();
-      const capture = prepareTabMediaCapture(tabId, frameRate);
       try {
-        await bridge.recording.startScreencast(tabId);
-      } catch (cause) {
-        capture.cancel();
-        if (!isRecordingStarting(recording)) {
-          throw recordingStartupCancelledError(recording, cause);
-        }
-        clearActiveRecording(recording);
-        throw new BrowserRecordingOperationError({
-          operation: "start-screencast",
+        recording.captureLease = await acquireTabMediaCaptureUnqueued({
           tabId,
-          cause,
+          consumer: "recording",
+          frameRate,
+          startCapture: () => bridge.recording.startScreencast(tabId),
+          stopCapture: () => bridge.recording.stopScreencast(tabId),
         });
-      }
-      try {
+        recording.stream = recording.captureLease.stream;
         await throwIfStartupCancelled();
-      } catch (cause) {
-        capture.cancel();
-        throw cause;
-      }
-      try {
-        recording.stream = await captureTabMediaStreamWithTimeout(tabId, capture.capturePromise);
         return recording.stream;
       } catch (cause) {
         const cleanupCause = await cleanupFailedRecordingStart(bridge, recording);
@@ -657,15 +793,6 @@ const finalizeBrowserRecording = async (
     | { readonly _tag: "Failure"; readonly error: unknown };
   try {
     await waitForRecordingStartupToSettle(recording);
-    try {
-      await bridge.recording.stopScreencast(tabId);
-    } catch (cause) {
-      throw new BrowserRecordingOperationError({
-        operation: "stop-screencast",
-        tabId,
-        cause,
-      });
-    }
     if (!recording.recorder) {
       result = { _tag: "Success", artifact: null };
     } else {
@@ -700,6 +827,15 @@ const finalizeBrowserRecording = async (
         });
       }
     }
+    try {
+      await recording.captureLease?.release();
+    } catch (cause) {
+      throw new BrowserRecordingOperationError({
+        operation: "stop-screencast",
+        tabId,
+        cause,
+      });
+    }
   } catch (error) {
     result = { _tag: "Failure", error };
   }
@@ -719,7 +855,7 @@ const finalizeBrowserRecording = async (
     cleanupErrors.push(cause);
   }
   try {
-    stopMediaStream(recording.stream);
+    await recording.captureLease?.release();
   } catch (cause) {
     cleanupErrors.push(cause);
   } finally {
@@ -760,13 +896,12 @@ const finalizeBrowserRecording = async (
 };
 
 const discardBrowserRecording = async (
-  bridge: NonNullable<typeof previewBridge>,
+  _bridge: NonNullable<typeof previewBridge>,
   recording: ActiveRecording,
 ): Promise<null> => {
   try {
-    await bridge.recording.stopScreencast(recording.tabId).catch(() => undefined);
     await stopMediaRecorder(recording.recorder).catch(() => undefined);
-    stopMediaStream(recording.stream);
+    await recording.captureLease?.release().catch(() => undefined);
     return null;
   } finally {
     clearActiveRecording(recording);

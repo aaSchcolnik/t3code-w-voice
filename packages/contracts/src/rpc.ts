@@ -186,6 +186,21 @@ import {
   PreviewAutomationStreamEvent,
 } from "./previewAutomation.ts";
 import {
+  RemotePreviewCloseInput,
+  RemotePreviewError,
+  RemotePreviewHost,
+  RemotePreviewHostSignalInput,
+  RemotePreviewHostStreamEvent,
+  RemotePreviewIssueViewerUrlError,
+  RemotePreviewIssueViewerUrlInput,
+  RemotePreviewIssueViewerUrlResult,
+  RemotePreviewOpenInput,
+  RemotePreviewReleaseControlInput,
+  RemotePreviewRequestControlInput,
+  RemotePreviewSignalInput,
+  RemotePreviewViewerStreamEvent,
+} from "./remotePreview.ts";
+import {
   ServerConfigStreamEvent,
   DesktopUpdateCommitInput,
   ServerConfig,
@@ -375,6 +390,14 @@ export const WS_METHODS = {
   previewAutomationConnect: "previewAutomation.connect",
   previewAutomationRespond: "previewAutomation.respond",
   previewAutomationFocusHost: "previewAutomation.focusHost",
+  remotePreviewOpen: "remotePreview.open",
+  remotePreviewSignal: "remotePreview.signal",
+  remotePreviewRequestControl: "remotePreview.requestControl",
+  remotePreviewReleaseControl: "remotePreview.releaseControl",
+  remotePreviewClose: "remotePreview.close",
+  remotePreviewIssueViewerUrl: "remotePreview.issueViewerUrl",
+  remotePreviewHostConnect: "remotePreview.hostConnect",
+  remotePreviewHostSignal: "remotePreview.hostSignal",
 
   // Server meta
   serverProbe: "server.probe",
@@ -1299,6 +1322,51 @@ export const WsPreviewAutomationFocusHostRpc = Rpc.make(WS_METHODS.previewAutoma
   error: EnvironmentAuthorizationError,
 });
 
+export const WsRemotePreviewOpenRpc = Rpc.make(WS_METHODS.remotePreviewOpen, {
+  payload: RemotePreviewOpenInput,
+  success: RemotePreviewViewerStreamEvent,
+  error: Schema.Union([RemotePreviewError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsRemotePreviewSignalRpc = Rpc.make(WS_METHODS.remotePreviewSignal, {
+  payload: RemotePreviewSignalInput,
+  error: Schema.Union([RemotePreviewError, EnvironmentAuthorizationError]),
+});
+
+export const WsRemotePreviewRequestControlRpc = Rpc.make(WS_METHODS.remotePreviewRequestControl, {
+  payload: RemotePreviewRequestControlInput,
+  error: Schema.Union([RemotePreviewError, EnvironmentAuthorizationError]),
+});
+
+export const WsRemotePreviewReleaseControlRpc = Rpc.make(WS_METHODS.remotePreviewReleaseControl, {
+  payload: RemotePreviewReleaseControlInput,
+  error: Schema.Union([RemotePreviewError, EnvironmentAuthorizationError]),
+});
+
+export const WsRemotePreviewCloseRpc = Rpc.make(WS_METHODS.remotePreviewClose, {
+  payload: RemotePreviewCloseInput,
+  error: Schema.Union([RemotePreviewError, EnvironmentAuthorizationError]),
+});
+
+export const WsRemotePreviewIssueViewerUrlRpc = Rpc.make(WS_METHODS.remotePreviewIssueViewerUrl, {
+  payload: RemotePreviewIssueViewerUrlInput,
+  success: RemotePreviewIssueViewerUrlResult,
+  error: Schema.Union([RemotePreviewIssueViewerUrlError, EnvironmentAuthorizationError]),
+});
+
+export const WsRemotePreviewHostConnectRpc = Rpc.make(WS_METHODS.remotePreviewHostConnect, {
+  payload: RemotePreviewHost,
+  success: RemotePreviewHostStreamEvent,
+  error: Schema.Union([RemotePreviewError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+export const WsRemotePreviewHostSignalRpc = Rpc.make(WS_METHODS.remotePreviewHostSignal, {
+  payload: RemotePreviewHostSignalInput,
+  error: Schema.Union([RemotePreviewError, EnvironmentAuthorizationError]),
+});
+
 export const WsSubscribePreviewEventsRpc = Rpc.make(WS_METHODS.subscribePreviewEvents, {
   payload: Schema.Struct({}),
   success: PreviewEvent,
@@ -1685,6 +1753,14 @@ export const WsRpcGroup = RpcGroup.make(
   WsPreviewAutomationConnectRpc,
   WsPreviewAutomationRespondRpc,
   WsPreviewAutomationFocusHostRpc,
+  WsRemotePreviewOpenRpc,
+  WsRemotePreviewSignalRpc,
+  WsRemotePreviewRequestControlRpc,
+  WsRemotePreviewReleaseControlRpc,
+  WsRemotePreviewCloseRpc,
+  WsRemotePreviewIssueViewerUrlRpc,
+  WsRemotePreviewHostConnectRpc,
+  WsRemotePreviewHostSignalRpc,
   WsSubscribePreviewEventsRpc,
   WsSubscribeDiscoveredLocalServersRpc,
   WsSubscribeServerConfigRpc,

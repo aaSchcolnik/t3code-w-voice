@@ -93,6 +93,12 @@ import { BrowserProfileId } from "./browserProfile.ts";
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import {
+  RemotePreviewControllerIdentity,
+  RemotePreviewHostState,
+  RemotePreviewInputMessage,
+  RemotePreviewSourceMetadata,
+} from "./remotePreview.ts";
 import type { ClientSettings, QuitConfirmationMode } from "./settings.ts";
 import type { DesktopTranscriptionBridge, DesktopVoiceModelsBridge } from "./voice-local.ts";
 import type { EditorId } from "./editor.ts";
@@ -577,6 +583,10 @@ export interface DesktopPreviewTabState {
    */
   audible: boolean;
   controller: "human" | "agent" | "none";
+  /** Remote viewers currently attached to this tab. */
+  remoteViewerCount?: number;
+  /** The active remote controller, when one viewer holds the control lease. */
+  remoteController?: RemotePreviewControllerIdentity | null;
   favicon?: DesktopPreviewFavicon;
   updatedAt: string;
 }
@@ -1049,6 +1059,31 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
   input: PreviewAutomationWaitForInput,
 });
 
+export const DesktopPreviewRemoteDispatchInputSchema = Schema.Struct({
+  tabId: DesktopPreviewTabIdSchema,
+  message: RemotePreviewInputMessage,
+});
+
+export const DesktopPreviewRemotePresenceInputSchema = Schema.Struct({
+  tabId: DesktopPreviewTabIdSchema,
+  viewerCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  controller: Schema.NullOr(RemotePreviewControllerIdentity),
+});
+
+export const DesktopPreviewRemoteSourceMetadataEventSchema = Schema.Struct({
+  tabId: DesktopPreviewTabIdSchema,
+  metadata: RemotePreviewSourceMetadata,
+});
+export type DesktopPreviewRemoteSourceMetadataEvent =
+  typeof DesktopPreviewRemoteSourceMetadataEventSchema.Type;
+
+export const DesktopPreviewRemoteHostStateEventSchema = Schema.Struct({
+  tabId: DesktopPreviewTabIdSchema,
+  state: RemotePreviewHostState,
+});
+export type DesktopPreviewRemoteHostStateEvent =
+  typeof DesktopPreviewRemoteHostStateEventSchema.Type;
+
 export const DesktopNotificationProvider = Schema.Literals([
   "codex",
   "claudeAgent",
@@ -1300,6 +1335,21 @@ export interface DesktopPreviewBridge {
       data: Uint8Array,
     ) => Promise<DesktopPreviewRecordingArtifact>;
     onFrame: (listener: (frame: DesktopPreviewRecordingFrame) => void) => () => void;
+  };
+  remote: {
+    startCapture: (tabId: string) => Promise<void>;
+    stopCapture: (tabId: string) => Promise<void>;
+    dispatchInput: (tabId: string, message: RemotePreviewInputMessage) => Promise<void>;
+    setPresence: (
+      tabId: string,
+      viewerCount: number,
+      controller: RemotePreviewControllerIdentity | null,
+    ) => Promise<void>;
+    readSourceMetadata: (tabId: string) => Promise<RemotePreviewSourceMetadata>;
+    onSourceMetadata: (
+      listener: (event: DesktopPreviewRemoteSourceMetadataEvent) => void,
+    ) => () => void;
+    onHostState: (listener: (event: DesktopPreviewRemoteHostStateEvent) => void) => () => void;
   };
   automation: {
     status: (tabId: string) => Promise<DesktopPreviewAutomationStatus>;

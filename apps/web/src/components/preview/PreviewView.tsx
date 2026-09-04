@@ -52,6 +52,7 @@ import { shouldShowPreviewEmptyState } from "./previewEmptyStateLogic";
 import { Badge } from "~/components/ui/badge";
 import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
 import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
+import { useRemotePreviewViewer } from "~/browser/remotePreviewViewerStore";
 import { usePreviewSession } from "./usePreviewSession";
 import { ZoomIndicator } from "./ZoomIndicator";
 import { AgentBrowserCursor } from "./AgentBrowserCursor";
@@ -165,9 +166,34 @@ export function PreviewView({
   const panelRect = useBrowserSurfaceStore((state) =>
     runtimeTabId ? (state.byTabId[runtimeTabId]?.rect ?? null) : null,
   );
+  // Present only when this client watches the tab from another device; the
+  // desktop app hosts the guest itself and never has a viewer session.
+  const remoteViewer = useRemotePreviewViewer(runtimeTabId);
+  const remoteControls = remoteViewer?.controls ?? null;
+  const remoteViewerChrome = remoteControls
+    ? {
+        controlling: remoteViewer!.role === "controller",
+        keyboardOpen: remoteViewer!.keyboardOpen,
+        fullscreen: remoteViewer!.fullscreen,
+        controlDisabled:
+          remoteViewer!.hostState !== "streaming" || remoteViewer!.status !== "streaming",
+        onRequestControl: () => remoteControls.requestControl(false),
+        onReleaseControl: remoteControls.releaseControl,
+        onShowKeyboard: remoteControls.focusKeyboard,
+        onToggleFullscreen: remoteControls.toggleFullscreen,
+      }
+    : undefined;
+
+  const remoteHostIndicator =
+    desktopOverlay?.remoteViewerCount && desktopOverlay.remoteViewerCount > 0
+      ? {
+          viewerCount: desktopOverlay.remoteViewerCount,
+          controller: desktopOverlay.remoteController ?? null,
+        }
+      : undefined;
 
   const navUrl = navStatus._tag === "Success" ? navStatus.url : null;
-  const navTitle = navStatus._tag === "Success" ? navStatus.title : null;
+  const navTitle = navStatus._tag === "Success" ? navTitleOf(navStatus) : null;
   const latestHistoryUrl = recentHistoryEntries[0]?.url;
   const threadKey = scopedThreadKey(threadRef);
   useEffect(() => {
@@ -176,6 +202,10 @@ export function PreviewView({
     setTitleForThreadUrl(threadRefRef.current, navUrl, navTitle, environmentHostname);
     // threadKey stands in for threadRef, whose identity churns on every thread update.
   }, [environmentHostname, latestHistoryUrl, navTitle, navUrl, threadKey]);
+
+  function navTitleOf(status: Extract<typeof navStatus, { _tag: "Success" }>): string | null {
+    return status.title;
+  }
 
   const navigateToResolvedUrl = useCallback(
     async (resolvedUrl: string) => {
@@ -233,7 +263,8 @@ export function PreviewView({
 
   const handleResetZoom = useCallback(() => {
     if (previewBridge && runtimeTabId) void previewBridge.resetZoom(runtimeTabId);
-  }, [runtimeTabId]);
+    else if (remoteControls) remoteControls.resetZoom();
+  }, [previewBridge, remoteControls, runtimeTabId]);
 
   const handleViewportChange = useCallback(
     async (nextViewport: PreviewViewportSetting) => {
@@ -719,6 +750,8 @@ export function PreviewView({
         pickDisabledReason={
           isUnreachable ? "Page didn't load — pick unavailable until the page renders" : undefined
         }
+        remoteViewer={remoteViewerChrome}
+        remoteHostIndicator={remoteHostIndicator}
         leadingActions={
           // Only when it differs from the default: labelling every tab
           // "Default" would be noise on the common case, while a tab in
@@ -740,7 +773,7 @@ export function PreviewView({
           ) : null
         }
         trailingActions={
-          previewBridge ? (
+          previewBridge || remoteControls ? (
             <PreviewMoreMenu
               environmentId={threadRef.environmentId}
               profileId={activeProfileId}
@@ -753,6 +786,7 @@ export function PreviewView({
               onToggleDeviceToolbar={handleToggleDeviceToolbar}
               nativePictureInPicture={desktopOverlay?.pictureInPicture ?? false}
               onNativePictureInPicture={handleNativePictureInPicture}
+              readRemoteStats={remoteControls?.readStats}
             />
           ) : null
         }

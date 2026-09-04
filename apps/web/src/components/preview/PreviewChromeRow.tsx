@@ -1,11 +1,17 @@
+import type { RemotePreviewControllerIdentity } from "@t3tools/contracts";
 import {
   ArrowLeft,
   ArrowRight,
   Camera,
   ExternalLink,
+  Expand,
+  Keyboard,
   MousePointerClick,
   PictureInPicture2,
+  Pointer,
+  PointerOff,
   RotateCw,
+  Shrink,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -20,6 +26,11 @@ import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
+
+export interface RemoteHostIndicator {
+  readonly viewerCount: number;
+  readonly controller?: RemotePreviewControllerIdentity | null;
+}
 
 interface Props {
   url: string;
@@ -53,6 +64,17 @@ interface Props {
   /** Optional reason string surfaced in the disabled tooltip. */
   pickDisabledReason?: string | undefined;
   /**
+   * Present only while this client watches the preview from another device.
+   * The stream is view-only until control is granted, and iPadOS will not
+   * raise its keyboard for a remote focus, so both need an explicit control
+   * in the chrome rather than a gesture on the page.
+   */
+  remoteViewer?: RemoteViewerChrome | undefined;
+  /**
+   * Present on the desktop host when remote viewers are connected.
+   */
+  remoteHostIndicator?: RemoteHostIndicator | undefined;
+  /**
    * Trailing slot rendered after the URL input. Used by the preview view
    * to mount the three-dot menu (hard reload, devtools, zoom, clear data).
    */
@@ -62,6 +84,18 @@ interface Props {
    * to name the tab's browser profile, which is otherwise invisible.
    */
   leadingActions?: ReactNode;
+}
+
+export interface RemoteViewerChrome {
+  readonly controlling: boolean;
+  readonly keyboardOpen: boolean;
+  readonly fullscreen: boolean;
+  /** Disabled while the host cannot accept input (DevTools, popup, crash). */
+  readonly controlDisabled: boolean;
+  readonly onRequestControl: () => void;
+  readonly onReleaseControl: () => void;
+  readonly onShowKeyboard: () => void;
+  readonly onToggleFullscreen: () => void;
 }
 
 const NOOP = () => {};
@@ -89,6 +123,8 @@ export function PreviewChromeRow({
   pickActive,
   pickDisabled,
   pickDisabledReason,
+  remoteViewer,
+  remoteHostIndicator,
   trailingActions,
   leadingActions,
 }: Props) {
@@ -287,6 +323,89 @@ export function PreviewChromeRow({
               {recording ? "Stop recording" : "Screenshot · Shift-click to record"}
             </TooltipPopup>
           </Tooltip>
+        ) : null}
+        {remoteViewer ? (
+          <>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant={remoteViewer.controlling ? "secondary" : "ghost"}
+                    size="icon-xs"
+                    onClick={
+                      remoteViewer.controlling
+                        ? remoteViewer.onReleaseControl
+                        : remoteViewer.onRequestControl
+                    }
+                    disabled={remoteViewer.controlDisabled}
+                    aria-label={remoteViewer.controlling ? "Release control" : "Take control"}
+                    aria-pressed={remoteViewer.controlling ? "true" : "false"}
+                    type="button"
+                  />
+                }
+              >
+                {remoteViewer.controlling ? <Pointer className="text-primary" /> : <PointerOff />}
+              </TooltipTrigger>
+              <TooltipPopup>
+                {remoteViewer.controlling ? "Release control" : "Take control of this tab"}
+              </TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant={remoteViewer.keyboardOpen ? "secondary" : "ghost"}
+                    size="icon-xs"
+                    // Must run inside this click: a remote focus cannot raise
+                    // the on-screen keyboard, only a local gesture can.
+                    onClick={remoteViewer.onShowKeyboard}
+                    disabled={remoteViewer.controlDisabled}
+                    aria-label="Show keyboard"
+                    aria-pressed={remoteViewer.keyboardOpen ? "true" : "false"}
+                    type="button"
+                  />
+                }
+              >
+                <Keyboard className={cn(remoteViewer.keyboardOpen && "text-primary")} />
+              </TooltipTrigger>
+              <TooltipPopup>Type into the preview</TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={remoteViewer.onToggleFullscreen}
+                    aria-label={remoteViewer.fullscreen ? "Exit full screen" : "Full screen"}
+                    type="button"
+                  />
+                }
+              >
+                {remoteViewer.fullscreen ? <Shrink /> : <Expand />}
+              </TooltipTrigger>
+              <TooltipPopup>
+                {remoteViewer.fullscreen ? "Exit full screen" : "Full screen on this device"}
+              </TooltipPopup>
+            </Tooltip>
+          </>
+        ) : null}
+        {remoteHostIndicator && remoteHostIndicator.viewerCount > 0 ? (
+          <div
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground select-none shrink-0"
+            data-testid="remote-host-indicator"
+          >
+            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>
+              {remoteHostIndicator.controller?.label
+                ? `Remote: ${remoteHostIndicator.viewerCount} ${
+                    remoteHostIndicator.viewerCount === 1 ? "viewer" : "viewers"
+                  }, controlled by ${remoteHostIndicator.controller.label}`
+                : `Remote: ${remoteHostIndicator.viewerCount} ${
+                    remoteHostIndicator.viewerCount === 1 ? "viewer" : "viewers"
+                  }`}
+            </span>
+          </div>
         ) : null}
         {onPictureInPicture ? (
           <Tooltip>

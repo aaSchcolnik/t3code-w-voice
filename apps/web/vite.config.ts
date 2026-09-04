@@ -1,4 +1,5 @@
 import * as NodeZlib from "node:zlib";
+import * as NodeURL from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
@@ -223,7 +224,7 @@ export default defineConfig(() => {
       // modules one import-level at a time while the browser waits — which
       // over a tailnet origin turns into minutes of waterfall.
       warmup: {
-        clientFiles: ["./src/main.tsx"],
+        clientFiles: ["./src/main.tsx", "./src/remotePreviewViewerMain.tsx"],
       },
       ...(devProxyTarget
         ? {
@@ -269,6 +270,14 @@ export default defineConfig(() => {
       outDir: "dist",
       emptyOutDir: true,
       sourcemap: buildSourcemap,
+      rollupOptions: {
+        input: {
+          main: NodeURL.fileURLToPath(new URL("index.html", import.meta.url)),
+          remotePreviewViewer: NodeURL.fileURLToPath(
+            new URL("remote-preview-viewer.html", import.meta.url),
+          ),
+        },
+      },
     },
     test: {
       projects: [defineProject(unitTestProject)],

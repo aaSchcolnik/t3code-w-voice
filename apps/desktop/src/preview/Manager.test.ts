@@ -1,5 +1,8 @@
 import { it as effectIt } from "@effect/vitest";
-import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@t3tools/contracts";
+import {
+  DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER,
+  RemotePreviewSessionId,
+} from "@t3tools/contracts";
 import type { DesktopPreviewRecordingFrame } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
@@ -117,6 +120,8 @@ const {
   fromId,
   getFocusedWebContents,
   mkdir,
+  powerSaveBlockerStart,
+  powerSaveBlockerStop,
   showItemInFolder,
   webviewSend,
   writeFile,
@@ -127,6 +132,8 @@ const {
   fromId: vi.fn<(_id?: number) => Electron.WebContents | null>((_id?: number) => null),
   getFocusedWebContents: vi.fn(() => null),
   mkdir: vi.fn((_path: string) => undefined),
+  powerSaveBlockerStart: vi.fn(() => 91),
+  powerSaveBlockerStop: vi.fn(),
   showItemInFolder: vi.fn(),
   webviewSend: vi.fn(),
   writeFile: vi.fn((_path: string, _data: Uint8Array) => undefined),
@@ -140,6 +147,10 @@ vi.mock("electron", () => ({
   },
   nativeImage: {
     createFromPath,
+  },
+  powerSaveBlocker: {
+    start: powerSaveBlockerStart,
+    stop: powerSaveBlockerStop,
   },
   shell: {
     showItemInFolder,
@@ -262,6 +273,8 @@ const makeTestPreviewWebContents = (
     getURL: () => "https://example.com",
     getTitle: () => "Example",
     isLoading: () => false,
+    isDevToolsOpened: () => false,
+    focus: vi.fn(),
     getZoomFactor: () => 1,
     setZoomFactor: vi.fn(),
     setAudioMuted: vi.fn(),
@@ -471,6 +484,8 @@ describe("PreviewManager", () => {
     showItemInFolder.mockClear();
     writeImage.mockClear();
     createFromPath.mockClear();
+    powerSaveBlockerStart.mockClear();
+    powerSaveBlockerStop.mockClear();
     webviewSend.mockClear();
   });
 
@@ -3803,6 +3818,905 @@ describe("PreviewManager", () => {
         });
       }),
     ),
+  );
+});
+
+describe("Preview remote streaming", () => {
+  beforeEach(() => {
+    powerSaveBlockerStart.mockClear();
+    powerSaveBlockerStop.mockClear();
+  });
+
+  effectIt.effect("interrupts agent work on only the first controller message", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let finishFirst!: () => void;
+        let finishSecond!: () => void;
+        let firstStarted!: () => void;
+        let secondStarted!: () => void;
+        const firstStartedPromise = new Promise<void>((resolve) => {
+          firstStarted = resolve;
+        });
+        const secondStartedPromise = new Promise<void>((resolve) => {
+          secondStarted = resolve;
+        });
+        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+          if (method === "Runtime.evaluate" && params?.["expression"] === "firstRemoteEpoch") {
+            firstStarted();
+            await new Promise<void>((resolve) => {
+              finishFirst = resolve;
+            });
+            return { result: { value: "first" } };
+          }
+          if (method === "Runtime.evaluate" && params?.["expression"] === "secondRemoteEpoch") {
+            secondStarted();
+            await new Promise<void>((resolve) => {
+              finishSecond = resolve;
+            });
+            return { result: { value: "second" } };
+          }
+          return undefined;
+        });
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        wc.debugger.sendCommand = sendCommand;
+        fromId.mockReturnValue(wc);
+
+        yield* manager.createTab("tab_remote_epoch");
+        yield* manager.registerWebview("tab_remote_epoch", 42);
+        const metadata = yield* manager.readRemoteSourceMetadata("tab_remote_epoch");
+        const first = yield* manager
+          .automationEvaluate("tab_remote_epoch", { expression: "firstRemoteEpoch" })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => firstStartedPromise);
+        yield* manager.dispatchRemoteInput("tab_remote_epoch", {
+          type: "focusRequest",
+          generation: metadata.generation,
+        });
+        finishFirst();
+        const firstExit = yield* Fiber.await(first);
+        expect(Exit.isFailure(firstExit)).toBe(true);
+        if (Exit.isFailure(firstExit)) {
+          expect(Option.getOrThrow(Cause.findErrorOption(firstExit.cause))).toMatchObject({
+            _tag: "PreviewAutomationControlInterruptedError",
+          });
+        }
+
+        const second = yield* manager
+          .automationEvaluate("tab_remote_epoch", { expression: "secondRemoteEpoch" })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Effect.promise(() => secondStartedPromise);
+        yield* manager.dispatchRemoteInput("tab_remote_epoch", {
+          type: "keyDown",
+          generation: metadata.generation,
+          key: "a",
+          code: "KeyA",
+          text: "a",
+          modifiers: [],
+        });
+        finishSecond();
+        expect(yield* Fiber.join(second)).toBe("second");
+      }),
+    ),
+  );
+
+  effectIt.effect("routes touch and mouse input by pointer type", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_remote_pointer");
+        yield* manager.registerWebview("tab_remote_pointer", 42);
+        const metadata = yield* manager.readRemoteSourceMetadata("tab_remote_pointer");
+        vi.mocked(wc.debugger.sendCommand).mockClear();
+
+        yield* manager.dispatchRemoteInput("tab_remote_pointer", {
+          type: "touchStart",
+          generation: metadata.generation,
+          pointerId: 1,
+          pointerType: "touch",
+          x: 20,
+          y: 30,
+          modifiers: [],
+        });
+        yield* manager.dispatchRemoteInput("tab_remote_pointer", {
+          type: "pointerDown",
+          generation: metadata.generation,
+          pointerId: 2,
+          pointerType: "mouse",
+          x: 40,
+          y: 50,
+          button: "left",
+          modifiers: [],
+        });
+
+        expect(wc.debugger.sendCommand).toHaveBeenCalledWith("Input.dispatchTouchEvent", {
+          type: "touchStart",
+          touchPoints: [{ x: 20, y: 30, id: 1, radiusX: 1, radiusY: 1, force: 1 }],
+          modifiers: 0,
+        });
+        expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+          "Input.dispatchMouseEvent",
+          expect.objectContaining({ type: "mousePressed", pointerType: "mouse" }),
+        );
+      }),
+    ),
+  );
+
+  effectIt.effect("uses the DOM text fallback only before pointer activation", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const sendCommand = vi.fn(async (method: string) =>
+          method === "Runtime.evaluate" ? { result: { value: { ok: true } } } : undefined,
+        );
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        wc.debugger.sendCommand = sendCommand;
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_remote_text");
+        yield* manager.registerWebview("tab_remote_text", 42);
+        const { generation } = yield* manager.readRemoteSourceMetadata("tab_remote_text");
+        sendCommand.mockClear();
+
+        yield* manager.dispatchRemoteInput("tab_remote_text", {
+          type: "insertText",
+          generation,
+          text: "before",
+        });
+        expect(sendCommand.mock.calls.some(([method]) => method === "Runtime.evaluate")).toBe(true);
+        expect(sendCommand).not.toHaveBeenCalledWith("Input.insertText", expect.anything());
+
+        yield* manager.dispatchRemoteInput("tab_remote_text", {
+          type: "tap",
+          generation,
+          pointerId: 1,
+          pointerType: "touch",
+          x: 20,
+          y: 30,
+          button: "none",
+          modifiers: [],
+        });
+        sendCommand.mockClear();
+        yield* manager.dispatchRemoteInput("tab_remote_text", {
+          type: "insertText",
+          generation,
+          text: "after",
+        });
+
+        expect(sendCommand).toHaveBeenCalledWith("Input.insertText", { text: "after" });
+        expect(sendCommand.mock.calls.some(([method]) => method === "Runtime.evaluate")).toBe(
+          false,
+        );
+      }),
+    ),
+  );
+
+  effectIt.effect("drops stale input generations", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_remote_stale");
+        yield* manager.registerWebview("tab_remote_stale", 42);
+        const metadata = yield* manager.readRemoteSourceMetadata("tab_remote_stale");
+        vi.mocked(wc.debugger.sendCommand).mockClear();
+
+        yield* manager.dispatchRemoteInput("tab_remote_stale", {
+          type: "pointerDown",
+          generation: (metadata.generation - 1) as typeof metadata.generation,
+          pointerId: 1,
+          pointerType: "mouse",
+          x: 40,
+          y: 50,
+          button: "left",
+          modifiers: [],
+        });
+
+        expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith(
+          "Input.dispatchMouseEvent",
+          expect.anything(),
+        );
+      }),
+    ),
+  );
+
+  effectIt.effect("releaseAll synthesizes every held release", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_remote_release");
+        yield* manager.registerWebview("tab_remote_release", 42);
+        const { generation } = yield* manager.readRemoteSourceMetadata("tab_remote_release");
+        yield* manager.dispatchRemoteInput("tab_remote_release", {
+          type: "pointerDown",
+          generation,
+          pointerId: 1,
+          pointerType: "mouse",
+          x: 40,
+          y: 50,
+          button: "left",
+          modifiers: [],
+        });
+        yield* manager.dispatchRemoteInput("tab_remote_release", {
+          type: "touchStart",
+          generation,
+          pointerId: 2,
+          pointerType: "touch",
+          x: 60,
+          y: 70,
+          modifiers: [],
+        });
+        yield* manager.dispatchRemoteInput("tab_remote_release", {
+          type: "keyDown",
+          generation,
+          key: "Meta",
+          code: "MetaLeft",
+          modifiers: ["Meta"],
+        });
+        vi.mocked(wc.debugger.sendCommand).mockClear();
+        yield* manager.dispatchRemoteInput("tab_remote_release", {
+          type: "releaseAll",
+          generation,
+        });
+
+        expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+          "Input.dispatchMouseEvent",
+          expect.objectContaining({ type: "mouseReleased", button: "left", buttons: 0 }),
+        );
+        expect(wc.debugger.sendCommand).toHaveBeenCalledWith("Input.dispatchTouchEvent", {
+          type: "touchEnd",
+          touchPoints: [],
+        });
+        expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+          "Input.dispatchKeyEvent",
+          expect.objectContaining({
+            type: "keyUp",
+            key: "Meta",
+            code: "MetaLeft",
+            modifiers: 4,
+            windowsVirtualKeyCode: 91,
+            nativeVirtualKeyCode: 91,
+          }),
+        );
+      }),
+    ),
+  );
+
+  effectIt.effect("shares one native grant between recording and remote view", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const { host, takeGrant } = yield* setupRecordingRaceTabs(manager);
+        yield* manager.startRecording("tab_race_a");
+        takeGrant();
+        yield* manager.startRemoteCapture("tab_race_a");
+
+        expect(host.executeJavaScript).toHaveBeenCalledTimes(1);
+        yield* manager.stopRecording("tab_race_a");
+        expect(powerSaveBlockerStop).not.toHaveBeenCalled();
+        yield* manager.stopRemoteCapture("tab_race_a");
+      }),
+    ),
+  );
+
+  effectIt.effect("holds one display sleep blocker while any remote view is active", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const { takeGrant } = yield* setupRecordingRaceTabs(manager);
+        yield* manager.startRemoteCapture("tab_race_a");
+        takeGrant();
+        yield* manager.startRemoteCapture("tab_race_b");
+        takeGrant();
+
+        expect(powerSaveBlockerStart).toHaveBeenCalledOnce();
+        expect(powerSaveBlockerStart).toHaveBeenCalledWith("prevent-display-sleep");
+        yield* manager.stopRemoteCapture("tab_race_a");
+        expect(powerSaveBlockerStop).not.toHaveBeenCalled();
+        yield* manager.stopRemoteCapture("tab_race_b");
+        expect(powerSaveBlockerStop).toHaveBeenCalledOnce();
+        expect(powerSaveBlockerStop).toHaveBeenCalledWith(91);
+      }),
+    ),
+  );
+
+  effectIt.effect("re-arms capture when an active remote-view consumer starts again", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const { host, takeGrant } = yield* setupRecordingRaceTabs(manager);
+        yield* manager.startRemoteCapture("tab_race_a");
+        takeGrant();
+        expect(host.executeJavaScript).toHaveBeenCalledTimes(1);
+
+        yield* manager.startRemoteCapture("tab_race_a");
+        takeGrant();
+        expect(host.executeJavaScript).toHaveBeenCalledTimes(2);
+      }),
+    ),
+  );
+
+  effectIt.effect("rejects points outside the current source CSS bounds", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_remote_bounds");
+        yield* manager.registerWebview("tab_remote_bounds", 42);
+        const metadata = yield* manager.readRemoteSourceMetadata("tab_remote_bounds");
+        vi.mocked(wc.debugger.sendCommand).mockClear();
+
+        yield* manager.dispatchRemoteInput("tab_remote_bounds", {
+          type: "pointerDown",
+          generation: metadata.generation,
+          pointerId: 1,
+          pointerType: "mouse",
+          x: metadata.cssWidth + 1,
+          y: 10,
+          button: "left",
+          modifiers: [],
+        });
+
+        expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith(
+          "Input.dispatchMouseEvent",
+          expect.anything(),
+        );
+      }),
+    ),
+  );
+
+  effectIt.effect("forwards wheel deltas without flipping the viewer sign", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_remote_wheel");
+        yield* manager.registerWebview("tab_remote_wheel", 42);
+        const metadata = yield* manager.readRemoteSourceMetadata("tab_remote_wheel");
+        vi.mocked(wc.debugger.sendCommand).mockClear();
+
+        yield* manager.dispatchRemoteInput("tab_remote_wheel", {
+          type: "wheel",
+          generation: metadata.generation,
+          pointerId: 1,
+          pointerType: "touch",
+          x: 40,
+          y: 50,
+          modifiers: [],
+          sequence: 1,
+          deltaX: 3,
+          deltaY: -12,
+        } as never);
+
+        expect(wc.debugger.sendCommand).toHaveBeenCalledWith("Input.dispatchMouseEvent", {
+          type: "mouseWheel",
+          x: 40,
+          y: 50,
+          deltaX: 3,
+          deltaY: -12,
+          modifiers: 0,
+        });
+      }),
+    ),
+  );
+
+  effectIt.effect("dispatches Chromium virtual key codes for Enter and arrows", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_remote_keys");
+        yield* manager.registerWebview("tab_remote_keys", 42);
+        const { generation } = yield* manager.readRemoteSourceMetadata("tab_remote_keys");
+        vi.mocked(wc.debugger.sendCommand).mockClear();
+
+        yield* manager.dispatchRemoteInput("tab_remote_keys", {
+          type: "keyDown",
+          generation,
+          key: "Enter",
+          code: "Enter",
+          modifiers: [],
+        });
+        yield* manager.dispatchRemoteInput("tab_remote_keys", {
+          type: "keyDown",
+          generation,
+          key: "ArrowLeft",
+          code: "ArrowLeft",
+          modifiers: [],
+        });
+
+        expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+          "Input.dispatchKeyEvent",
+          expect.objectContaining({
+            type: "keyDown",
+            key: "Enter",
+            code: "Enter",
+            text: "\r",
+            windowsVirtualKeyCode: 13,
+            nativeVirtualKeyCode: 13,
+          }),
+        );
+        expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+          "Input.dispatchKeyEvent",
+          expect.objectContaining({
+            type: "rawKeyDown",
+            key: "ArrowLeft",
+            code: "ArrowLeft",
+            windowsVirtualKeyCode: 37,
+            nativeVirtualKeyCode: 37,
+          }),
+        );
+      }),
+    ),
+  );
+
+  effectIt.effect("keeps remaining touches on touchEnd", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_remote_multitouch");
+        yield* manager.registerWebview("tab_remote_multitouch", 42);
+        const { generation } = yield* manager.readRemoteSourceMetadata("tab_remote_multitouch");
+        yield* manager.dispatchRemoteInput("tab_remote_multitouch", {
+          type: "touchStart",
+          generation,
+          pointerId: 1,
+          pointerType: "touch",
+          x: 10,
+          y: 20,
+          modifiers: [],
+        });
+        yield* manager.dispatchRemoteInput("tab_remote_multitouch", {
+          type: "touchStart",
+          generation,
+          pointerId: 2,
+          pointerType: "touch",
+          x: 30,
+          y: 40,
+          modifiers: [],
+        });
+        vi.mocked(wc.debugger.sendCommand).mockClear();
+        yield* manager.dispatchRemoteInput("tab_remote_multitouch", {
+          type: "touchEnd",
+          generation,
+          pointerId: 1,
+          pointerType: "touch",
+          x: 10,
+          y: 20,
+          modifiers: [],
+        });
+
+        expect(wc.debugger.sendCommand).toHaveBeenCalledWith("Input.dispatchTouchEvent", {
+          type: "touchEnd",
+          touchPoints: [{ x: 30, y: 40, id: 2, radiusX: 1, radiusY: 1, force: 1 }],
+          modifiers: 0,
+        });
+      }),
+    ),
+  );
+
+  effectIt.effect("drops input from the previous source generation after zoom", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_remote_zoom_gen");
+        yield* manager.registerWebview("tab_remote_zoom_gen", 42);
+        const before = yield* manager.readRemoteSourceMetadata("tab_remote_zoom_gen");
+        yield* manager.zoomIn("tab_remote_zoom_gen");
+        const after = yield* manager.readRemoteSourceMetadata("tab_remote_zoom_gen");
+        expect(after.generation).not.toBe(before.generation);
+        vi.mocked(wc.debugger.sendCommand).mockClear();
+
+        yield* manager.dispatchRemoteInput("tab_remote_zoom_gen", {
+          type: "pointerDown",
+          generation: before.generation,
+          pointerId: 1,
+          pointerType: "mouse",
+          x: 40,
+          y: 50,
+          button: "left",
+          modifiers: [],
+        });
+
+        expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith(
+          "Input.dispatchMouseEvent",
+          expect.anything(),
+        );
+      }),
+    ),
+  );
+
+  effectIt.effect(
+    "local desktop human input releases remote holds and outranks the controller",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
+          const wc = Object.assign(
+            makeTestPreviewWebContents(async () => ({
+              toJPEG: () => Buffer.from("remote-input"),
+              getSize: () => ({ width: 800, height: 600 }),
+            })),
+            {
+              ipc: {
+                on: vi.fn((channel: string, listener: typeof humanInput) => {
+                  if (channel === "preview:human-input") humanInput = listener;
+                }),
+                off: vi.fn(),
+              },
+            },
+          );
+          fromId.mockReturnValue(wc);
+          yield* manager.createTab("tab_remote_local");
+          yield* manager.registerWebview("tab_remote_local", 42);
+          const { generation } = yield* manager.readRemoteSourceMetadata("tab_remote_local");
+          yield* manager.dispatchRemoteInput("tab_remote_local", {
+            type: "pointerDown",
+            generation,
+            pointerId: 1,
+            pointerType: "mouse",
+            x: 40,
+            y: 50,
+            button: "left",
+            modifiers: [],
+          });
+          vi.mocked(wc.debugger.sendCommand).mockClear();
+
+          humanInput?.({}, { kind: "pointer", x: 12, y: 18, button: 0 });
+          yield* TestClock.adjust(1);
+
+          expect(wc.debugger.sendCommand).toHaveBeenCalledWith(
+            "Input.dispatchMouseEvent",
+            expect.objectContaining({ type: "mouseReleased", button: "left" }),
+          );
+
+          vi.mocked(wc.debugger.sendCommand).mockClear();
+          yield* manager.dispatchRemoteInput("tab_remote_local", {
+            type: "pointerMove",
+            generation,
+            pointerId: 1,
+            pointerType: "mouse",
+            x: 60,
+            y: 70,
+            button: "left",
+            modifiers: [],
+            sequence: 2,
+          } as never);
+
+          expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith(
+            "Input.dispatchMouseEvent",
+            expect.objectContaining({ type: "mouseMoved" }),
+          );
+        }),
+      ),
+  );
+
+  effectIt.effect("emits host-gone when a tab closes and paused when the window hides", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        fromId.mockReturnValue(wc);
+        const hostStates: string[] = [];
+        yield* manager.subscribeRemoteHostState((_tabId, state) =>
+          Effect.sync(() => {
+            hostStates.push(state);
+          }),
+        );
+        const listeners = new Map<string, () => void>();
+        yield* manager.createTab("tab_remote_host_state");
+        yield* manager.registerWebview("tab_remote_host_state", 42);
+        yield* manager.setMainWindow({
+          isDestroyed: () => false,
+          once: vi.fn(),
+          on: vi.fn((event: string, listener: () => void) => {
+            listeners.set(event, listener);
+          }),
+          webContents: { setBackgroundThrottling: vi.fn() },
+        } as never);
+
+        listeners.get("hide")?.();
+        yield* TestClock.adjust(1);
+        expect(hostStates).toContain("paused");
+
+        yield* manager.closeTab("tab_remote_host_state");
+        expect(hostStates.at(-1)).toBe("host-gone");
+      }),
+    ),
+  );
+
+  effectIt.effect("publishes remote viewer count and controller identity on tab state", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const states: PreviewManager.PreviewTabState[] = [];
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          Effect.sync(() => {
+            states.push(state);
+          }),
+        );
+        yield* manager.createTab("tab_remote_presence");
+        yield* manager.setRemotePresence("tab_remote_presence", 1, {
+          sessionId: RemotePreviewSessionId.make("session_ipad"),
+          label: "iPad",
+        });
+
+        expect(states.at(-1)).toMatchObject({
+          remoteViewerCount: 1,
+          remoteController: {
+            sessionId: "session_ipad",
+            label: "iPad",
+          },
+        });
+      }),
+    ),
+  );
+
+  effectIt.effect("does not start a display sleep blocker for recording-only capture", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const { takeGrant } = yield* setupRecordingRaceTabs(manager);
+        yield* manager.startRecording("tab_race_a");
+        takeGrant();
+        expect(powerSaveBlockerStart).not.toHaveBeenCalled();
+        yield* manager.stopRecording("tab_race_a");
+        expect(powerSaveBlockerStop).not.toHaveBeenCalled();
+      }),
+    ),
+  );
+
+  effectIt.effect("only lets the host frame that armed a remote view claim its stream", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const { grants, takeGrant } = yield* setupRecordingRaceTabs(manager);
+        yield* manager.startRemoteCapture("tab_race_a");
+        takeGrant({ frameTreeNodeId: 999 });
+        takeGrant();
+        expect(grants).toEqual([{}, { video: { routingId: 41 } }]);
+        yield* manager.stopRemoteCapture("tab_race_a");
+      }),
+    ),
+  );
+
+  effectIt.effect("re-arms remote capture and bumps generation when the guest is replaced", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const { host, takeGrant } = yield* setupRecordingRaceTabs(manager);
+        yield* manager.startRemoteCapture("tab_race_a");
+        takeGrant();
+        expect(host.executeJavaScript).toHaveBeenCalledTimes(1);
+        const before = yield* manager.readRemoteSourceMetadata("tab_race_a");
+        const previousFromId = fromId.getMockImplementation();
+        const replacement = Object.assign(
+          makeTestPreviewWebContents(
+            async () => ({
+              toJPEG: () => Buffer.from("remote-replaced"),
+              getSize: () => ({ width: 800, height: 600 }),
+            }),
+            44,
+            host,
+          ),
+          { executeJavaScript: vi.fn(async () => ({ width: 1280, height: 720 })) },
+        );
+        fromId.mockImplementation((id) => {
+          if (id === 44) return replacement;
+          return previousFromId?.(id) ?? null;
+        });
+
+        yield* manager.registerWebview("tab_race_a", 44);
+        takeGrant();
+        const after = yield* manager.readRemoteSourceMetadata("tab_race_a");
+
+        expect(after.generation).not.toBe(before.generation);
+        expect(host.executeJavaScript).toHaveBeenCalledTimes(2);
+      }),
+    ),
+  );
+
+  effectIt.effect("keeps crashed host state across window hide until the guest re-registers", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const listeners = new Map<string, (...args: never[]) => void>();
+        const wc = Object.assign(
+          makeTestPreviewWebContents(async () => ({
+            toJPEG: () => Buffer.from("remote-input"),
+            getSize: () => ({ width: 800, height: 600 }),
+          })),
+          {
+            on: vi.fn((event: string, listener: (...args: never[]) => void) => {
+              listeners.set(event, listener);
+            }),
+          },
+        );
+        fromId.mockReturnValue(wc);
+        const hostStates: string[] = [];
+        yield* manager.subscribeRemoteHostState((_tabId, state) =>
+          Effect.sync(() => {
+            hostStates.push(state);
+          }),
+        );
+        yield* manager.createTab("tab_remote_crash");
+        yield* manager.registerWebview("tab_remote_crash", 42);
+        const windowListeners = new Map<string, () => void>();
+        yield* manager.setMainWindow({
+          isDestroyed: () => false,
+          once: vi.fn(),
+          on: vi.fn((event: string, listener: () => void) => {
+            windowListeners.set(event, listener);
+          }),
+          webContents: { setBackgroundThrottling: vi.fn() },
+        } as never);
+
+        listeners.get("render-process-gone")?.();
+        yield* TestClock.adjust(1);
+        expect(hostStates.at(-1)).toBe("crashed");
+
+        windowListeners.get("hide")?.();
+        yield* TestClock.adjust(1);
+        expect(hostStates.at(-1)).toBe("crashed");
+      }),
+    ),
+  );
+
+  effectIt.effect(
+    "emits popup-open while a guest popup exists and restores streaming after close",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const listeners = new Map<string, (...args: never[]) => void>();
+          const wc = Object.assign(
+            makeTestPreviewWebContents(async () => ({
+              toJPEG: () => Buffer.from("remote-input"),
+              getSize: () => ({ width: 800, height: 600 }),
+            })),
+            {
+              on: vi.fn((event: string, listener: (...args: never[]) => void) => {
+                listeners.set(event, listener);
+              }),
+            },
+          );
+          fromId.mockReturnValue(wc);
+          const hostStates: string[] = [];
+          yield* manager.subscribeRemoteHostState((_tabId, state) =>
+            Effect.sync(() => {
+              hostStates.push(state);
+            }),
+          );
+          yield* manager.createTab("tab_remote_popup");
+          yield* manager.registerWebview("tab_remote_popup", 42);
+
+          const popupClosed = new Map<string, () => void>();
+          listeners.get("did-create-window")?.({
+            webContents: { setWindowOpenHandler: vi.fn() },
+            once: (event: string, listener: () => void) => {
+              popupClosed.set(event, listener);
+            },
+          } as never);
+          yield* TestClock.adjust(1);
+          expect(hostStates).toContain("popup-open");
+
+          popupClosed.get("closed")?.();
+          yield* TestClock.adjust(1);
+          expect(hostStates.at(-1)).toBe("streaming");
+        }),
+      ),
+  );
+
+  effectIt.effect("refuses remote input and reports devtools while guest DevTools is open", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = Object.assign(
+          makeTestPreviewWebContents(async () => ({
+            toJPEG: () => Buffer.from("remote-input"),
+            getSize: () => ({ width: 800, height: 600 }),
+          })),
+          { isDevToolsOpened: () => true },
+        );
+        fromId.mockReturnValue(wc);
+        const hostStates: string[] = [];
+        yield* manager.subscribeRemoteHostState((_tabId, state) =>
+          Effect.sync(() => {
+            hostStates.push(state);
+          }),
+        );
+        yield* manager.createTab("tab_remote_devtools");
+        yield* manager.registerWebview("tab_remote_devtools", 42);
+        const metadata = yield* manager.readRemoteSourceMetadata("tab_remote_devtools");
+        vi.mocked(wc.debugger.sendCommand).mockClear();
+
+        yield* manager.dispatchRemoteInput("tab_remote_devtools", {
+          type: "pointerDown",
+          generation: metadata.generation,
+          pointerId: 1,
+          pointerType: "mouse",
+          x: 40,
+          y: 50,
+          button: "left",
+          modifiers: [],
+        });
+
+        expect(hostStates).toContain("devtools");
+        expect(wc.debugger.sendCommand).not.toHaveBeenCalledWith(
+          "Input.dispatchMouseEvent",
+          expect.anything(),
+        );
+      }),
+    ),
+  );
+
+  effectIt.effect(
+    "prefers Page.getLayoutMetrics over the renderer viewport for source metadata",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const sendCommand = vi.fn(async (method: string) => {
+            if (method === "Page.getLayoutMetrics") {
+              return {
+                cssVisualViewport: { clientWidth: 1024, clientHeight: 768 },
+              };
+            }
+            return undefined;
+          });
+          const wc = Object.assign(
+            makeTestPreviewWebContents(async () => ({
+              toJPEG: () => Buffer.from("remote-input"),
+              getSize: () => ({ width: 800, height: 600 }),
+            })),
+            {
+              executeJavaScript: vi.fn(async () => ({
+                width: 1280,
+                height: 720,
+                deviceScaleFactor: 2,
+              })),
+              debugger: {
+                isAttached: () => false,
+                attach: vi.fn(),
+                sendCommand,
+                on: vi.fn(),
+                off: vi.fn(),
+              },
+            },
+          );
+          fromId.mockReturnValue(wc);
+          yield* manager.createTab("tab_remote_metrics");
+          yield* manager.registerWebview("tab_remote_metrics", 42);
+          yield* manager.zoomIn("tab_remote_metrics");
+          const metadata = yield* manager.readRemoteSourceMetadata("tab_remote_metrics");
+          expect(metadata.cssWidth).toBe(1024);
+          expect(metadata.cssHeight).toBe(768);
+          expect(metadata.deviceScaleFactor).toBeCloseTo(2 / metadata.zoomFactor);
+          expect(metadata.zoomFactor).toBeGreaterThan(1);
+        }),
+      ),
   );
 });
 

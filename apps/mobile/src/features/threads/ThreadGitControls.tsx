@@ -70,6 +70,7 @@ type ThreadGitHeaderActionItems = {
   readonly terminal: HeaderItem;
   readonly files: HeaderItem;
   readonly git: HeaderItem;
+  readonly browser: HeaderItem | null;
 };
 type QuickActionIcon =
   | "arrow.down.circle"
@@ -97,12 +98,15 @@ type ThreadGitControlsProps = ThreadGitMenuProps & {
   };
   readonly canOpenTerminal: boolean;
   readonly canOpenFiles: boolean;
+  /** Tablet aux-pane layouts only — never surface a dead Browser action. */
+  readonly canOpenBrowser?: boolean;
   readonly projectScripts: ReadonlyArray<ProjectScript>;
   readonly terminalSessions: ReadonlyArray<TerminalMenuSession>;
   readonly showActionControls?: boolean;
   readonly showDirectFileControl?: boolean;
   readonly onOpenTerminal: (terminalId?: string | null) => void;
   readonly onOpenNewTerminal: () => void;
+  readonly onOpenBrowser?: () => void;
   readonly onRunProjectScript: (script: ProjectScript) => Promise<void>;
 };
 
@@ -318,6 +322,19 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
         type: "button",
         variant: "plain",
       },
+      browser:
+        props.canOpenBrowser && props.onOpenBrowser
+          ? {
+              accessibilityLabel: "Open browser",
+              icon: { name: "safari", type: "sfSymbol" },
+              identifier: "thread-right-browser",
+              label: "Browser",
+              onPress: props.onOpenBrowser,
+              sharesBackground: true,
+              type: "button",
+              variant: "plain",
+            }
+          : null,
       git: {
         accessibilityLabel: "Git actions",
         icon: { name: "point.topleft.down.curvedto.point.bottomright.up", type: "sfSymbol" },
@@ -379,8 +396,10 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
       model.quickActionIcon,
       model.runQuickAction,
       props.canOpenFiles,
+      props.canOpenBrowser,
       props.canOpenTerminal,
       props.gitStatus,
+      props.onOpenBrowser,
       props.onOpenNewTerminal,
       props.onOpenTerminal,
       props.onRunProjectScript,
@@ -392,18 +411,20 @@ function useThreadGitHeaderActionItems(props: ThreadGitControlsProps): ThreadGit
 
 export function useThreadGitRightHeaderItems(props: ThreadGitControlsProps): HeaderItems {
   const actionItems = useThreadGitHeaderActionItems(props);
-  return useMemo(
-    () => [actionItems.git, actionItems.files, actionItems.terminal] as HeaderItems,
-    [actionItems],
-  );
+  return useMemo(() => {
+    const items = [actionItems.git, actionItems.files, actionItems.terminal];
+    if (actionItems.browser) items.splice(1, 0, actionItems.browser);
+    return items as HeaderItems;
+  }, [actionItems]);
 }
 
 export function useThreadGitCenterHeaderItems(props: ThreadGitControlsProps): HeaderItems {
   const actionItems = useThreadGitHeaderActionItems(props);
-  return useMemo(
-    () => [actionItems.files, actionItems.git, actionItems.terminal] as HeaderItems,
-    [actionItems],
-  );
+  return useMemo(() => {
+    const items = [actionItems.files, actionItems.git, actionItems.terminal];
+    if (actionItems.browser) items.splice(1, 0, actionItems.browser);
+    return items as HeaderItems;
+  }, [actionItems]);
 }
 
 export function ThreadGitControls(props: ThreadGitControlsProps) {
@@ -486,6 +507,14 @@ export function ThreadGitControls(props: ThreadGitControlsProps) {
           disabled={!props.canOpenFiles}
           icon="folder"
           onPress={model.openFiles}
+          separateBackground
+        />
+      ) : null}
+      {showActionControls && props.canOpenBrowser && props.onOpenBrowser ? (
+        <NativeHeaderToolbar.Button
+          accessibilityLabel="Open browser"
+          icon="safari"
+          onPress={props.onOpenBrowser}
           separateBackground
         />
       ) : null}

@@ -59,7 +59,9 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.transcriptionStart
   | typeof WS_METHODS.subscribeVoiceModelState
   | typeof WS_METHODS.subscribeSubagentRuns
-  | typeof WS_METHODS.subscribeSubagentTranscript;
+  | typeof WS_METHODS.subscribeSubagentTranscript
+  | typeof WS_METHODS.remotePreviewOpen
+  | typeof WS_METHODS.remotePreviewHostConnect;
 
 export type EnvironmentStreamCommandRpcTag =
   | typeof WS_METHODS.cloudInstallRelayClient

@@ -13,6 +13,7 @@ This is a living glossary for T3 Code. It explains what common terms mean in thi
 - [Delegation](#delegation)
 - [Checkpointing](#checkpointing)
 - [Appearance](#appearance)
+- [Remote preview streaming](#remote-preview-streaming)
 
 ## Concepts
 
@@ -207,6 +208,27 @@ once — live when connected, on the next connect otherwise — so setting it sw
 theme a user picks in Settings afterwards sticks until the next set; mobile keeps its own
 appearance settings. Naming a published [environment theme](#environment-theme) is how a desktop
 ships T3 Code already matching it.
+
+### Remote preview streaming
+
+#### Viewer
+
+A client observing the remote preview video stream without an active input control lease. Viewers receive live video frames and pointer motion from the active controller or agent.
+
+#### Controller
+
+The single client holding the exclusive input lease for a remote preview session at a given time. The controller has authority to emit mouse, keyboard, touch, and navigation events across the reliable control data channel.
+
+#### Remote preview session
+
+An active WebRTC peer connection between an Electron desktop host and a remote web or mobile client.
+The T3 server grants leases and relays signaling, but video and input travel over WebRTC.
+
+#### Source generation
+
+A monotonically increasing counter for one captured guest surface. Guest replacement, source
+metadata changes, and ICE restart advance a generation. The desktop drops input stamped for an older
+generation.
 
 ## Practical Shortcuts
 

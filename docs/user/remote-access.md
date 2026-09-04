@@ -246,6 +246,29 @@ works for a server that was wiped or is no longer reachable. Device-local connec
 controls remain in **Settings** → **Connections** on web and desktop or **Settings** →
 **Environments** on mobile.
 
+## Remote preview streaming
+
+Keep the desktop app open on the machine that hosts the preview. From a paired web client, open the
+same thread and choose Browser. The remote Browser panel and mini player show the desktop tab when
+the host is available.
+
+On an iPad, open the thread and choose **Browser** from the thread toolbar. T3 Code mints a
+short-lived viewer link and opens it in the tablet inspector. The link contains no pairing or saved
+environment credential. Keep the desktop app open because it still hosts the browser tab.
+
+Remote viewers start read-only. Choose **Take control** before clicking, scrolling, or typing. If
+another viewer controls the tab, the client names the current controller and offers a takeover. A
+takeover releases the other viewer's held keys and pointers before control changes hands. Choose
+**Release control** when you finish.
+
+Use the keyboard button to open the device keyboard. Remote focus alone cannot open the iPadOS
+keyboard. The full-screen button expands only the local video; it does not ask the remote page to
+enter full screen.
+
+The preview becomes read-only while the desktop has DevTools open. OAuth popups still appear on the
+desktop, so finish those steps there. If the desktop disconnects or the guest tab crashes, the remote
+viewer waits for the host to return.
+
 ## Security Notes
 
 - Treat pairing URLs and pairing tokens like passwords.

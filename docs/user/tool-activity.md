@@ -19,3 +19,12 @@ Group summaries count browser actions separately, such as "Used browser 18 times
 
 Command summaries show the program inside a shell wrapper, such as "Running vp" for
 `/bin/zsh -lc 'vp test run'`. Expanded rows keep the full command.
+
+## Agent cursor mirroring
+
+When an agent uses preview browser automation, remote preview viewers see the existing agent cursor
+at the coordinates reported by the desktop host.
+
+Taking remote control interrupts an in-flight agent browser step in the same way as local desktop
+input. The interrupted step reports a control-interrupted error instead of continuing against stale
+page state.

@@ -32,6 +32,7 @@ import {
   tokenApi,
   withoutCapturedParentSpan,
 } from "./http/Api.ts";
+import { turnCredentialsRoute } from "./http/TurnCredentialsRoute.ts";
 import { ManagedEndpointZone, RelayApiZone, RelayDeploymentConfig } from "./zone.ts";
 import { makeRelayTraceLayer, RelayObservability } from "./observability.ts";
 import * as DeliveryAttempts from "./agentActivity/DeliveryAttempts.ts";
@@ -57,6 +58,7 @@ import * as EnvironmentPublishSignatures from "./environments/EnvironmentPublish
 import * as ManagedEndpointProvider from "./environments/ManagedEndpointProvider.ts";
 import * as ManagedTunnelLimits from "./environments/ManagedTunnelLimits.ts";
 import * as MobileRegistrations from "./agentActivity/MobileRegistrations.ts";
+import * as TurnCredentials from "./turn/TurnCredentials.ts";
 
 const webcryptoLayer = Layer.succeed(
   Crypto.Crypto,
@@ -144,6 +146,8 @@ export const ApiLive = Api.make(
     const clerkSecretKey = yield* Config.redacted("CLERK_SECRET_KEY");
     const clerkPublishableKey = yield* Config.string("CLERK_PUBLISHABLE_KEY");
     const clerkJwtAudience = yield* Config.string("CLERK_JWT_AUDIENCE");
+    const cloudflareTurnKeyId = yield* Config.string("CLOUDFLARE_TURN_KEY_ID");
+    const cloudflareTurnApiToken = yield* Config.redacted("CLOUDFLARE_TURN_API_TOKEN");
 
     const cloudMintPrivateKey = yield* cloudMintKeyPair.privateKey;
     const cloudMintPublicKey = yield* cloudMintKeyPair.publicKey;
@@ -221,7 +225,15 @@ export const ApiLive = Api.make(
       ),
       Layer.provideMerge(LiveActivities.layer),
       Layer.provideMerge(DeliveryAttempts.layer),
-      Layer.provideMerge(RelayTokens.layer),
+      Layer.provideMerge(
+        Layer.merge(
+          RelayTokens.layer,
+          TurnCredentials.layer({
+            keyId: cloudflareTurnKeyId,
+            apiToken: cloudflareTurnApiToken,
+          }),
+        ),
+      ),
       Layer.provideMerge(
         RelayDb.RelayTransactions.layer.pipe(
           Layer.provideMerge(Layer.succeed(RelayDb.RelayDb, db)),
@@ -284,6 +296,7 @@ export const ApiLive = Api.make(
         HttpApiBuilder.layer(RelayApi, { openapiPath: "/openapi.json" }).pipe(
           Layer.provide(appLayer),
         ),
+        turnCredentialsRoute.pipe(Layer.provide(runtimeLayer)),
         HttpApiScalar.layer(RelayApi, { path: "/docs" }),
         relayDocsRedirectRoute,
       ).pipe(Layer.provide([Etag.layerWeak, httpPlatformNotSupportedLayer, relayCors])),

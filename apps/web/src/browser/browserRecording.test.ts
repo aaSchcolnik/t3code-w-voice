@@ -71,6 +71,7 @@ import {
   BrowserRecordingConflictError,
   BrowserRecordingFormatUnavailableError,
   BrowserRecordingStartCancelledError,
+  acquireTabMediaCapture,
   findActiveBrowserRecordingRuntimeTabId,
   readActiveBrowserRecordingTabIds,
   readActiveBrowserRecordingTargets,
@@ -227,6 +228,86 @@ describe("browser recording", () => {
 
     await stopBrowserRecording("recording-tab");
     expect(stopTrack).toHaveBeenCalledOnce();
+  });
+
+  it("reference-counts one tab stream across recording and remote view", async () => {
+    const stopTrack = vi.fn();
+    const stream = { getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream;
+    const startRemoteCapture = vi.fn(async () => undefined);
+    const stopRemoteCapture = vi.fn(async () => undefined);
+    getDisplayMedia.mockResolvedValueOnce(stream);
+
+    await startBrowserRecording("shared-tab");
+    const remoteLease = await acquireTabMediaCapture({
+      tabId: "shared-tab",
+      consumer: "remote-view",
+      frameRate: 30,
+      startCapture: startRemoteCapture,
+      stopCapture: stopRemoteCapture,
+    });
+    const secondRemoteLease = await acquireTabMediaCapture({
+      tabId: "shared-tab",
+      consumer: "remote-view",
+      frameRate: 30,
+      startCapture: startRemoteCapture,
+      stopCapture: stopRemoteCapture,
+    });
+
+    expect(remoteLease.stream).toBe(stream);
+    expect(secondRemoteLease.stream).toBe(stream);
+    expect(getDisplayMedia).toHaveBeenCalledOnce();
+    expect(startRemoteCapture).toHaveBeenCalledOnce();
+    await stopBrowserRecording("shared-tab");
+    expect(stopTrack).not.toHaveBeenCalled();
+    expect(stopRemoteCapture).not.toHaveBeenCalled();
+    await remoteLease.release();
+    expect(stopRemoteCapture).not.toHaveBeenCalled();
+    expect(stopTrack).not.toHaveBeenCalled();
+    await secondRemoteLease.release();
+    expect(stopRemoteCapture).toHaveBeenCalledOnce();
+    expect(stopTrack).toHaveBeenCalledOnce();
+  });
+
+  it("re-arms a shared capture after the track ends without stopping the other consumer", async () => {
+    const stopEnded = vi.fn();
+    const endedTrack = { stop: stopEnded, readyState: "ended" as const };
+    const liveTrack = { stop: vi.fn(), readyState: "live" as const };
+    const endedStream = {
+      getTracks: () => [endedTrack],
+      getVideoTracks: () => [endedTrack],
+    } as unknown as MediaStream;
+    const liveStream = {
+      getTracks: () => [liveTrack],
+      getVideoTracks: () => [liveTrack],
+    } as unknown as MediaStream;
+    const startRemoteCapture = vi.fn(async () => {
+      if (startRemoteCapture.mock.calls.length > 1) {
+        requestDisplayMediaCapture("shared-ended-tab");
+      }
+    });
+    const stopRemoteCapture = vi.fn(async () => undefined);
+    getDisplayMedia.mockResolvedValueOnce(endedStream).mockResolvedValueOnce(liveStream);
+    let remoteLease: Awaited<ReturnType<typeof acquireTabMediaCapture>> | undefined;
+
+    try {
+      await startBrowserRecording("shared-ended-tab");
+      remoteLease = await acquireTabMediaCapture({
+        tabId: "shared-ended-tab",
+        consumer: "remote-view",
+        frameRate: 30,
+        startCapture: startRemoteCapture,
+        stopCapture: stopRemoteCapture,
+      });
+
+      expect(remoteLease.stream).toBe(liveStream);
+      expect(startRemoteCapture).toHaveBeenCalledTimes(2);
+      expect(stopScreencast).not.toHaveBeenCalled();
+      expect(stopRemoteCapture).not.toHaveBeenCalled();
+      expect(stopEnded).toHaveBeenCalledOnce();
+    } finally {
+      await stopBrowserRecording("shared-ended-tab").catch(() => undefined);
+      await remoteLease?.release().catch(() => undefined);
+    }
   });
 
   it("uses the configured recording frame rate", async () => {

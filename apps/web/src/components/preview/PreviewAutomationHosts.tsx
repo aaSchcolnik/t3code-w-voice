@@ -5,6 +5,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import {
   FILL_PREVIEW_VIEWPORT,
   PREVIEW_AUTOMATION_OPERATIONS,
+  PreviewAutomationClientId,
   type EnvironmentId,
   type PreviewAutomationNavigateInput,
   type PreviewAutomationOpenInput,
@@ -20,7 +21,7 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { resolvePreviewViewport } from "@t3tools/shared/previewViewport";
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Atom } from "effect/unstable/reactivity";
 
 import {
@@ -76,6 +77,7 @@ import {
 } from "./previewAutomationTarget";
 import { isPreviewViewportReady } from "./previewViewportReadiness";
 import { shouldRollbackPreviewViewport } from "./previewViewportRollback";
+import { RemotePreviewHost } from "./RemotePreviewHost";
 
 const PREVIEW_PRESENTATION_SETTLE_TIMEOUT_MS = 500;
 
@@ -267,7 +269,7 @@ export function PreviewAutomationHosts() {
        * lets the subscription runtime own reconnects for every saved target.
        */}
       {environments.map((environment) => (
-        <PreviewAutomationHost
+        <PreviewHostPair
           key={environment.environmentId}
           environmentId={environment.environmentId}
         />
@@ -276,10 +278,24 @@ export function PreviewAutomationHosts() {
   );
 }
 
-function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId }) {
-  const { environmentId } = props;
+function PreviewHostPair(props: { readonly environmentId: EnvironmentId }) {
+  const [clientId] = useState(() =>
+    PreviewAutomationClientId.make(createPreviewAutomationClientId()),
+  );
+  return (
+    <Fragment>
+      <PreviewAutomationHost environmentId={props.environmentId} clientId={clientId} />
+      <RemotePreviewHost environmentId={props.environmentId} clientId={clientId} />
+    </Fragment>
+  );
+}
+
+function PreviewAutomationHost(props: {
+  readonly environmentId: EnvironmentId;
+  readonly clientId: PreviewAutomationClientId;
+}) {
+  const { environmentId, clientId: automationClientId } = props;
   const registry = useContext(RegistryContext);
-  const [automationClientId] = useState(createPreviewAutomationClientId);
   const initialAutomationHost = useMemo<PreviewAutomationHostState>(
     () => ({
       clientId: automationClientId,

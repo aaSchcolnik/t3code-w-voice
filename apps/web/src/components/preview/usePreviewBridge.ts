@@ -124,6 +124,8 @@ export function projectDesktopState(state: DesktopPreviewTabState): DesktopPrevi
     audioMuted: state.audioMuted,
     audible: state.audible,
     controller: state.controller,
+    remoteViewerCount: state.remoteViewerCount ?? 0,
+    remoteController: state.remoteController ?? null,
     favicon: state.favicon && originOf(state.favicon.pageUrl) === navOrigin ? state.favicon : null,
   };
 }

@@ -22,6 +22,7 @@ The relay currently owns:
 - Listing linked environments and registered mobile devices for an account.
 - Registering mobile notification preferences and APNs tokens.
 - Receiving published agent activity and delivering notifications or Live Activity updates.
+- Minting 10-minute Cloudflare Realtime TURN credentials for linked environments.
 - Persisting relay state and exposing relay-specific traces for diagnostics.
 
 The environment server and relay have separate credentials and trust boundaries. Read
@@ -39,6 +40,7 @@ credential, or authorization behavior.
 - [`src/agentActivity`](./src/agentActivity) contains mobile device registration, activity state,
   APNs delivery, and queue processing.
 - [`src/auth`](./src/auth) contains relay token and DPoP proof handling.
+- [`src/turn`](./src/turn) contains the Cloudflare Realtime TURN client.
 - [`src/persistence/schema.ts`](./src/persistence/schema.ts) defines persisted relay state. Keep
   schema and migration changes together.
 
@@ -88,6 +90,13 @@ connectivity, and relay tracing resources. Copy [`infra/relay/.env.example`](./.
 file from the relay directory. Runtime secrets include Clerk and APNs credentials. Production adopts
 the configured API and tunnel DNS zones as retained Cloudflare resources. Personal stages reference
 the production-owned zones.
+
+Remote preview over T3 Connect requires a Cloudflare Realtime TURN key in the same Cloudflare
+account as the relay deployment. Create the key before deployment and configure
+`CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN`. The Worker exposes
+`POST /turn/credentials` only to environments presenting an active relay credential, then asks
+Cloudflare Realtime for credentials with a fixed 10-minute TTL. The API token is bound to the
+Worker as a secret and must be allowed to generate credentials for the configured TURN key.
 
 The `prod` Alchemy stage owns the retained PlanetScale database and is the shared hosted relay for
 stable and nightly clients. Every other stage references that database and provisions an isolated
@@ -150,6 +159,8 @@ The `production` GitHub environment must define these Actions secrets:
 
 - `CLERK_SECRET_KEY`
 - `APNS_PRIVATE_KEY`
+- `CLOUDFLARE_TURN_KEY_ID`
+- `CLOUDFLARE_TURN_API_TOKEN`
 
 The account-scoped repository credentials are consumed by Alchemy while provisioning relay stages; they
 are not bound into the relay Worker. The production deployment uses an Axiom personal access token,

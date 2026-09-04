@@ -33,6 +33,7 @@ export * from "./review.ts";
 export * from "./browserProfile.ts";
 export * from "./preview.ts";
 export * from "./previewAutomation.ts";
+export * from "./remotePreview.ts";
 export * from "./resourceTelemetry.ts";
 export * from "./transcription.ts";
 export * from "./voice-local.ts";

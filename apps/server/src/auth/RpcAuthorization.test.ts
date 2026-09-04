@@ -1,6 +1,8 @@
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
+  AuthPreviewControlScope,
+  AuthPreviewViewScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
   WS_METHODS,
@@ -41,6 +43,29 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.providerUploadFeedback)).toBe(
       AuthOrchestrationOperateScope,
     );
+  });
+
+  it("separates remote preview viewing, control, and host operations", () => {
+    for (const method of [
+      WS_METHODS.remotePreviewOpen,
+      WS_METHODS.remotePreviewSignal,
+      WS_METHODS.remotePreviewClose,
+      WS_METHODS.remotePreviewIssueViewerUrl,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthPreviewViewScope);
+    }
+    for (const method of [
+      WS_METHODS.remotePreviewRequestControl,
+      WS_METHODS.remotePreviewReleaseControl,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthPreviewControlScope);
+    }
+    for (const method of [
+      WS_METHODS.remotePreviewHostConnect,
+      WS_METHODS.remotePreviewHostSignal,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
+    }
   });
 
   it("reads the reviewer menu under the same scope as the pull request it belongs to", () => {

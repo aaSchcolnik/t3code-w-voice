@@ -5,7 +5,10 @@ import { MousePointer2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useBrowserPointerStore } from "~/browser/browserPointerStore";
-import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
+import {
+  useBrowserSurfaceStore,
+  type BrowserSurfaceContentPresentation,
+} from "~/browser/browserSurfaceStore";
 
 import { agentBrowserCursorOpacity, type BrowserController } from "./agentBrowserCursorLogic";
 
@@ -15,10 +18,17 @@ export function AgentBrowserCursor(props: {
   readonly tabId: string;
   readonly zoomFactor: number;
   readonly controller: BrowserController;
+  /**
+   * Overrides the surface store's content box. The remote viewer letterboxes
+   * the guest inside a video element, so its content rect comes from the
+   * source metadata rather than from a hosted webview's layout.
+   */
+  readonly content?: BrowserSurfaceContentPresentation | null;
 }) {
   const { tabId, zoomFactor, controller } = props;
   const event = useBrowserPointerStore((state) => state.byTabId[tabId] ?? null);
-  const content = useBrowserSurfaceStore((state) => state.byTabId[tabId]?.content ?? null);
+  const hostedContent = useBrowserSurfaceStore((state) => state.byTabId[tabId]?.content ?? null);
+  const content = props.content === undefined ? hostedContent : props.content;
 
   if (!event) return null;
 

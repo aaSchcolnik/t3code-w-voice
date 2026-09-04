@@ -13,6 +13,7 @@ import {
   type PreviewEvent,
   type PreviewListResult,
   type PreviewSessionSnapshot,
+  type RemotePreviewControllerIdentity,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
@@ -31,6 +32,8 @@ export interface DesktopPreviewOverlay {
   audioMuted: boolean;
   audible: boolean;
   controller: "human" | "agent" | "none";
+  remoteViewerCount?: number;
+  remoteController?: RemotePreviewControllerIdentity | null;
   favicon: DesktopPreviewFavicon | null;
 }
 
@@ -386,6 +389,9 @@ function isPreviewStateEqual(
       previous.audioMuted === next.audioMuted &&
       previous.audible === next.audible &&
       previous.controller === next.controller &&
+      previous.remoteViewerCount === next.remoteViewerCount &&
+      previous.remoteController?.sessionId === next.remoteController?.sessionId &&
+      previous.remoteController?.label === next.remoteController?.label &&
       previous.favicon?.dataUrl === next.favicon?.dataUrl &&
       previous.favicon?.pageUrl === next.favicon?.pageUrl &&
       previous.favicon?.capturedAt === next.favicon?.capturedAt)
@@ -479,9 +485,16 @@ export function removePreviewThread(ref: ScopedThreadRef): void {
   changedPreviewThreadKeys.delete(threadKey);
 }
 
+/**
+ * The desktop app hosts the preview guest itself. Every other client watches
+ * the desktop app's tab over the remote preview stream, which is supported
+ * whenever the environment is reachable at all — the surface's own waiting
+ * state covers "no desktop app connected yet", so the tab stays enabled
+ * instead of claiming the feature does not exist here.
+ */
 export function isPreviewSupportedInRuntime(): boolean {
   if (typeof window === "undefined") return false;
-  return Boolean(window.desktopBridge?.preview);
+  return window.desktopBridge === undefined || Boolean(window.desktopBridge.preview);
 }
 
 export function resetPreviewStateForTests(): void {

@@ -3,9 +3,10 @@ import {
   type EnvironmentId,
   type PreviewEvent,
   type PreviewSessionSnapshot,
+  type RemotePreviewSessionId,
   ThreadId,
 } from "@t3tools/contracts";
-import { beforeEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   __testing,
@@ -16,6 +17,7 @@ import {
   cancelPreviewSessionClose,
   previewStateAtom,
   readThreadPreviewState,
+  isPreviewSupportedInRuntime,
   reconcilePreviewServerSessions,
   rememberPreviewUrl,
   removePreviewThread,
@@ -364,6 +366,59 @@ describe("previewStateStore (single-tab)", () => {
     expect(updateCount).toBe(1);
   });
 
+  it("publishes updates when remote viewer count or controller identity changes", () => {
+    const snapshot = makeSnapshot();
+    applyPreviewServerSnapshot(ref, snapshot);
+    const baseOverlay = {
+      hasWebContents: true,
+      canGoBack: true,
+      canGoForward: false,
+      loading: false,
+      zoomFactor: 1,
+      pictureInPicture: false,
+      colorScheme: "system" as const,
+      audioMuted: false,
+      audible: false,
+      controller: "none" as const,
+      remoteViewerCount: 0,
+      remoteController: null,
+      favicon: null,
+    };
+    let updateCount = 0;
+    const unsubscribe = subscribeThreadPreviewState(ref, () => {
+      updateCount += 1;
+    });
+
+    applyPreviewDesktopState(ref, snapshot.tabId, baseOverlay);
+    expect(updateCount).toBe(1);
+
+    // Same state - deduplicated
+    applyPreviewDesktopState(ref, snapshot.tabId, { ...baseOverlay });
+    expect(updateCount).toBe(1);
+
+    // Remote viewer joins
+    applyPreviewDesktopState(ref, snapshot.tabId, {
+      ...baseOverlay,
+      remoteViewerCount: 1,
+    });
+    expect(updateCount).toBe(2);
+    expect(readThreadPreviewState(ref).desktopOverlay?.remoteViewerCount).toBe(1);
+
+    // Remote viewer takes control
+    applyPreviewDesktopState(ref, snapshot.tabId, {
+      ...baseOverlay,
+      remoteViewerCount: 1,
+      remoteController: {
+        sessionId: "sess-1" as RemotePreviewSessionId,
+        label: "iPad",
+      },
+    });
+    expect(updateCount).toBe(3);
+    expect(readThreadPreviewState(ref).desktopOverlay?.remoteController?.label).toBe("iPad");
+
+    unsubscribe();
+  });
+
   it("retains multiple tabs and switches active desktop state", () => {
     const first = makeSnapshot();
     const second = { ...makeSnapshot(), tabId: "tab_2", updatedAt: "2026-01-02T00:00:00.000Z" };
@@ -616,5 +671,25 @@ describe("previewStateStore (single-tab)", () => {
     removePreviewThread(ref);
     const state = readThreadPreviewState(ref);
     expect(state).toEqual(__testing.EMPTY_THREAD_PREVIEW_STATE);
+  });
+});
+
+describe("isPreviewSupportedInRuntime", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("supports the remote viewer outside Electron", () => {
+    // No desktop bridge means a browser client, which now watches the desktop
+    // app's tab over the remote preview stream instead of being locked out.
+    vi.stubGlobal("window", {});
+    expect(isPreviewSupportedInRuntime()).toBe(true);
+  });
+
+  it("follows the preview bridge inside Electron", () => {
+    vi.stubGlobal("window", { desktopBridge: { preview: {} } });
+    expect(isPreviewSupportedInRuntime()).toBe(true);
+    vi.stubGlobal("window", { desktopBridge: {} });
+    expect(isPreviewSupportedInRuntime()).toBe(false);
   });
 });

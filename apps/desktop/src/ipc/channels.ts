@@ -87,6 +87,14 @@ export const PREVIEW_RECORDING_START_CHANNEL = "desktop:preview-recording-start"
 export const PREVIEW_RECORDING_STOP_CHANNEL = "desktop:preview-recording-stop";
 export const PREVIEW_RECORDING_SAVE_CHANNEL = "desktop:preview-recording-save";
 export const PREVIEW_RECORDING_FRAME_CHANNEL = "desktop:preview-recording-frame";
+export const PREVIEW_REMOTE_START_CAPTURE_CHANNEL = "desktop:preview-remote-start-capture";
+export const PREVIEW_REMOTE_STOP_CAPTURE_CHANNEL = "desktop:preview-remote-stop-capture";
+export const PREVIEW_REMOTE_DISPATCH_INPUT_CHANNEL = "desktop:preview-remote-dispatch-input";
+export const PREVIEW_REMOTE_READ_SOURCE_METADATA_CHANNEL =
+  "desktop:preview-remote-read-source-metadata";
+export const PREVIEW_REMOTE_SOURCE_METADATA_CHANNEL = "desktop:preview-remote-source-metadata";
+export const PREVIEW_REMOTE_HOST_STATE_CHANNEL = "desktop:preview-remote-host-state";
+export const PREVIEW_REMOTE_SET_PRESENCE_CHANNEL = "desktop:preview-remote-set-presence";
 export const PREVIEW_STATE_CHANGE_CHANNEL = "desktop:preview-state-change";
 export const PREVIEW_POINTER_EVENT_CHANNEL = "desktop:preview-pointer-event";
 export const TRANSCRIPTION_GET_CAPABILITIES_CHANNEL = "desktop:transcription-get-capabilities";

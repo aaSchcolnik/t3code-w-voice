@@ -2,7 +2,9 @@
 
 import type { DesktopPreviewColorScheme, EnvironmentId } from "@t3tools/contracts";
 import { Minus, MoreVertical, Plus as PlusIcon, RotateCcw } from "lucide-react";
+import { useEffect, useState } from "react";
 
+import type { RemotePreviewViewerStats } from "~/browser/remotePreviewViewer";
 import { Button } from "~/components/ui/button";
 import {
   Menu,
@@ -63,6 +65,38 @@ interface Props {
   profileId: string;
   /** Profile display name, shown so the menu says which data is being cleared. */
   profileName: string | undefined;
+  /**
+   * Reads the live decoder stats when this client watches the tab from another
+   * device. Polled only while the menu is open, so a closed menu costs nothing.
+   */
+  readRemoteStats?: (() => Promise<RemotePreviewViewerStats | null>) | undefined;
+}
+
+const REMOTE_STATS_POLL_MS = 1_000;
+
+function RemoteStreamStats({ read }: { read: () => Promise<RemotePreviewViewerStats | null> }) {
+  const [stats, setStats] = useState<RemotePreviewViewerStats | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sample = () => {
+      void read().then((next) => {
+        if (!cancelled) setStats(next);
+      });
+    };
+    sample();
+    const timer = window.setInterval(sample, REMOTE_STATS_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [read]);
+
+  return (
+    <span className="text-xs tabular-nums text-muted-foreground">
+      {stats ? `${Math.round(stats.bitrateKbps)} kbps · ${Math.round(stats.fps)} fps` : "—"}
+    </span>
+  );
 }
 
 /**
@@ -82,9 +116,10 @@ export function PreviewMoreMenu({
   environmentId,
   profileId,
   profileName,
+  readRemoteStats,
 }: Props) {
-  if (!previewBridge) return null;
   const bridge = previewBridge;
+  if (!bridge && !readRemoteStats) return null;
   const tabDisabled = !tabId || !hasWebContents;
   const callTab = (op: (tabId: string) => Promise<void>) => () => {
     if (!tabId) return;
@@ -109,121 +144,139 @@ export function PreviewMoreMenu({
         <TooltipPopup>More</TooltipPopup>
       </Tooltip>
       <MenuPopup align="end" sideOffset={6} className="min-w-56">
-        <MenuItem onClick={callTab(bridge.hardReload)} disabled={tabDisabled}>
-          Hard reload
-        </MenuItem>
-        <MenuItem onClick={callTab(bridge.openDevTools)} disabled={tabDisabled}>
-          Open DevTools
-        </MenuItem>
-        <MenuItem onClick={onNativePictureInPicture} disabled={tabDisabled}>
-          {nativePictureInPicture
-            ? "Close separate preview window"
-            : "Open separate preview window"}
-        </MenuItem>
-        <MenuItem onClick={onToggleDeviceToolbar} disabled={tabDisabled}>
-          {deviceToolbarVisible ? "Hide device toolbar" : "Show device toolbar"}
-        </MenuItem>
-        <MenuSub>
-          <MenuSubTrigger disabled={tabDisabled}>Appearance</MenuSubTrigger>
-          <MenuSubPopup className="min-w-32">
-            <MenuRadioGroup
-              value={colorScheme}
-              onValueChange={(value) => {
-                if (!tabId) return;
-                void bridge
-                  .setColorScheme(tabId, value as DesktopPreviewColorScheme)
-                  .catch(() => undefined);
-              }}
-            >
-              {COLOR_SCHEME_OPTIONS.map((option) => (
-                <MenuRadioItem key={option.value} value={option.value}>
-                  {option.label}
-                </MenuRadioItem>
-              ))}
-            </MenuRadioGroup>
-          </MenuSubPopup>
-        </MenuSub>
-        <MenuSeparator />
-        {/*
-          Zoom row: label + inline control cluster. `closeOnClick=false`
-          keeps the menu open while the user clicks the +/− buttons.
-        */}
-        <MenuItem
-          closeOnClick={false}
-          onClick={(event: React.MouseEvent) => event.preventDefault()}
-          className="justify-between"
-          disabled={tabDisabled}
-        >
-          <span>Zoom</span>
-          <span className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-xs"
-              type="button"
-              onClick={callTab(bridge.zoomOut)}
-              aria-label="Zoom out"
-              disabled={tabDisabled}
-            >
-              <Minus />
-            </Button>
-            <span className="min-w-12 text-center text-xs tabular-nums text-muted-foreground">
-              {zoomLabel}
-            </span>
-            <Button
-              variant="outline"
-              size="icon-xs"
-              type="button"
-              onClick={callTab(bridge.zoomIn)}
-              aria-label="Zoom in"
-              disabled={tabDisabled}
-            >
-              <PlusIcon />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              type="button"
-              onClick={callTab(bridge.resetZoom)}
-              aria-label="Reset zoom"
-              className="[:hover,[data-pressed]]:bg-foreground/10"
-              disabled={tabDisabled}
-            >
-              <RotateCcw />
-            </Button>
-          </span>
-        </MenuItem>
-        <MenuSeparator />
-        {/*
-          Grouped so the heading has a `MenuGroup` ancestor — `MenuGroupLabel`
-          reads its context and throws without one. The heading also answers
-          which profile the tab is in, which is otherwise invisible: it is fixed
-          at open and nothing else in the chrome shows it.
-        */}
-        <MenuGroup>
-          {/*
-            The heading carries the profile so the actions below can keep
-            fixed-length labels: repeating a name of up to 48 characters in
-            each one drove the popup far past its width.
-          */}
-          {profileName ? (
-            // Truncation sits on the label itself: it renders a block box, so
-            // `text-overflow` on an inline child inside it never applies and a
-            // long name would push the popup past its width instead.
-            <MenuGroupLabel className="max-w-64 truncate">Profile: {profileName}</MenuGroupLabel>
-          ) : null}
+        {readRemoteStats ? (
           <MenuItem
-            onClick={() =>
-              void bridge.clearCookies(environmentId, profileId).catch(() => undefined)
-            }
+            closeOnClick={false}
+            onClick={(event: React.MouseEvent) => event.preventDefault()}
+            className="justify-between"
           >
-            Clear cookies
+            <span>Stream</span>
+            <RemoteStreamStats read={readRemoteStats} />
           </MenuItem>
-          <MenuItem
-            onClick={() => void bridge.clearCache(environmentId, profileId).catch(() => undefined)}
-          >
-            Clear cache
-          </MenuItem>
-        </MenuGroup>
+        ) : null}
+        {!bridge ? null : (
+          <>
+            <MenuItem onClick={callTab(bridge.hardReload)} disabled={tabDisabled}>
+              Hard reload
+            </MenuItem>
+            <MenuItem onClick={callTab(bridge.openDevTools)} disabled={tabDisabled}>
+              Open DevTools
+            </MenuItem>
+            <MenuItem onClick={onNativePictureInPicture} disabled={tabDisabled}>
+              {nativePictureInPicture
+                ? "Close separate preview window"
+                : "Open separate preview window"}
+            </MenuItem>
+            <MenuItem onClick={onToggleDeviceToolbar} disabled={tabDisabled}>
+              {deviceToolbarVisible ? "Hide device toolbar" : "Show device toolbar"}
+            </MenuItem>
+            <MenuSub>
+              <MenuSubTrigger disabled={tabDisabled}>Appearance</MenuSubTrigger>
+              <MenuSubPopup className="min-w-32">
+                <MenuRadioGroup
+                  value={colorScheme}
+                  onValueChange={(value) => {
+                    if (!tabId) return;
+                    void bridge
+                      .setColorScheme(tabId, value as DesktopPreviewColorScheme)
+                      .catch(() => undefined);
+                  }}
+                >
+                  {COLOR_SCHEME_OPTIONS.map((option) => (
+                    <MenuRadioItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              </MenuSubPopup>
+            </MenuSub>
+            <MenuSeparator />
+            {/*
+              Zoom row: label + inline control cluster. `closeOnClick=false`
+              keeps the menu open while the user clicks the +/− buttons.
+            */}
+            <MenuItem
+              closeOnClick={false}
+              onClick={(event: React.MouseEvent) => event.preventDefault()}
+              className="justify-between"
+              disabled={tabDisabled}
+            >
+              <span>Zoom</span>
+              <span className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon-xs"
+                  type="button"
+                  onClick={callTab(bridge.zoomOut)}
+                  aria-label="Zoom out"
+                  disabled={tabDisabled}
+                >
+                  <Minus />
+                </Button>
+                <span className="min-w-12 text-center text-xs tabular-nums text-muted-foreground">
+                  {zoomLabel}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon-xs"
+                  type="button"
+                  onClick={callTab(bridge.zoomIn)}
+                  aria-label="Zoom in"
+                  disabled={tabDisabled}
+                >
+                  <PlusIcon />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  type="button"
+                  onClick={callTab(bridge.resetZoom)}
+                  aria-label="Reset zoom"
+                  className="[:hover,[data-pressed]]:bg-foreground/10"
+                  disabled={tabDisabled}
+                >
+                  <RotateCcw />
+                </Button>
+              </span>
+            </MenuItem>
+            <MenuSeparator />
+            {/*
+              Grouped so the heading has a `MenuGroup` ancestor — `MenuGroupLabel`
+              reads its context and throws without one. The heading also answers
+              which profile the tab is in, which is otherwise invisible: it is fixed
+              at open and nothing else in the chrome shows it.
+            */}
+            <MenuGroup>
+              {/*
+                The heading carries the profile so the actions below can keep
+                fixed-length labels: repeating a name of up to 48 characters in
+                each one drove the popup far past its width.
+              */}
+              {profileName ? (
+                // Truncation sits on the label itself: it renders a block box, so
+                // `text-overflow` on an inline child inside it never applies and a
+                // long name would push the popup past its width instead.
+                <MenuGroupLabel className="max-w-64 truncate">
+                  Profile: {profileName}
+                </MenuGroupLabel>
+              ) : null}
+              <MenuItem
+                onClick={() =>
+                  void bridge.clearCookies(environmentId, profileId).catch(() => undefined)
+                }
+              >
+                Clear cookies
+              </MenuItem>
+              <MenuItem
+                onClick={() =>
+                  void bridge.clearCache(environmentId, profileId).catch(() => undefined)
+                }
+              >
+                Clear cache
+              </MenuItem>
+            </MenuGroup>
+          </>
+        )}
       </MenuPopup>
     </Menu>
   );

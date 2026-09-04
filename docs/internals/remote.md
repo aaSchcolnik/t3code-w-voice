@@ -17,15 +17,15 @@ the connection layer, never by splitting the runtime.
 ┌──────────────────────────────────────────────┐
 │ Client (desktop / mobile / web)              │
 │  known environments, connection supervisor   │
-└───────────────┬──────────────────────────────┘
-                │ resolves one access endpoint
-┌───────────────▼──────────────────────────────┐
+└──────────────────────┬───────────────────────┘
+                       │ resolves one access endpoint
+┌──────────────────────▼───────────────────────┐
 │ Access method                                │
 │  direct ws/wss, relay tunnel,                │
 │  Tailscale serve, desktop-managed ssh        │
-└───────────────┬──────────────────────────────┘
-                │ connects to one T3 server
-┌───────────────▼──────────────────────────────┐
+└──────────────────────┬───────────────────────┘
+                       │ connects to one T3 server
+┌──────────────────────▼───────────────────────┐
 │ Execution environment = one T3 server        │
 │  identity, providers, projects/threads,      │
 │  terminals, git, filesystem                  │
@@ -223,6 +223,55 @@ carries the running server version and may advertise a safe replacement path, so
 right action without making the transport responsible for process management. The connection
 supervisor owns the resulting disconnect and reconnect like any other involuntary close. See
 [server-updates.md](./server-updates.md).
+
+## Remote preview streaming
+
+The Electron desktop app remains the preview host. Its renderer captures the guest tab as a
+`MediaStream` and sends the video track to each remote web viewer over WebRTC. The server does not
+capture or encode video. `RemotePreviewSessionBroker` selects an Electron host, grants viewer and
+controller leases, and relays signaling over the authenticated WebSocket RPC connection.
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│ Electron desktop host                                   │
+│  guest tab MediaStream ─────┐                            │
+│  CDP human input ◄──────────┼──────────────┐             │
+└─┼───────────────────────────┼──────────────┼─────────────┘
+  │                           │              │
+  │ WebRTC Signaling          │ WebRTC Video │ WebRTC Data Channels
+  │ (WebSocket RPC)           │ (H.264/VP8)  │ (control, motion)
+  │                           │              │
+┌─▼───────────────────────────▼──────────────▼─────────────┐
+│ Remote web or mobile client                             │
+│  video element or isolated WebView input layer          │
+└─────────────────────────────────────────────────────────┘
+```
+
+The host prefers H.264 and limits each sender to 2.5 Mbps. It targets 30 fps while the viewer holds
+control and 10 fps while the session stays read-only. The reliable, ordered `control` data channel
+carries discrete input, metadata, host state, and the agent pointer. The unordered `motion` channel
+uses `maxRetransmits: 0` for pointer movement and wheel deltas.
+
+Input coordinates use guest CSS pixels from `RemotePreviewSourceMetadata`. The host rejects points
+outside those bounds and messages from an older source generation. Electron main dispatches accepted
+touch, mouse, wheel, and keyboard messages through CDP after interrupting any in-flight agent browser
+step. Local desktop input temporarily suppresses remote input, so precedence remains local user,
+remote controller, then agent.
+
+The broker permits at most two viewers per tab and one controller. A takeover revokes the previous
+controller and both peers receive `controllerChanged`. Closing the viewer's authenticated WebSocket
+session also closes its peer, which prevents a live data channel from outlasting revoked credentials.
+
+Direct and Tailscale connections use normal ICE discovery. T3 Connect sessions receive ten-minute
+Cloudflare Realtime TURN credentials from the relay Worker, with at most one mint per session every
+five minutes. The server only relays SDP and ICE messages; media and input do not pass through the
+application WebSocket.
+
+The mobile tablet inspector requests a signed viewer URL through
+`remotePreview.issueViewerUrl`. The URL token is limited to the environment, thread, tab, parent
+session, route purpose, and a 15-minute lifetime. Redeeming it sets an HttpOnly browser-session
+cookie with only the parent's preview scopes and serves a separate viewer entry. Long-lived bearer,
+DPoP, pairing, and WebSocket-ticket credentials never enter the URL or viewer JavaScript.
 
 ## Machine identity
 

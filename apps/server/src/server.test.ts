@@ -23,6 +23,7 @@ import {
   type OrchestrationThreadStreamItem,
   type OrchestrationThreadActivity,
   type OrchestrationThreadShell,
+  PreviewTabId,
   TerminalNotRunningError,
   type OrchestrationCommand,
   type OrchestrationEvent,
@@ -1266,7 +1267,7 @@ const exchangeAccessToken = (
         requested_token_type: AuthAccessTokenType,
         scope:
           options?.scope ??
-          "orchestration:read orchestration:operate terminal:operate review:write relay:read access:read access:write relay:write",
+          "orchestration:read orchestration:operate terminal:operate preview:view preview:control review:write relay:read access:read access:write relay:write",
         ...(options?.clientMetadata?.label ? { client_label: options.clientMetadata.label } : {}),
         ...(options?.clientMetadata?.deviceType
           ? { client_device_type: options.clientMetadata.deviceType }
@@ -1874,7 +1875,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(tokenBody.token_type, "Bearer");
       assert.equal(
         tokenBody.scope,
-        "orchestration:read orchestration:operate terminal:operate review:write relay:read access:read access:write relay:write",
+        "orchestration:read orchestration:operate terminal:operate preview:view preview:control review:write relay:read access:read access:write relay:write",
       );
       assert.equal(typeof tokenBody.access_token, "string");
 
@@ -1897,12 +1898,45 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "orchestration:read",
         "orchestration:operate",
         "terminal:operate",
+        "preview:view",
+        "preview:control",
         "review:write",
         "relay:read",
         "access:read",
         "access:write",
         "relay:write",
       ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("serves a signed remote preview viewer page and rejects a tampered token", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const issued = yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          client[WS_METHODS.remotePreviewIssueViewerUrl]({
+            environmentId: testEnvironmentDescriptor.environmentId,
+            threadId: defaultThreadId,
+            tabId: PreviewTabId.make("tab-mobile-viewer"),
+          }),
+        ),
+      );
+      const viewerResponse = yield* fetchEffect(yield* getHttpServerUrl(issued.relativeUrl));
+      const viewerHtml = yield* viewerResponse.text;
+
+      assert.equal(viewerResponse.status, 200);
+      assert.include(viewerResponse.headers["content-type"] ?? "", "text/html");
+      assert.equal(viewerResponse.headers["cache-control"], "no-store");
+      assert.include(viewerResponse.headers["set-cookie"] ?? "", "HttpOnly");
+      assert.include(viewerHtml, "__T3_REMOTE_PREVIEW_VIEWER__");
+      assert.include(viewerHtml, '"tabId":"tab-mobile-viewer"');
+
+      const tamperedResponse = yield* fetchEffect(
+        yield* getHttpServerUrl(`${issued.relativeUrl}tampered`),
+      );
+      assert.equal(tamperedResponse.status, 404);
+      assert.isUndefined(tamperedResponse.headers["set-cookie"]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

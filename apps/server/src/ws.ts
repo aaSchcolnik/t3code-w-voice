@@ -126,6 +126,8 @@ import * as TranscriptionService from "./transcription/TranscriptionService.ts";
 import * as ServerVoiceModelManager from "./transcription/ServerVoiceModelManager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
+import * as RemotePreviewSessionBroker from "./preview/RemotePreviewSessionBroker.ts";
+import { issueRemotePreviewViewerUrlFromInput } from "./preview/RemotePreviewViewerAccess.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -503,16 +505,40 @@ function readClientAnalyticsProps(request: HttpServerRequest.HttpServerRequest) 
   };
 }
 
+function readClientConnectionMethod(
+  request: HttpServerRequest.HttpServerRequest,
+): ClientConnectionMethod | undefined {
+  const url = HttpServerRequest.toURL(request);
+  if (Option.isNone(url)) return undefined;
+  const connectionMethod = url.value.searchParams.get("connectionMethod");
+  return isClientConnectionMethod(connectionMethod) ? connectionMethod : undefined;
+}
+
 const makeWsRpcLayer = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
+  clientConnectionMethod: ClientConnectionMethod | undefined,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  remotePreviewSessionBroker: RemotePreviewSessionBroker.RemotePreviewSessionBroker["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const crypto = yield* Crypto.Crypto;
+      const remotePreviewConnectionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+      const remotePreviewCaller: RemotePreviewSessionBroker.RemotePreviewViewerConnection = {
+        authSessionId: currentSessionId,
+        connectionId: remotePreviewConnectionId,
+        label: currentSession.client.label ?? currentSession.subject,
+        ...(clientConnectionMethod === undefined
+          ? {}
+          : { connectionMethod: clientConnectionMethod }),
+        ...(currentSession.expiresAt === undefined ? {} : { expiresAt: currentSession.expiresAt }),
+      };
+      yield* Effect.addFinalizer(() =>
+        remotePreviewSessionBroker.disconnectConnection(remotePreviewConnectionId),
+      );
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const threadDeletionReactor = yield* ThreadDeletionReactor;
@@ -3058,8 +3084,58 @@ const makeWsRpcLayer = (
         [WS_METHODS.previewAutomationFocusHost]: (input) =>
           observeRpcEffect(
             WS_METHODS.previewAutomationFocusHost,
-            previewAutomationBroker.focusHost(input),
+            previewAutomationBroker
+              .focusHost(input)
+              .pipe(Effect.andThen(remotePreviewSessionBroker.focusHost(input))),
             { "rpc.aggregate": "preview-automation" },
+          ),
+        [WS_METHODS.remotePreviewOpen]: (input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.remotePreviewOpen,
+            remotePreviewSessionBroker.open(remotePreviewCaller, input),
+            { "rpc.aggregate": "remote-preview" },
+          ),
+        [WS_METHODS.remotePreviewSignal]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.remotePreviewSignal,
+            remotePreviewSessionBroker.signal(remotePreviewCaller, input),
+            { "rpc.aggregate": "remote-preview" },
+          ),
+        [WS_METHODS.remotePreviewRequestControl]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.remotePreviewRequestControl,
+            remotePreviewSessionBroker.requestControl(remotePreviewCaller, input),
+            { "rpc.aggregate": "remote-preview" },
+          ),
+        [WS_METHODS.remotePreviewReleaseControl]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.remotePreviewReleaseControl,
+            remotePreviewSessionBroker.releaseControl(remotePreviewCaller, input.sessionId),
+            { "rpc.aggregate": "remote-preview" },
+          ),
+        [WS_METHODS.remotePreviewClose]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.remotePreviewClose,
+            remotePreviewSessionBroker.close(remotePreviewCaller, input.sessionId),
+            { "rpc.aggregate": "remote-preview" },
+          ),
+        [WS_METHODS.remotePreviewIssueViewerUrl]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.remotePreviewIssueViewerUrl,
+            issueRemotePreviewViewerUrlFromInput(input, currentSessionId),
+            { "rpc.aggregate": "remote-preview" },
+          ),
+        [WS_METHODS.remotePreviewHostConnect]: (input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.remotePreviewHostConnect,
+            remotePreviewSessionBroker.connectHost(remotePreviewCaller, input),
+            { "rpc.aggregate": "remote-preview" },
+          ),
+        [WS_METHODS.remotePreviewHostSignal]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.remotePreviewHostSignal,
+            remotePreviewSessionBroker.hostSignal(remotePreviewCaller, input),
+            { "rpc.aggregate": "remote-preview" },
           ),
         [WS_METHODS.subscribePreviewEvents]: (_input) =>
           observeRpcStream(WS_METHODS.subscribePreviewEvents, previewManager.events, {
@@ -3240,6 +3316,7 @@ const makeWsRpcLayer = (
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+    const remotePreviewSessionBroker = yield* RemotePreviewSessionBroker.RemotePreviewSessionBroker;
     const baseServerSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const config = yield* ServerConfig.ServerConfig;
     const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
@@ -3287,6 +3364,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
           ),
         );
         const clientOrigin = readClientConnectionOrigin(request);
+        const clientConnectionMethod = readClientConnectionMethod(request);
         const clientAnalyticsProps = readClientAnalyticsProps(request);
         yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
         yield* analytics.record("client.connected", clientAnalyticsProps);
@@ -3297,8 +3375,10 @@ export const websocketRpcRouteLayer = Layer.unwrap(
             makeWsRpcLayer(
               session,
               clientOrigin,
+              clientConnectionMethod,
               clientAnalyticsProps,
               previewAutomationBroker,
+              remotePreviewSessionBroker,
             ).pipe(
               Layer.provide(ProjectKnowledgeStore.layer),
               Layer.provide(SkillImportServiceModule.layer),

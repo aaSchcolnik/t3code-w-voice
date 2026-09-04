@@ -1,7 +1,7 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { View } from "react-native";
 
-export type ThreadInspectorMode = "route" | "git" | "files";
+export type ThreadInspectorMode = "route" | "git" | "files" | "browser";
 
 const INSPECTOR_PREWARM_DELAY_MS = 350;
 
@@ -33,6 +33,7 @@ function InspectorContentPane(props: {
 }
 
 export function ThreadInspectorContentStack(props: {
+  readonly Browser: ComponentType;
   readonly Files: ComponentType;
   readonly Git: ComponentType;
   readonly mode: ThreadInspectorMode;
@@ -50,7 +51,7 @@ export function ThreadInspectorContentStack(props: {
       return new Set([...current, props.mode]);
     });
 
-    if (props.mode === "route") {
+    if (props.mode === "route" || props.mode === "browser") {
       return;
     }
 
@@ -70,12 +71,19 @@ export function ThreadInspectorContentStack(props: {
     return () => clearTimeout(timeout);
   }, [props.mode]);
 
+  const Browser = props.Browser;
   const Files = props.Files;
   const Git = props.Git;
   const Route = props.Route;
 
   return (
     <View className="flex-1">
+      <InspectorContentPane
+        mounted={mountedModes.has("browser") || props.mode === "browser"}
+        visible={props.mode === "browser"}
+      >
+        <Browser />
+      </InspectorContentPane>
       <InspectorContentPane
         mounted={mountedModes.has("files") || props.mode === "files"}
         visible={props.mode === "files"}
