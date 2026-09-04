@@ -631,24 +631,28 @@ export const PreviewAutomationResponse = Schema.Struct({
 });
 export type PreviewAutomationResponse = typeof PreviewAutomationResponse.Type;
 
+export const McpCapability = Schema.Literals([
+  "preview",
+  "codex-agent",
+  "cursor-agent",
+  "claude-agent",
+  "antigravity-agent",
+  "opencode-agent",
+  "engine-planning",
+  "engine-consensus",
+  "engine-enrich",
+  "engine-implement",
+  "engine-quality",
+  "engine-performance",
+  "engine-typescript",
+  "engine-knowledge",
+]);
+export type McpCapability = typeof McpCapability.Type;
+
 export class PreviewAutomationUnavailableError extends Schema.TaggedErrorClass<PreviewAutomationUnavailableError>()(
   "PreviewAutomationUnavailableError",
   {
-    capability: Schema.Literals([
-      "preview",
-      "codex-agent",
-      "cursor-agent",
-      "claude-agent",
-      "antigravity-agent",
-      "engine-planning",
-      "engine-consensus",
-      "engine-enrich",
-      "engine-implement",
-      "engine-quality",
-      "engine-performance",
-      "engine-typescript",
-      "engine-knowledge",
-    ]),
+    capability: McpCapability,
     environmentId: EnvironmentId,
     threadId: ThreadId,
     providerSessionId: TrimmedNonEmptyString,

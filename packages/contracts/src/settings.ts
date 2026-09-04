@@ -26,7 +26,8 @@ import {
 } from "./providerInstance.ts";
 import { ProjectMcpOverrides } from "./projectMcpOverrides.ts";
 export { ProjectEngineDelegationOverrides, ProjectMcpOverrides } from "./projectMcpOverrides.ts";
-import { DelegatedRunProvider, DelegationProfile } from "./delegatedRun.ts";
+import { DelegatedRunProvider } from "./delegatedProviders.ts";
+import { DelegationProfile } from "./delegatedRun.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -358,6 +359,7 @@ export const McpSettings = Schema.Struct({
   cursorAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   claudeAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   antigravityAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  opencodeAgent: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   engine: McpEngineSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type McpSettings = typeof McpSettings.Type;
@@ -433,6 +435,7 @@ export function resolveEffectiveMcpSettings(
     cursorAgent: overrides.cursorAgent ?? global.cursorAgent,
     claudeAgent: overrides.claudeAgent ?? global.claudeAgent,
     antigravityAgent: overrides.antigravityAgent ?? global.antigravityAgent,
+    opencodeAgent: overrides.opencodeAgent ?? global.opencodeAgent,
     engine: {
       planning: engineOverrides?.planning ?? global.engine.planning,
       consensus: engineOverrides?.consensus ?? global.engine.consensus,
@@ -1569,6 +1572,7 @@ export const ServerSettingsPatch = Schema.Struct({
       cursorAgent: Schema.optionalKey(Schema.Boolean),
       claudeAgent: Schema.optionalKey(Schema.Boolean),
       antigravityAgent: Schema.optionalKey(Schema.Boolean),
+      opencodeAgent: Schema.optionalKey(Schema.Boolean),
       engine: Schema.optionalKey(
         Schema.Struct({
           planning: Schema.optionalKey(Schema.Boolean),

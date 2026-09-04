@@ -8,6 +8,7 @@ import {
   DelegationRequestHash,
   DelegationResultCompleteness,
 } from "./delegation.ts";
+import { DelegatedRunProvider } from "./delegatedProviders.ts";
 import {
   ChatAttachment,
   ProviderApprovalPolicy,
@@ -26,14 +27,6 @@ import { UserInputQuestion } from "./userInput.ts";
 
 export const DelegatedRunId = TrimmedNonEmptyString.pipe(Schema.brand("DelegatedRunId"));
 export type DelegatedRunId = typeof DelegatedRunId.Type;
-
-export const DelegatedRunProvider = Schema.Literals([
-  "codex",
-  "cursor",
-  "claudeAgent",
-  "antigravity",
-]);
-export type DelegatedRunProvider = typeof DelegatedRunProvider.Type;
 
 export const DelegatedRunStatus = Schema.Literals([
   "queued",

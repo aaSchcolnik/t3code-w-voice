@@ -1,5 +1,7 @@
 import {
+  DELEGATED_PROVIDERS,
   isProviderAvailable,
+  type DelegatedRunProvider,
   type McpSettings,
   type ModelSelection,
   resolveDelegationRoles,
@@ -29,14 +31,11 @@ export function resolveKnowledgeScanConfiguration(input: {
   readonly projectDefaultModel?: ModelSelection | undefined;
 }) {
   const usableProviders = input.providers.filter(providerUsable);
-  const available = new Set<"claudeAgent" | "codex" | "cursor" | "antigravity">();
-  if (usableProviders.some((provider) => provider.driver === "claudeAgent")) {
-    available.add("claudeAgent");
-  }
-  if (usableProviders.some((provider) => provider.driver === "codex")) available.add("codex");
-  if (usableProviders.some((provider) => provider.driver === "cursor")) available.add("cursor");
-  if (usableProviders.some((provider) => provider.driver === "antigravity")) {
-    available.add("antigravity");
+  const available = new Set<DelegatedRunProvider>();
+  for (const driver of Object.keys(DELEGATED_PROVIDERS) as ReadonlyArray<DelegatedRunProvider>) {
+    if (usableProviders.some((provider) => provider.driver === driver)) {
+      available.add(driver);
+    }
   }
   const panel = resolveDelegationRoles(input.mcp.engine.delegation, available).scanner;
   const availableScanners = panel.filter((target) =>

@@ -35,14 +35,13 @@ import {
   PreviewSnapshotToolkit,
   PreviewStandardToolkit,
 } from "./toolkits/preview/tools.ts";
-import { CodexAgentToolkitHandlersLive } from "./toolkits/codexAgent/handlers.ts";
-import { CodexAgentToolkit } from "./toolkits/codexAgent/tools.ts";
-import { CursorAgentToolkitHandlersLive } from "./toolkits/cursorAgent/handlers.ts";
-import { CursorAgentToolkit } from "./toolkits/cursorAgent/tools.ts";
-import { ClaudeAgentToolkitHandlersLive } from "./toolkits/claudeAgent/handlers.ts";
-import { ClaudeAgentToolkit } from "./toolkits/claudeAgent/tools.ts";
-import { AntigravityAgentToolkitHandlersLive } from "./toolkits/antigravityAgent/handlers.ts";
-import { AntigravityAgentToolkit } from "./toolkits/antigravityAgent/tools.ts";
+import {
+  antigravityAgent,
+  claudeAgent,
+  codexAgent,
+  cursorAgent,
+  opencodeAgent,
+} from "./toolkits/delegatedAgent/providers.ts";
 import { EngineKnowledgeToolkitHandlersLive } from "./toolkits/engineKnowledge/handlers.ts";
 import { EngineKnowledgeToolkit } from "./toolkits/engineKnowledge/tools.ts";
 import { EngineToolkitHandlersLive } from "./toolkits/engine/handlers.ts";
@@ -419,21 +418,13 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
-export const CodexAgentToolkitRegistrationLive = McpServer.toolkit(CodexAgentToolkit).pipe(
-  Layer.provide(CodexAgentToolkitHandlersLive),
+export const DelegatedAgentToolkitRegistrationsLive = Layer.mergeAll(
+  codexAgent.layer,
+  cursorAgent.layer,
+  claudeAgent.layer,
+  antigravityAgent.layer,
+  opencodeAgent.layer,
 );
-
-export const CursorAgentToolkitRegistrationLive = McpServer.toolkit(CursorAgentToolkit).pipe(
-  Layer.provide(CursorAgentToolkitHandlersLive),
-);
-
-export const ClaudeAgentToolkitRegistrationLive = McpServer.toolkit(ClaudeAgentToolkit).pipe(
-  Layer.provide(ClaudeAgentToolkitHandlersLive),
-);
-
-export const AntigravityAgentToolkitRegistrationLive = McpServer.toolkit(
-  AntigravityAgentToolkit,
-).pipe(Layer.provide(AntigravityAgentToolkitHandlersLive));
 
 export const EngineKnowledgeToolkitRegistrationLive = McpServer.toolkit(
   EngineKnowledgeToolkit,
@@ -456,10 +447,7 @@ const McpTransportLive = McpServer.layerHttp({
 
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
-  CodexAgentToolkitRegistrationLive,
-  CursorAgentToolkitRegistrationLive,
-  ClaudeAgentToolkitRegistrationLive,
-  AntigravityAgentToolkitRegistrationLive,
+  DelegatedAgentToolkitRegistrationsLive,
   EngineKnowledgeToolkitRegistrationLive,
   EngineToolkitRegistrationLive,
   McpGatewayLive,

@@ -1,7 +1,13 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import type { ProjectId, ProviderDriverKind } from "@t3tools/contracts";
+import {
+  DELEGATED_PROVIDERS,
+  delegatedToolName,
+  type DelegatedRunProvider,
+  type ProjectId,
+  type ProviderDriverKind,
+} from "@t3tools/contracts";
 
 import { searchKnowledge } from "../knowledge/KnowledgeRepository.ts";
 import { buildProjectInstructionCapsule } from "../knowledge/ProjectInstructionCapsuleService.ts";
@@ -12,24 +18,20 @@ import type { McpCapability } from "./McpInvocationContext.ts";
 import type { McpProviderSessionConfig } from "./McpProviderSession.ts";
 import { skillCatalogRevision } from "./skillCatalog.ts";
 
-const TRACKED_PROVIDER_TOOLS = {
-  "codex-agent": {
-    label: "Codex",
-    start: "codex_start",
-  },
-  "cursor-agent": {
-    label: "Cursor",
-    start: "cursor_start",
-  },
-  "claude-agent": {
-    label: "Claude",
-    start: "claude_start",
-  },
-  "antigravity-agent": {
-    label: "Antigravity",
-    start: "antigravity_start",
-  },
-} as const;
+const TRACKED_PROVIDER_TOOLS = Object.fromEntries(
+  Object.entries(DELEGATED_PROVIDERS).map(([provider, spec]) => [
+    spec.capability,
+    {
+      label: spec.label,
+      start: delegatedToolName(provider as DelegatedRunProvider, "start"),
+    },
+  ]),
+) as {
+  [K in (typeof DELEGATED_PROVIDERS)[DelegatedRunProvider]["capability"]]: {
+    label: string;
+    start: ReturnType<typeof delegatedToolName<DelegatedRunProvider, "start">>;
+  };
+};
 
 const sameProviderNativeInstruction = (
   providerDriver: ProviderDriverKind | undefined,
@@ -68,9 +70,19 @@ export function trackedDelegationInstructions(
     callable.length > 0
       ? `Callable tracked provider tools: ${toolNames}. Honor an explicit provider request. For independent work, start every needed run before ending the turn. Pass a stable idempotency key for retry-safe starts; an omitted key has no retry deduplication. Results and questions arrive automatically—never wait, poll, sleep, or create background polling commands. Concurrent writers are allowed, so assign disjoint work and keep shared files sequential.`
       : undefined,
-    capabilities.has("cursor-agent")
-      ? "Answer a tracked Cursor question with `cursor_respond`, then end the turn."
-      : undefined,
+    (
+      Object.entries(DELEGATED_PROVIDERS) as ReadonlyArray<
+        [DelegatedRunProvider, (typeof DELEGATED_PROVIDERS)[DelegatedRunProvider]]
+      >
+    )
+      .flatMap(([provider, spec]) =>
+        spec.supportsQuestions && capabilities.has(spec.capability)
+          ? [
+              `Answer a tracked ${spec.label} question with \`${delegatedToolName(provider, "respond")}\`, then end the turn.`,
+            ]
+          : [],
+      )
+      .join("\n\n") || undefined,
     callable.length > 0
       ? "Tracked subagents stay inside the workspace and use Git read-only; the server handles permission requests."
       : undefined,
@@ -228,8 +240,8 @@ export const makeMcpSessionInstructionBuilder = Effect.fn("makeMcpSessionInstruc
 );
 
 export interface UntrackedDelegationAttempt {
-  readonly provider: "codex" | "cursor" | "claude" | "antigravity";
-  readonly trackedTool: "codex_start" | "cursor_start" | "claude_start" | "antigravity_start";
+  readonly provider: DelegatedRunProvider;
+  readonly trackedTool: ReturnType<typeof delegatedToolName<DelegatedRunProvider, "start">>;
 }
 
 /**
@@ -246,10 +258,10 @@ export function detectUntrackedDelegationAttempt(
   if (/(?:agent|task)/iu.test(toolName) && typeof subagentType === "string") {
     const normalizedType = subagentType.trim().toLowerCase();
     if (capabilities.has("codex-agent") && /^codex(?:[:/.-]|$)/u.test(normalizedType)) {
-      return { provider: "codex", trackedTool: "codex_start" };
+      return { provider: "codex", trackedTool: delegatedToolName("codex", "start") };
     }
     if (capabilities.has("cursor-agent") && /^cursor(?:[:/.-]|$)/u.test(normalizedType)) {
-      return { provider: "cursor", trackedTool: "cursor_start" };
+      return { provider: "cursor", trackedTool: delegatedToolName("cursor", "start") };
     }
   }
 
@@ -263,7 +275,7 @@ export function detectUntrackedDelegationAttempt(
     /(?:^|[;&|()\s])(?:[^\s/]+\/)*cursor-agent(?:\s|$)/u.test(command) &&
     /(?:^|\s)(?:-p|--print)(?:\s|$)/u.test(command)
   ) {
-    return { provider: "cursor", trackedTool: "cursor_start" };
+    return { provider: "cursor", trackedTool: delegatedToolName("cursor", "start") };
   }
 
   if (
@@ -271,7 +283,7 @@ export function detectUntrackedDelegationAttempt(
     /(?:^|[;&|()\s])(?:[^\s/]+\/)*claude(?:\s|$)/u.test(command) &&
     /(?:^|\s)(?:-p|--print)(?:\s|$)/u.test(command)
   ) {
-    return { provider: "claude", trackedTool: "claude_start" };
+    return { provider: "claudeAgent", trackedTool: delegatedToolName("claudeAgent", "start") };
   }
 
   if (
@@ -279,7 +291,7 @@ export function detectUntrackedDelegationAttempt(
     /(?:^|[;&|()\s])(?:[^\s/]+\/)*agy(?:\s|$)/u.test(command) &&
     /(?:^|\s)(?:-p|--print|--prompt)(?:\s|$)/u.test(command)
   ) {
-    return { provider: "antigravity", trackedTool: "antigravity_start" };
+    return { provider: "antigravity", trackedTool: delegatedToolName("antigravity", "start") };
   }
 
   if (
@@ -288,7 +300,15 @@ export function detectUntrackedDelegationAttempt(
       /(?:^|\s)exec(?:\s|$)/u.test(command)) ||
       /codex-companion\.mjs["']?\s+(?:task|task-worker)(?:\s|$)/u.test(command))
   ) {
-    return { provider: "codex", trackedTool: "codex_start" };
+    return { provider: "codex", trackedTool: delegatedToolName("codex", "start") };
+  }
+
+  if (
+    capabilities.has("opencode-agent") &&
+    /(?:^|[;&|()\s])(?:[^\s/]+\/)*opencode(?:\s|$)/u.test(command) &&
+    /(?:^|\s)run(?:\s|$)/u.test(command)
+  ) {
+    return { provider: "opencode", trackedTool: delegatedToolName("opencode", "start") };
   }
 
   return undefined;

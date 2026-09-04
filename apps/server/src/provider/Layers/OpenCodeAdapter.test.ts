@@ -56,9 +56,22 @@ type MessageEntry = {
   info: {
     id: string;
     role: "user" | "assistant";
+    parentID?: string;
+    time?: { created: number; completed?: number };
   };
   parts: Array<unknown>;
 };
+
+/** A finished OpenCode reply to `messageId`, as `session.messages` would list it. */
+const completedReply = (messageId: string, parts: Array<unknown> = []): MessageEntry => ({
+  info: {
+    id: `${messageId}-reply`,
+    role: "assistant",
+    parentID: messageId,
+    time: { created: 1_000, completed: 2_000 },
+  },
+  parts,
+});
 
 const runtimeMock = {
   state: {
@@ -1782,10 +1795,10 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       yield* Effect.promise(() => steerStarted.promise);
       const steerMessageId = (runtimeMock.state.promptCalls[1] as { messageID?: string }).messageID;
       NodeAssert.ok(steerMessageId);
-      runtimeMock.state.messages.push({
-        info: { id: steerMessageId, role: "user" },
-        parts: [],
-      });
+      runtimeMock.state.messages.push(
+        { info: { id: steerMessageId, role: "user" }, parts: [] },
+        completedReply(steerMessageId),
+      );
       runtimeMock.state.messageFailures = 1;
       reconnectEvent.resolve({
         id: "evt-reconnected-during-steer",
@@ -1875,6 +1888,273 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       NodeAssert.equal(session?.activeTurnId, undefined);
       NodeAssert.equal(turn.turnId !== undefined, true);
 
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("keeps an admitted prompt running while OpenCode has not marked the session busy", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-admission-empty-status-before-busy");
+      const busyEvent = promiseWithResolvers<unknown>();
+      const idleEvent = promiseWithResolvers<unknown>();
+      runtimeMock.state.autoPromptEcho = false;
+      runtimeMock.state.subscribedEvents = [busyEvent.promise, idleEvent.promise];
+      // OpenCode lists only non-idle sessions, so a prompt it is still
+      // preparing to answer is simply absent from the status map.
+      runtimeMock.state.sessionStatusImplementation = async () => ({ data: {} });
+      runtimeMock.state.promptAsyncImplementation = async () => {
+        const prompt = runtimeMock.state.promptCalls.at(-1) as { messageID?: string } | undefined;
+        if (prompt?.messageID) {
+          runtimeMock.state.messages.push({
+            info: { id: prompt.messageID, role: "user" },
+            parts: [],
+          });
+        }
+      };
+
+      const terminalFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            (event.type === "turn.completed" ||
+              event.type === "turn.aborted" ||
+              event.type === "runtime.error"),
+        ),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId,
+        input: "Reply with exactly OPENCODE_DELEGATION_WORKED",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("opencode"),
+          "opencode/mimo-v2.5-free",
+        ),
+      });
+
+      yield* advanceTestClock(3_000);
+      const sessionsWhileLoading = yield* adapter.listSessions();
+      const sessionWhileLoading = sessionsWhileLoading.find(
+        (candidate) => candidate.threadId === threadId,
+      );
+      NodeAssert.equal(sessionWhileLoading?.status, "running");
+      NodeAssert.equal(sessionWhileLoading?.activeTurnId, turn.turnId);
+      NodeAssert.equal(runtimeMock.state.sessionStatusCalls > 1, true);
+      NodeAssert.equal(runtimeMock.state.abortCalls.length, 0);
+
+      runtimeMock.state.sessionStatusImplementation = async () => ({
+        data: { "http://127.0.0.1:9999/session": { type: "busy" } },
+      });
+      busyEvent.resolve({
+        id: "evt-busy-after-loading",
+        type: "session.status",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          status: { type: "busy" },
+        },
+      });
+      yield* advanceTestClock(2_000);
+      runtimeMock.state.sessionStatusImplementation = async () => ({ data: {} });
+      idleEvent.resolve({
+        id: "evt-idle-after-loading",
+        type: "session.status",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          status: { type: "idle" },
+        },
+      });
+
+      const terminal = Option.getOrUndefined(
+        yield* Fiber.join(terminalFiber).pipe(Effect.timeout("1 second")),
+      );
+      NodeAssert.equal(terminal?.type, "turn.completed");
+      NodeAssert.equal(terminal?.turnId, turn.turnId);
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("completes an admitted prompt from the message list once its reply has finished", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-admission-reply-from-message-list");
+      // The event stream stays silent: no prompt echo, no busy, no idle.
+      const silentStream = promiseWithResolvers<unknown>();
+      runtimeMock.state.autoPromptEcho = false;
+      runtimeMock.state.subscribedEvents = [silentStream.promise];
+      runtimeMock.state.sessionStatusImplementation = async () => ({ data: {} });
+      runtimeMock.state.promptAsyncImplementation = async () => {
+        const prompt = runtimeMock.state.promptCalls.at(-1) as { messageID?: string } | undefined;
+        if (prompt?.messageID) {
+          runtimeMock.state.messages.push({
+            info: { id: prompt.messageID, role: "user" },
+            parts: [],
+          });
+        }
+      };
+
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            (event.type === "item.completed" ||
+              event.type === "turn.completed" ||
+              event.type === "turn.aborted" ||
+              event.type === "runtime.error"),
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId,
+        input: "Reply with exactly OPENCODE_DELEGATION_WORKED",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("opencode"),
+          "opencode/mimo-v2.5-free",
+        ),
+      });
+
+      yield* advanceTestClock(1_000);
+      const sessionsBeforeReply = yield* adapter.listSessions();
+      const sessionBeforeReply = sessionsBeforeReply.find(
+        (candidate) => candidate.threadId === threadId,
+      );
+      NodeAssert.equal(sessionBeforeReply?.status, "running");
+      NodeAssert.equal(sessionBeforeReply?.activeTurnId, turn.turnId);
+
+      const messageId = (runtimeMock.state.promptCalls[0] as { messageID: string }).messageID;
+      runtimeMock.state.messages.push(
+        completedReply(messageId, [
+          {
+            id: "prt-reply-text",
+            sessionID: "http://127.0.0.1:9999/session",
+            messageID: `${messageId}-reply`,
+            type: "text",
+            text: "OPENCODE_DELEGATION_WORKED",
+            time: { start: 1_500, end: 2_000 },
+          },
+        ]),
+      );
+      yield* advanceTestClock(1_500);
+      yield* advanceTestClock(1_500);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      NodeAssert.deepEqual(
+        events.map((event) => event.type),
+        ["item.completed", "turn.completed"],
+      );
+      const [item, completed] = events;
+      NodeAssert.equal(
+        item?.type === "item.completed" ? item.payload.detail : undefined,
+        "OPENCODE_DELEGATION_WORKED",
+      );
+      NodeAssert.equal(completed?.turnId, turn.turnId);
+      NodeAssert.equal(
+        completed?.type === "turn.completed" ? completed.payload.state : undefined,
+        "completed",
+      );
+      NodeAssert.equal(runtimeMock.state.abortCalls.length, 0);
+
+      // Release the mock event stream so closing the session scope does not
+      // wait on an async generator that is still awaiting an event.
+      silentStream.resolve({
+        id: "evt-late-idle",
+        type: "session.status",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          status: { type: "idle" },
+        },
+      });
+      yield* Effect.yieldNow;
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("fails an admitted prompt instead of completing it when OpenCode never answers", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-admission-never-answered");
+      const silentStream = promiseWithResolvers<unknown>();
+      runtimeMock.state.autoPromptEcho = false;
+      runtimeMock.state.subscribedEvents = [silentStream.promise];
+      runtimeMock.state.sessionStatusImplementation = async () => ({ data: {} });
+      runtimeMock.state.promptAsyncImplementation = async () => {
+        const prompt = runtimeMock.state.promptCalls.at(-1) as { messageID?: string } | undefined;
+        if (prompt?.messageID) {
+          runtimeMock.state.messages.push({
+            info: { id: prompt.messageID, role: "user" },
+            parts: [],
+          });
+        }
+      };
+
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.threadId === threadId &&
+            (event.type === "turn.completed" || event.type === "runtime.error"),
+        ),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const turn = yield* adapter.sendTurn({
+        threadId,
+        input: "Reply with exactly OPENCODE_DELEGATION_WORKED",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("opencode"),
+          "opencode/mimo-v2.5-free",
+        ),
+      });
+
+      for (let index = 0; index < 12; index += 1) {
+        yield* advanceTestClock(2_500);
+      }
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      NodeAssert.deepEqual(
+        events.map((event) => event.type),
+        ["turn.completed", "runtime.error"],
+      );
+      const [completed] = events;
+      NodeAssert.equal(completed?.turnId, turn.turnId);
+      NodeAssert.equal(
+        completed?.type === "turn.completed" ? completed.payload.state : undefined,
+        "failed",
+      );
+      NodeAssert.equal(
+        runtimeMock.state.abortCalls.includes("http://127.0.0.1:9999/session"),
+        true,
+      );
+
+      // Release the mock event stream so closing the session scope does not
+      // wait on an async generator that is still awaiting an event.
+      silentStream.resolve({
+        id: "evt-late-idle",
+        type: "session.status",
+        properties: {
+          sessionID: "http://127.0.0.1:9999/session",
+          status: { type: "idle" },
+        },
+      });
+      yield* Effect.yieldNow;
       yield* adapter.stopSession(threadId);
     }),
   );

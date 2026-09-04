@@ -1,6 +1,7 @@
 import {
   type EnvironmentId,
   type ProjectId,
+  type McpCapability,
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
   type ProviderDriverKind,
@@ -10,20 +11,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
-export type McpCapability =
-  | "preview"
-  | "codex-agent"
-  | "cursor-agent"
-  | "claude-agent"
-  | "antigravity-agent"
-  | "engine-planning"
-  | "engine-consensus"
-  | "engine-enrich"
-  | "engine-implement"
-  | "engine-quality"
-  | "engine-performance"
-  | "engine-typescript"
-  | "engine-knowledge";
+export type { McpCapability };
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;

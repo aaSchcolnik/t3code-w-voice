@@ -2,7 +2,9 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
+  DELEGATED_PROVIDERS,
   resolveEffectiveMcpSettings,
+  type DelegatedRunProvider,
   type ServerProvider,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -169,38 +171,18 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     if (effectiveMcp.preview) capabilities.add("preview");
     if (sessionKind === "delegated") return capabilities;
 
-    if (
-      effectiveMcp.codexAgent &&
-      providerAvailable("codex") &&
-      !(
-        parentProviderDriver === ProviderDriverKind.make("codex") &&
-        nativeSubagentTrackingEnabled(ProviderDriverKind.make("codex"))
-      )
-    ) {
-      capabilities.add("codex-agent");
-    }
-    if (
-      effectiveMcp.cursorAgent &&
-      providerAvailable("cursor") &&
-      !(
-        parentProviderDriver === ProviderDriverKind.make("cursor") &&
-        nativeSubagentTrackingEnabled(ProviderDriverKind.make("cursor"))
-      )
-    ) {
-      capabilities.add("cursor-agent");
-    }
-    if (
-      effectiveMcp.claudeAgent &&
-      providerAvailable("claudeAgent") &&
-      !(
-        parentProviderDriver === ProviderDriverKind.make("claudeAgent") &&
-        nativeSubagentTrackingEnabled(ProviderDriverKind.make("claudeAgent"))
-      )
-    ) {
-      capabilities.add("claude-agent");
-    }
-    if (effectiveMcp.antigravityAgent && providerAvailable("antigravity")) {
-      capabilities.add("antigravity-agent");
+    for (const [provider, spec] of Object.entries(DELEGATED_PROVIDERS) as ReadonlyArray<
+      [DelegatedRunProvider, (typeof DELEGATED_PROVIDERS)[DelegatedRunProvider]]
+    >) {
+      if (!effectiveMcp[spec.settingKey]) continue;
+      if (!providerAvailable(provider)) continue;
+      if (
+        parentProviderDriver === ProviderDriverKind.make(provider) &&
+        nativeSubagentTrackingEnabled(ProviderDriverKind.make(provider))
+      ) {
+        continue;
+      }
+      capabilities.add(spec.capability);
     }
     const engineCapabilities = [
       ["planning", "engine-planning"],
@@ -287,10 +269,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       const delegatedProviderInstances = providers
         .filter(
           (provider) =>
-            (provider.driver === ProviderDriverKind.make("codex") ||
-              provider.driver === ProviderDriverKind.make("cursor") ||
-              provider.driver === ProviderDriverKind.make("claudeAgent") ||
-              provider.driver === ProviderDriverKind.make("antigravity")) &&
+            (Object.keys(DELEGATED_PROVIDERS) as ReadonlyArray<DelegatedRunProvider>).some(
+              (driver) => provider.driver === ProviderDriverKind.make(driver),
+            ) &&
             provider.enabled &&
             provider.installed &&
             provider.delegation?.available !== false &&

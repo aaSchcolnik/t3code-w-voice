@@ -5,7 +5,13 @@ import type {
   EngineDelegationTarget,
   EngineWorkflowName,
 } from "@t3tools/contracts";
-import { NATIVE_SUBAGENT_MODEL_BY_DRIVER, resolveDelegationRoles } from "@t3tools/contracts";
+import {
+  DELEGATED_PROVIDERS,
+  NATIVE_SUBAGENT_MODEL_BY_DRIVER,
+  delegatedToolName,
+  resolveDelegationRoles,
+  type DelegatedRunProvider,
+} from "@t3tools/contracts";
 
 import type { McpCapability } from "../../mcp/McpInvocationContext.ts";
 
@@ -18,12 +24,17 @@ export interface ResolvedDelegationChains {
   readonly scannerPanel: ReadonlyArray<EngineDelegationTarget>;
 }
 
-const providerCapability = {
-  codex: "codex-agent",
-  cursor: "cursor-agent",
-  claudeAgent: "claude-agent",
-  antigravity: "antigravity-agent",
-} as const;
+const providerCapability = Object.fromEntries(
+  Object.entries(DELEGATED_PROVIDERS).map(([provider, spec]) => [provider, spec.capability]),
+) as Record<Exclude<EngineDelegationTarget["provider"], "inline">, McpCapability>;
+
+const trackedStartToolNames = (
+  Object.entries(DELEGATED_PROVIDERS) as ReadonlyArray<
+    [DelegatedRunProvider, (typeof DELEGATED_PROVIDERS)[DelegatedRunProvider]]
+  >
+)
+  .map(([provider]) => `\`${delegatedToolName(provider, "start")}\``)
+  .join(", ");
 
 const targetAvailable = (
   target: EngineDelegationTarget,
@@ -67,10 +78,13 @@ export function resolveDelegationChains(input: {
   readonly skillOverride?: EngineDelegationSkillOverride | null | undefined;
 }): ResolvedDelegationChains {
   const availableProviders = new Set<EngineDelegationTarget["provider"]>();
-  if (input.capabilities.has("codex-agent")) availableProviders.add("codex");
-  if (input.capabilities.has("cursor-agent")) availableProviders.add("cursor");
-  if (input.capabilities.has("claude-agent")) availableProviders.add("claudeAgent");
-  if (input.capabilities.has("antigravity-agent")) availableProviders.add("antigravity");
+  for (const [provider, spec] of Object.entries(DELEGATED_PROVIDERS) as ReadonlyArray<
+    [DelegatedRunProvider, (typeof DELEGATED_PROVIDERS)[DelegatedRunProvider]]
+  >) {
+    if (input.capabilities.has(spec.capability)) {
+      availableProviders.add(provider);
+    }
+  }
   availableProviders.add("inline");
   const delegationChain = (role: EngineDelegationRole) =>
     resolveDelegationChain({
@@ -180,7 +194,7 @@ const renderTarget = (role: string, target: EngineDelegationTarget): string => {
     const focus = target.focus === undefined ? "" : ` Focus lens: ${target.focus}.`;
     return `- **${role}:** run this lane inline on the main thread${model}.${focus}`;
   }
-  const tool = `${target.provider === "claudeAgent" ? "claude" : target.provider}_start`;
+  const tool = delegatedToolName(target.provider, "start");
   const parameters = {
     ...(target.providerInstanceId === undefined
       ? {}
@@ -305,7 +319,7 @@ ${targets.join("\n")}
 ${roleSteps.join("\n")}
 
 ### Guardrails
-- Call the resolved provider-specific \`cursor_start\`, \`codex_start\`, \`claude_start\`, or \`antigravity_start\` tool with a stable idempotency key. Start every selected independent target, then end the main-thread turn; results arrive automatically after runs finish.
+- Call the resolved provider-specific ${trackedStartToolNames} tool with a stable idempotency key. Start every selected independent target, then end the main-thread turn; results arrive automatically after runs finish.
 - Never wait, poll, sleep, or create background polling commands while delegated runs are active.
 - Subagents report findings or diffs to the Judge. They never mark chunks complete, write engine artifacts, or adjudicate findings.
 - Parallelize only independent lanes. Concurrent Workers require dependency-ready chunks with complete, disjoint intentional edit sets; T3 does not reserve or enforce file ownership.

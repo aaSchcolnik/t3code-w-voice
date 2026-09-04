@@ -28,6 +28,8 @@ import {
   type ResolvedProviderOption,
   type RuntimeMode,
   type UserInputQuestion,
+  DELEGATED_PROVIDERS,
+  delegatedToolName,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
@@ -375,7 +377,7 @@ const make = Effect.gen(function* () {
   const inputQuestionText = (run: DelegatedRun, questions: ReadonlyArray<UserInputQuestion>) =>
     [
       `Delegated run '${run.title}' is waiting for structured input.`,
-      `Use cursor_respond once with runId '${run.id}' and the selected answers, then end your turn. Do not restart the run.`,
+      `Use ${delegatedToolName(run.provider, "respond")} once with runId '${run.id}' and the selected answers, then end your turn. Do not restart the run.`,
       ...questions.map((question) =>
         [
           `## ${question.header} (${question.id})`,
@@ -2036,7 +2038,7 @@ const make = Effect.gen(function* () {
       providers: providerSnapshots,
       provider,
       supportsCancellation: true,
-      supportsQuestions: provider === "cursor",
+      supportsQuestions: DELEGATED_PROVIDERS[provider].supportsQuestions,
     });
   });
 

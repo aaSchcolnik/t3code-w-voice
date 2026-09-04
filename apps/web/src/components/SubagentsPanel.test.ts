@@ -412,6 +412,17 @@ describe("subagent status presentation", () => {
     expect(subagentStatusLabel("paused")).toBe("Paused");
     expect(subagentStatusLabel("unknown")).toBe("State unknown");
     expect(subagentStatusLabel("cancelled")).toBe("Cancelled");
+    expect(subagentStatusLabel("completed", "terminal_message")).toBe("Completed");
+    expect(subagentStatusLabel("completed", "none")).toBe("Completed without result");
+    expect(
+      subagentPhaseLabel(
+        routedRun({
+          dispatchState: "turn_accepted",
+          status: "completed",
+          resultCompleteness: "none",
+        }),
+      ),
+    ).toBe("Completed without result");
     expect(isActiveSubagentStatus("paused")).toBe(true);
     expect(isActiveSubagentStatus("failed")).toBe(false);
   });

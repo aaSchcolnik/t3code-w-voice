@@ -118,10 +118,7 @@ const makeAllToolkitTestLayer = (
 ) =>
   Layer.mergeAll(
     McpHttpServer.PreviewToolkitRegistrationLive,
-    McpHttpServer.CodexAgentToolkitRegistrationLive,
-    McpHttpServer.CursorAgentToolkitRegistrationLive,
-    McpHttpServer.ClaudeAgentToolkitRegistrationLive,
-    McpHttpServer.AntigravityAgentToolkitRegistrationLive,
+    McpHttpServer.DelegatedAgentToolkitRegistrationsLive,
     McpHttpServer.EngineKnowledgeToolkitRegistrationLive,
     McpHttpServer.EngineToolkitRegistrationLive,
     Layer.succeed(
@@ -184,6 +181,13 @@ it.effect("registers the built-in delegation toolkits", () =>
         "claude_capabilities",
         "claude_start",
         "claude_cancel",
+        "antigravity_capabilities",
+        "antigravity_start",
+        "antigravity_cancel",
+        "opencode_capabilities",
+        "opencode_start",
+        "opencode_cancel",
+        "opencode_respond",
         "engine_knowledge_status",
         "knowledge_search",
         "engine_knowledge_search",

@@ -211,6 +211,7 @@ export function applyServerSettingsPatch(
     cursorAgent: mcpPatch?.cursorAgent ?? current.mcp.cursorAgent,
     claudeAgent: mcpPatch?.claudeAgent ?? current.mcp.claudeAgent,
     antigravityAgent: mcpPatch?.antigravityAgent ?? current.mcp.antigravityAgent,
+    opencodeAgent: mcpPatch?.opencodeAgent ?? current.mcp.opencodeAgent,
     engine: {
       planning: enginePatch?.planning ?? current.mcp.engine.planning,
       consensus: enginePatch?.consensus ?? current.mcp.engine.consensus,

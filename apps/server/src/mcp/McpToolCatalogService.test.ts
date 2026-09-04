@@ -1,3 +1,4 @@
+import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import type { McpCapability } from "./McpInvocationContext.ts";
@@ -47,5 +48,24 @@ describe("buildMcpToolCatalog", () => {
     expect(catalog.tools).toContain("claude_start");
     expect(catalog.tools).toContain("antigravity_start");
     expect(catalog.tools.some((tool) => tool.startsWith("delegate_"))).toBe(false);
+  });
+
+  it("lists OpenCode tools when the setting and capability are on", () => {
+    const catalog = buildMcpToolCatalog({
+      capabilities: capabilities("opencode-agent"),
+      effectiveMcp: {
+        ...DEFAULT_SERVER_SETTINGS.mcp,
+        preview: false,
+        codexAgent: false,
+        cursorAgent: false,
+        claudeAgent: false,
+        antigravityAgent: false,
+        opencodeAgent: true,
+      },
+    });
+    expect(catalog.tools).toContain("opencode_capabilities");
+    expect(catalog.tools).toContain("opencode_start");
+    expect(catalog.tools).toContain("opencode_cancel");
+    expect(catalog.tools).toContain("opencode_respond");
   });
 });

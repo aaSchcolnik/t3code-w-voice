@@ -12,6 +12,7 @@ provider:
 - `cursor_start`
 - `claude_start`
 - `antigravity_start`
+- `opencode_start`
 
 When native subagent tracking is enabled for the parent provider, T3 Code omits that provider's
 start tool and tracks its native child mechanism instead. Cross-provider tools remain available.
@@ -47,7 +48,8 @@ The Subagents panel is the only child-work view. It combines provider-native chi
 delegated runs, and dynamic workflows. A spawn card in the parent transcript opens the panel, and
 the panel opens automatically when a new run starts unless that setting is disabled. Select a run
 to subscribe to its transcript and inspect its status, startup diagnostics, result, and supported
-controls. Cursor runs can ask structured questions; answer them with the run's response control.
+controls. A run that ended without returning any message is labeled Completed without result, so an
+empty result is never mistaken for success. Cursor and OpenCode runs can ask structured questions; answer them with the run's response control.
 Runs can be cancelled only by their owning parent.
 
 Questions and terminal results are delivered back to the parent durably. After starting every

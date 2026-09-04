@@ -1,4 +1,6 @@
 import {
+  DELEGATED_PROVIDERS,
+  type DelegatedRunProvider,
   type EngineDelegationRole,
   type EngineDelegationTarget,
   type ModelSelection,
@@ -20,6 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
+
+const DELEGATED_RUN_PROVIDERS = new Set<DelegatedRunProvider>(
+  Object.keys(DELEGATED_PROVIDERS) as DelegatedRunProvider[],
+);
+
+const isDelegatedRunProvider = (provider: string): provider is DelegatedRunProvider =>
+  DELEGATED_RUN_PROVIDERS.has(provider as DelegatedRunProvider);
 
 const AUTOMATIC_INSTANCE = "__automatic_instance__";
 const PROVIDER_DEFAULT_MODEL = "__provider_default_model__";
@@ -106,7 +115,9 @@ export function findDelegationReasoningDescriptor(
   return selectedModel?.capabilities?.optionDescriptors?.find(
     (descriptor): descriptor is SelectProviderOptionDescriptor =>
       descriptor.type === "select" &&
-      (descriptor.id === "effort" || descriptor.id === "reasoningEffort"),
+      (descriptor.id === "effort" ||
+        descriptor.id === "reasoningEffort" ||
+        descriptor.id === "variant"),
   );
 }
 
@@ -130,10 +141,9 @@ export function ChainEditor({
 }) {
   const providerItems = [
     ...(role === "scanner" ? [] : [{ value: "inline" as const, label: "Inline" }]),
-    { value: "cursor" as const, label: "Cursor" },
-    { value: "codex" as const, label: "Codex" },
-    { value: "claudeAgent" as const, label: "Claude" },
-    { value: "antigravity" as const, label: "Antigravity" },
+    ...Object.entries(DELEGATED_PROVIDERS)
+      .map(([value, spec]) => ({ value: value as DelegatedRunProvider, label: spec.label }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
   ];
   return (
     <FieldGroup className="w-full gap-3">
@@ -245,14 +255,8 @@ export function ChainEditor({
                   items={providerItems}
                   value={target.provider}
                   onValueChange={(provider) => {
-                    if (
-                      provider !== "inline" &&
-                      provider !== "cursor" &&
-                      provider !== "codex" &&
-                      provider !== "claudeAgent" &&
-                      provider !== "antigravity"
-                    )
-                      return;
+                    if (provider === null) return;
+                    if (provider !== "inline" && !isDelegatedRunProvider(provider)) return;
                     onChange(replaceTarget(chain, index, { provider }));
                   }}
                 >
@@ -316,7 +320,8 @@ export function ChainEditor({
                       nextModel,
                     );
                     const options = (target.options ?? []).filter(({ id, value }) => {
-                      if (id !== "effort" && id !== "reasoningEffort") return true;
+                      if (id !== "effort" && id !== "reasoningEffort" && id !== "variant")
+                        return true;
                       return (
                         id === nextReasoningDescriptor?.id &&
                         nextReasoningDescriptor.options.some((option) => option.id === value)
@@ -354,7 +359,7 @@ export function ChainEditor({
                     onValueChange={(value) => {
                       if (value === null) return;
                       const remaining = (target.options ?? []).filter(
-                        ({ id }) => id !== "effort" && id !== "reasoningEffort",
+                        ({ id }) => id !== "effort" && id !== "reasoningEffort" && id !== "variant",
                       );
                       const options =
                         value === DEFAULT_REASONING

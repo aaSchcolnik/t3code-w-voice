@@ -1,5 +1,6 @@
 import type {
   DelegationDispatchState,
+  DelegationResultCompleteness,
   ResolvedProviderOption,
   SubagentRun,
   SubagentRunDetails,
@@ -164,7 +165,7 @@ export function subagentPhaseLabel(run: SubagentRun): string {
   ) {
     return DISPATCH_LABELS[run.dispatchState];
   }
-  return subagentStatusLabel(run.status);
+  return subagentStatusLabel(run.status, run.resultCompleteness);
 }
 
 export function subagentSummaryResult(run: SubagentRun): string | null {
@@ -185,7 +186,13 @@ export function hasDetailedSubagentTranscript(quality: SubagentTranscriptQuality
   return quality === "live" || quality === "replay";
 }
 
-export function subagentStatusLabel(status: SubagentStatus): string {
+export function subagentStatusLabel(
+  status: SubagentStatus,
+  resultCompleteness?: DelegationResultCompleteness,
+): string {
+  if (status === "completed" && resultCompleteness === "none") {
+    return "Completed without result";
+  }
   switch (status) {
     case "queued":
       return "Queued";

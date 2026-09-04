@@ -71,7 +71,7 @@ export function SubagentHeader({
         )}
       >
         {active ? <LoaderCircleIcon className="size-3 animate-spin" /> : null}
-        {subagentStatusLabel(run.status)}
+        {subagentStatusLabel(run.status, run.resultCompleteness)}
       </span>
       {onCancel && run.capabilities.canCancel && active ? (
         <Button

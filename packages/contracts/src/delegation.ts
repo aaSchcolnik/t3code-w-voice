@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import { IsoDateTime, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { DelegatedRunProvider } from "./delegatedProviders.ts";
 import { ProviderOptionSelections } from "./model.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
@@ -19,12 +20,8 @@ export const DelegationRequestHash = TrimmedNonEmptyString.pipe(
 );
 export type DelegationRequestHash = typeof DelegationRequestHash.Type;
 
-export const DelegationProvider = Schema.Literals([
-  "codex",
-  "cursor",
-  "claudeAgent",
-  "antigravity",
-]);
+/** Alias of `DelegatedRunProvider` — both are persisted in run attempts. */
+export const DelegationProvider = DelegatedRunProvider;
 export type DelegationProvider = typeof DelegationProvider.Type;
 
 export const DelegationTarget = Schema.Struct({

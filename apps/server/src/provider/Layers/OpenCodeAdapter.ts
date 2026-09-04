@@ -223,7 +223,6 @@ interface OpenCodePromptAdmission {
   idleObservedAfterMessage: boolean;
   messageObserved: boolean;
   busyObserved: boolean;
-  idleStatusConfirmations: number;
   accepted: boolean;
   cancelled: boolean;
   readonly acceptance: Deferred.Deferred<void>;
@@ -381,6 +380,10 @@ export interface OpenCodeAdapterLiveOptions {
 }
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+
+/** Recovery polls before an unconfirmed prompt is failed: ~5.75s, or ~20s once its message is known. */
+const PROMPT_ADMISSION_ATTEMPTS = 5;
+const PROMPT_ADMISSION_ADMITTED_ATTEMPTS = 12;
 
 /**
  * Map a tagged OpenCodeRuntimeError produced by {@link runOpenCodeSdk} into
@@ -1255,6 +1258,25 @@ export function makeOpenCodeAdapter(
       });
     });
 
+    /** Find OpenCode's assistant reply to a prompt message, or undefined when it has not started. */
+    const lookupOpenCodePromptReply = Effect.fn("lookupOpenCodePromptReply")(function* (
+      context: OpenCodeSessionContext,
+      messageId: string,
+    ) {
+      const response = yield* runOpenCodeSdk("session.messages", (signal) =>
+        context.client.session.messages({ sessionID: context.openCodeSessionId }, { signal }),
+      ).pipe(Effect.timeout("1 second"), Effect.option);
+      if (Option.isNone(response)) {
+        return undefined;
+      }
+      for (const entry of response.value.data ?? []) {
+        if (entry.info.role === "assistant" && entry.info.parentID === messageId) {
+          return { info: entry.info, parts: entry.parts };
+        }
+      }
+      return undefined;
+    });
+
     const schedulePromptAdmissionRecovery = Effect.fn("schedulePromptAdmissionRecovery")(function* (
       context: OpenCodeSessionContext,
       raw: unknown,
@@ -1271,7 +1293,27 @@ export function makeOpenCodeAdapter(
       }
       const recover = Effect.gen(function* () {
         yield* Deferred.await(promptAdmission.acceptance);
-        for (let retryCount = 0; retryCount < 5; retryCount += 1) {
+        const superseded = Effect.gen(function* () {
+          const stopped = yield* Ref.get(context.stopped);
+          return (
+            stopped ||
+            sessions.get(context.session.threadId) !== context ||
+            context.promptAdmission !== promptAdmission ||
+            context.activeTurnId !== promptAdmission.turnId ||
+            context.promptGeneration !== promptAdmission.generation ||
+            promptAdmission.cancelled
+          );
+        });
+        for (let retryCount = 0; ; retryCount += 1) {
+          // An admitted prompt whose session never shows up as busy is usually
+          // OpenCode still loading the provider or its tools, so it gets a
+          // longer budget than a prompt whose user message never appeared.
+          const maxAttempts = promptAdmission.messageObserved
+            ? PROMPT_ADMISSION_ADMITTED_ATTEMPTS
+            : PROMPT_ADMISSION_ATTEMPTS;
+          if (retryCount >= maxAttempts) {
+            break;
+          }
           if (
             context.promptAdmission !== promptAdmission ||
             context.activeTurnId !== promptAdmission.turnId ||
@@ -1333,7 +1375,6 @@ export function makeOpenCodeAdapter(
           const isBusy = status?.type === "busy" || status?.type === "retry";
           if (isBusy) {
             promptAdmission.busyObserved = true;
-            promptAdmission.idleStatusConfirmations = 0;
             context.awaitingBusyAfterInterruption = false;
             context.promptAdmission = undefined;
             return;
@@ -1351,37 +1392,32 @@ export function makeOpenCodeAdapter(
             return;
           }
           if (isIdle && promptAdmission.messageObserved) {
-            promptAdmission.idleStatusConfirmations += 1;
-            if (promptAdmission.idleStatusConfirmations >= 2) {
+            // OpenCode drops idle sessions from the status map, so a missing
+            // entry also describes a prompt it has not started answering yet.
+            // Only a completed reply to this exact message proves the turn ended.
+            const reply = yield* lookupOpenCodePromptReply(context, promptAdmission.messageId);
+            if (yield* superseded) {
+              return;
+            }
+            if (reply !== undefined && reply.info.time.completed !== undefined) {
               context.promptAdmission = undefined;
               context.awaitingBusyAfterInterruption = false;
+              const raw = {
+                type: "session.status.recovered",
+                status: statusData,
+                messageID: reply.info.id,
+              };
+              for (const part of reply.parts) {
+                yield* emitAssistantTextDelta(context, part, promptAdmission.turnId, raw);
+              }
               yield* completeOpenCodeTurn(
                 context,
                 promptAdmission.turnId,
                 promptAdmission.generation,
-                {
-                  type: "session.status.recovered",
-                  status: statusData,
-                },
+                raw,
               );
               return;
             }
-          } else if (!isIdle) {
-            promptAdmission.idleStatusConfirmations = 0;
-          }
-          if (
-            isIdle &&
-            promptAdmission.messageObserved &&
-            promptAdmission.recoveryRaw !== undefined
-          ) {
-            context.promptAdmission = undefined;
-            context.awaitingBusyAfterInterruption = false;
-            yield* scheduleIdleReconciliation(
-              context,
-              promptAdmission.turnId,
-              promptAdmission.recoveryRaw,
-            );
-            return;
           }
 
           const delayMs = Math.min(250 * 2 ** retryCount, 2_000);
@@ -2757,7 +2793,6 @@ export function makeOpenCodeAdapter(
             idleObservedAfterMessage: false,
             messageObserved: false,
             busyObserved: false,
-            idleStatusConfirmations: 0,
             accepted: false,
             cancelled: false,
             acceptance: Deferred.makeUnsafe<void>(),

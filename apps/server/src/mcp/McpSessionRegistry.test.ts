@@ -95,6 +95,7 @@ const makeRegistry = (
       codexAgent?: boolean;
       cursorAgent?: boolean;
       antigravityAgent?: boolean;
+      opencodeAgent?: boolean;
       engine?: Partial<{
         planning: boolean;
         consensus: boolean;
@@ -367,6 +368,48 @@ it.effect("withholds Antigravity when its delegated backend is unavailable", () 
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     const resolved = yield* registry.resolve(token);
     expect([...resolved!.capabilities]).toEqual([]);
+  }),
+);
+
+it.effect("grants opencode-agent for an available instance", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      providers: [makeProvider("opencode")],
+      mcp: { preview: false, opencodeAgent: true },
+    });
+    const issued = yield* registry.issue({
+      threadId: ThreadId.make("thread-opencode"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    const resolved = yield* registry.resolve(token);
+    expect([...resolved!.capabilities]).toEqual(["opencode-agent"]);
+  }),
+);
+
+it.effect("withholds opencode-agent when the setting is off or the instance is unavailable", () =>
+  Effect.gen(function* () {
+    const settingOff = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      providers: [makeProvider("opencode")],
+      mcp: { preview: false, opencodeAgent: false },
+    });
+    const settingOffIssued = yield* settingOff.issue({
+      threadId: ThreadId.make("thread-opencode-setting-off"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const settingOffToken = settingOffIssued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    expect([...(yield* settingOff.resolve(settingOffToken))!.capabilities]).toEqual([]);
+
+    const unavailable = yield* makeRegistry(() => 1_000, fakeHttpServer, {
+      providers: [makeProvider("opencode", { availability: "unavailable" })],
+      mcp: { preview: false, opencodeAgent: true },
+    });
+    const unavailableIssued = yield* unavailable.issue({
+      threadId: ThreadId.make("thread-opencode-unavailable"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+    });
+    const unavailableToken = unavailableIssued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    expect([...(yield* unavailable.resolve(unavailableToken))!.capabilities]).toEqual([]);
   }),
 );
 

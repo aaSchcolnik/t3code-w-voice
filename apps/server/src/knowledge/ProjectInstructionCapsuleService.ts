@@ -1,4 +1,9 @@
-import type { ProviderDriverKind } from "@t3tools/contracts";
+import {
+  DELEGATED_PROVIDERS,
+  delegatedToolName,
+  type DelegatedRunProvider,
+  type ProviderDriverKind,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 
 import type { McpCapability } from "../mcp/McpInvocationContext.ts";
@@ -22,14 +27,17 @@ export interface ProjectInstructionCapsule {
   readonly text: string;
 }
 
+const hasTrackedSubagentCapability = (capabilities: ReadonlySet<McpCapability>): boolean =>
+  (
+    Object.values(DELEGATED_PROVIDERS) as ReadonlyArray<
+      (typeof DELEGATED_PROVIDERS)[DelegatedRunProvider]
+    >
+  ).some((spec) => capabilities.has(spec.capability));
+
 const capabilityGroups = (capabilities: ReadonlySet<McpCapability>): ReadonlyArray<string> => {
   const groups: string[] = [];
   if (capabilities.has("preview")) groups.push("collaborative browser");
-  if (
-    capabilities.has("codex-agent") ||
-    capabilities.has("cursor-agent") ||
-    capabilities.has("claude-agent")
-  ) {
+  if (hasTrackedSubagentCapability(capabilities)) {
     groups.push("tracked subagents");
   }
   if ([...capabilities].some((capability) => capability.startsWith("engine-"))) {
@@ -44,12 +52,13 @@ const delegationHeuristic = (
   providerDriver: ProviderDriverKind | undefined,
   nativeSubagentTracking: boolean,
 ): string | undefined => {
-  const tools = [
-    capabilities.has("codex-agent") ? "`codex_start`" : undefined,
-    capabilities.has("cursor-agent") ? "`cursor_start`" : undefined,
-    capabilities.has("claude-agent") ? "`claude_start`" : undefined,
-    capabilities.has("antigravity-agent") ? "`antigravity_start`" : undefined,
-  ].filter((tool): tool is string => tool !== undefined);
+  const tools = (
+    Object.entries(DELEGATED_PROVIDERS) as ReadonlyArray<
+      [DelegatedRunProvider, (typeof DELEGATED_PROVIDERS)[DelegatedRunProvider]]
+    >
+  ).flatMap(([provider, spec]) =>
+    capabilities.has(spec.capability) ? [`\`${delegatedToolName(provider, "start")}\``] : [],
+  );
   const native =
     nativeSubagentTracking &&
     (providerDriver === "codex" || providerDriver === "cursor" || providerDriver === "claudeAgent");

@@ -94,6 +94,12 @@ describe("subagent environment state", () => {
     expect(stale).toBe(snapshot);
     expect(subagentPhaseLabel(run)).toBe("Session starting");
     expect(subagentPhaseLabel({ ...run, status: "waiting_for_input" })).toBe("Waiting for input");
+    expect(
+      subagentPhaseLabel({ ...run, status: "completed", resultCompleteness: "terminal_message" }),
+    ).toBe("Completed");
+    expect(subagentPhaseLabel({ ...run, status: "completed", resultCompleteness: "none" })).toBe(
+      "Completed without result",
+    );
   });
 
   it("explains when native Cursor omits the child response", () => {

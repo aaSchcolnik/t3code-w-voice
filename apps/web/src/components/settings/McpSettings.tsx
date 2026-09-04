@@ -1,5 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
+  DELEGATED_PROVIDERS,
+  type DelegatedProviderSettingKey,
+  type DelegatedRunProvider,
   type EngineDelegationRole,
   type EngineDelegationSettings,
   type EngineDelegationTarget,
@@ -17,7 +20,7 @@ import { primaryServerProvidersAtom } from "../../state/server";
 import { useProjects } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { AntigravityIcon, ClaudeAI, CursorIcon, OpenAI } from "../Icons";
+import { AntigravityIcon, ClaudeAI, CursorIcon, type Icon, OpenAI, OpenCodeIcon } from "../Icons";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Field, FieldDescription, FieldLabel } from "../ui/field";
@@ -39,11 +42,24 @@ import {
 } from "./settingsLayout";
 import { ComputerUseSettingsSection } from "./ComputerUseSettings";
 
-type McpBooleanKey = "preview" | "codexAgent" | "cursorAgent" | "claudeAgent" | "antigravityAgent";
+type McpBooleanKey = "preview" | DelegatedProviderSettingKey;
+
+const DELEGATED_PROVIDER_ICONS: Record<DelegatedRunProvider, Icon> = {
+  codex: OpenAI,
+  cursor: CursorIcon,
+  claudeAgent: ClaudeAI,
+  antigravity: AntigravityIcon,
+  opencode: OpenCodeIcon,
+};
 type DelegationRoleChain = Extract<EngineDelegationRole, "scout" | "worker">;
 type GlobalDelegationRolesPatch = Partial<
   Record<EngineDelegationRole, ReadonlyArray<EngineDelegationTarget>>
 >;
+
+/** Picks "a" or "an" for provider labels such as OpenCode and Antigravity. */
+function indefiniteArticle(word: string): "a" | "an" {
+  return /^[aeiou]/i.test(word) ? "an" : "a";
+}
 
 export function withProjectDelegationRole(
   overrides: ProjectMcpOverrides | undefined,
@@ -147,25 +163,17 @@ export function McpSettingsPanel() {
     (project) => `${project.environmentId}:${project.id}` === scope,
   );
   const projectOverrides = selectedProject?.mcpOverrides ?? undefined;
-  const codexAvailable = providerEntries.some(
-    (entry) =>
-      entry.driverKind === "codex" && entry.enabled && entry.installed && entry.isAvailable,
-  );
-  const cursorAvailable = providerEntries.some(
-    (entry) =>
-      entry.driverKind === "cursor" && entry.enabled && entry.installed && entry.isAvailable,
-  );
-  const claudeAvailable = providerEntries.some(
-    (entry) =>
-      entry.driverKind === "claudeAgent" && entry.enabled && entry.installed && entry.isAvailable,
-  );
-  const antigravityAvailable = providerEntries.some(
-    (entry) =>
-      entry.driverKind === "antigravity" &&
-      entry.enabled &&
-      entry.installed &&
-      entry.isAvailable &&
-      entry.snapshot.delegation?.available !== false,
+  const isDelegatedProviderAvailable = (provider: DelegatedRunProvider) =>
+    providerEntries.some(
+      (entry) =>
+        entry.driverKind === provider &&
+        entry.enabled &&
+        entry.installed &&
+        entry.isAvailable &&
+        entry.snapshot.delegation?.available !== false,
+    );
+  const delegatedProviderRows = Object.entries(DELEGATED_PROVIDERS).sort(([, left], [, right]) =>
+    left.label.localeCompare(right.label),
   );
 
   const updateMcp = (patch: NonNullable<ServerSettingsPatch["mcp"]>) =>
@@ -346,108 +354,40 @@ export function McpSettingsPanel() {
             />
           }
         />
-        <SettingsRow
-          title={
-            <span className="inline-flex items-center gap-2">
-              <ClaudeAI className="size-4 shrink-0" aria-hidden />
-              Claude Agent
-            </span>
-          }
-          description="Lets the current agent delegate one-shot tasks to Claude as tracked subagents."
-          status={
-            claudeAvailable
-              ? "Available for new sessions"
-              : "Not available: configure and enable a Claude provider under Providers."
-          }
-          control={
-            <McpBooleanControl
-              projectScoped={selectedProject !== undefined}
-              globalValue={settings.mcp.claudeAgent}
-              projectValue={projectOverrides?.claudeAgent}
-              disabled={!claudeAvailable}
-              label="Enable Claude Agent MCP toolkit"
-              onGlobalChange={(claudeAgent) => updateMcp({ claudeAgent })}
-              onProjectChange={(claudeAgent) => updateProjectBoolean("claudeAgent", claudeAgent)}
-            />
-          }
-        />
-        <SettingsRow
-          title={
-            <span className="inline-flex items-center gap-2">
-              <AntigravityIcon className="size-4 shrink-0" aria-hidden />
-              Antigravity Agent
-            </span>
-          }
-          description="Lets the current agent delegate one-shot tasks to the official Antigravity CLI as tracked subagents."
-          status={
-            antigravityAvailable
-              ? "Available for new sessions"
-              : "Not available: configure and enable an Antigravity provider under Providers."
-          }
-          control={
-            <McpBooleanControl
-              projectScoped={selectedProject !== undefined}
-              globalValue={settings.mcp.antigravityAgent}
-              projectValue={projectOverrides?.antigravityAgent}
-              disabled={!antigravityAvailable}
-              label="Enable Antigravity Agent MCP toolkit"
-              onGlobalChange={(antigravityAgent) => updateMcp({ antigravityAgent })}
-              onProjectChange={(antigravityAgent) =>
-                updateProjectBoolean("antigravityAgent", antigravityAgent)
+        {delegatedProviderRows.map(([provider, spec]) => {
+          const delegatedProvider = provider as DelegatedRunProvider;
+          const ProviderIcon = DELEGATED_PROVIDER_ICONS[delegatedProvider];
+          const available = isDelegatedProviderAvailable(delegatedProvider);
+          const { settingKey, label } = spec;
+          return (
+            <SettingsRow
+              key={provider}
+              title={
+                <span className="inline-flex items-center gap-2">
+                  <ProviderIcon className="size-4 shrink-0" aria-hidden />
+                  {label} Agent
+                </span>
+              }
+              description={`Lets the current agent delegate one-shot tasks to ${label} as tracked subagents.`}
+              status={
+                available
+                  ? "Available for new sessions"
+                  : `Not available: configure and enable ${indefiniteArticle(label)} ${label} provider under Providers.`
+              }
+              control={
+                <McpBooleanControl
+                  projectScoped={selectedProject !== undefined}
+                  globalValue={settings.mcp[settingKey]}
+                  projectValue={projectOverrides?.[settingKey]}
+                  disabled={!available}
+                  label={`Enable ${label} Agent MCP toolkit`}
+                  onGlobalChange={(value) => updateMcp({ [settingKey]: value })}
+                  onProjectChange={(value) => updateProjectBoolean(settingKey, value)}
+                />
               }
             />
-          }
-        />
-        <SettingsRow
-          title={
-            <span className="inline-flex items-center gap-2">
-              <OpenAI className="size-4 shrink-0" aria-hidden />
-              Codex Agent
-            </span>
-          }
-          description="Lets the current agent delegate one-shot tasks to Codex as tracked subagents."
-          status={
-            codexAvailable
-              ? "Available for new sessions"
-              : "Not available: configure and enable a Codex provider under Providers."
-          }
-          control={
-            <McpBooleanControl
-              projectScoped={selectedProject !== undefined}
-              globalValue={settings.mcp.codexAgent}
-              projectValue={projectOverrides?.codexAgent}
-              disabled={!codexAvailable}
-              label="Enable Codex Agent MCP toolkit"
-              onGlobalChange={(codexAgent) => updateMcp({ codexAgent })}
-              onProjectChange={(codexAgent) => updateProjectBoolean("codexAgent", codexAgent)}
-            />
-          }
-        />
-        <SettingsRow
-          title={
-            <span className="inline-flex items-center gap-2">
-              <CursorIcon className="size-4 shrink-0" aria-hidden />
-              Cursor Agent
-            </span>
-          }
-          description="Lets the current agent delegate one-shot tasks to Cursor as tracked subagents."
-          status={
-            cursorAvailable
-              ? "Available for new sessions"
-              : "Not available: configure and enable a Cursor provider under Providers."
-          }
-          control={
-            <McpBooleanControl
-              projectScoped={selectedProject !== undefined}
-              globalValue={settings.mcp.cursorAgent}
-              projectValue={projectOverrides?.cursorAgent}
-              disabled={!cursorAvailable}
-              label="Enable Cursor Agent MCP toolkit"
-              onGlobalChange={(cursorAgent) => updateMcp({ cursorAgent })}
-              onProjectChange={(cursorAgent) => updateProjectBoolean("cursorAgent", cursorAgent)}
-            />
-          }
-        />
+          );
+        })}
       </SettingsSection>
       <ComputerUseSettingsSection
         {...(selectedProject

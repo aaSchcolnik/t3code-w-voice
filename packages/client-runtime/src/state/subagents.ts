@@ -1,6 +1,7 @@
 import {
   WS_METHODS,
   type DelegationDispatchState,
+  type DelegationResultCompleteness,
   type SubagentRun,
   type SubagentRunDetails,
   type SubagentRunStreamEvent,
@@ -90,7 +91,13 @@ export function isActiveSubagentStatus(status: SubagentStatus): boolean {
   return !TERMINAL_SUBAGENT_STATUSES.has(status);
 }
 
-export function subagentStatusLabel(status: SubagentStatus): string {
+export function subagentStatusLabel(
+  status: SubagentStatus,
+  resultCompleteness?: DelegationResultCompleteness,
+): string {
+  if (status === "completed" && resultCompleteness === "none") {
+    return "Completed without result";
+  }
   switch (status) {
     case "queued":
       return "Queued";
@@ -122,7 +129,7 @@ export function subagentPhaseLabel(run: SubagentRun): string {
   ) {
     return DISPATCH_LABELS[run.dispatchState];
   }
-  return subagentStatusLabel(run.status);
+  return subagentStatusLabel(run.status, run.resultCompleteness);
 }
 
 export function subagentUnavailableResultMessage(run: SubagentRun): string | null {

@@ -64,6 +64,16 @@ describe("trackedDelegationInstructions", () => {
     expect(instructions).not.toContain("1. Codex");
     expect(instructions).not.toContain("delegate_start");
   });
+
+  it("renders respond guidance for every question-capable provider", () => {
+    const instructions = trackedDelegationInstructions(
+      capabilities("cursor-agent", "opencode-agent"),
+      ProviderDriverKind.make("codex"),
+    );
+    expect(instructions).toContain("cursor_respond");
+    expect(instructions).toContain("OpenCode question");
+    expect(instructions).toContain("opencode_respond");
+  });
 });
 
 describe("detectUntrackedDelegationAttempt", () => {
@@ -157,6 +167,23 @@ describe("detectUntrackedDelegationAttempt", () => {
         "Bash",
         { command: "agy --version && agy models" },
         capabilities("antigravity-agent"),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("routes headless OpenCode run through the tracked tool without blocking serve", () => {
+    expect(
+      detectUntrackedDelegationAttempt(
+        "Bash",
+        { command: "opencode run --model gpt-4.1 'inspect this'" },
+        capabilities("opencode-agent"),
+      ),
+    ).toEqual({ provider: "opencode", trackedTool: "opencode_start" });
+    expect(
+      detectUntrackedDelegationAttempt(
+        "Bash",
+        { command: "opencode serve && opencode --version" },
+        capabilities("opencode-agent"),
       ),
     ).toBeUndefined();
   });

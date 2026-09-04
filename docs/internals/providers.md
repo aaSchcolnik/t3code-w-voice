@@ -44,6 +44,16 @@ assistant text. Persisted messages keep their serialized links.
 Adding a driver means writing the driver plus adapter and adding it to `BUILT_IN_DRIVERS`. No
 orchestration, contract, or client change is required for the common case.
 
+### Delegated provider table
+
+[`DELEGATED_PROVIDERS`][delegated-providers] in `@t3tools/contracts` is the single source of truth
+for tracked subagent providers. Each entry defines the human label, MCP tool prefix, capability id,
+MCP settings key, and whether the provider supports structured questions during delegated runs.
+Server catalogs, MCP toolkits, settings defaults, and web MCP/delegation UI derive from this table
+instead of hard-coded provider lists.
+
+[delegated-providers]: ../../packages/contracts/src/delegatedProviders.ts
+
 ### Grok health check
 
 `checkGrokProviderStatus` never opens an ACP session. It runs `grok --version`, then `grok models`

@@ -111,6 +111,23 @@ const cursorSnapshot = {
   ],
 } as ServerProvider;
 
+const opencodeInstanceId = ProviderInstanceId.make("opencode-work");
+const opencodeSnapshot = {
+  ...codexSnapshot,
+  instanceId: opencodeInstanceId,
+  driver: ProviderDriverKind.make("opencode"),
+  models: [
+    {
+      slug: "gpt-4.1",
+      name: "GPT 4.1",
+      isCustom: false,
+      capabilities: {
+        optionDescriptors: [],
+      },
+    },
+  ],
+} as ServerProvider;
+
 const providerRegistryStub = (providers: ReadonlyArray<ServerProvider>) =>
   Layer.succeed(
     ProviderRegistry,
@@ -445,6 +462,11 @@ it.effect("resolves the delegated instance and model, and reports capabilities",
     const cursorCapabilities = yield* service.capabilities("cursor");
     expect(cursorCapabilities.available).toBe(false);
     expect(cursorCapabilities.reason).toContain("No cursor provider instance is configured");
+    expect(cursorCapabilities.supportsQuestions).toBe(true);
+
+    const opencodeCapabilities = yield* service.capabilities("opencode");
+    expect(opencodeCapabilities.available).toBe(false);
+    expect(opencodeCapabilities.supportsQuestions).toBe(true);
 
     const cursorStart = yield* service
       .start({ provider: "cursor", parentThreadId, task: "Do something" })
@@ -1238,6 +1260,74 @@ it.effect("wakes for structured input without waiting for sibling runs", () =>
     yield* Effect.yieldNow;
     expect(serverWakeCommands(harness.commands)).toHaveLength(1);
   }).pipe(Effect.scoped, Effect.provide(streamingTestLayer), Effect.scoped),
+);
+
+const opencodeStreamingTestLayer = Layer.mergeAll(
+  Layer.succeed(ProjectionSnapshotQuery, stubbedQuery),
+  providerRegistryStub([opencodeSnapshot]),
+  subagentRunLayer,
+  configLayer,
+  ServerSettings.layerTest(),
+  NodeServices.layer,
+  repositoryLayer,
+);
+
+it.effect("names opencode_respond in wake text for an OpenCode run", () =>
+  Effect.gen(function* () {
+    const commands: OrchestrationCommand[] = [];
+    const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+    const repository = yield* DelegatedRunRepository.DelegatedRunRepository;
+    const service = yield* DelegatedRunService.__testing.make.pipe(
+      Effect.provideService(ProviderService, makeStubbedProviderService(Stream.fromPubSub(events))),
+      Effect.provideService(OrchestrationEngineService, makeStubbedEngine(commands)),
+    );
+    const run = yield* service.start({
+      provider: "opencode",
+      parentThreadId,
+      task: "Inspect package tooling",
+      model: "gpt-4.1",
+    });
+    yield* waitForStatus(service, run.id, "running");
+    const childThreadId = ThreadId.make(run.providerThreadId!);
+    const publish = (event: ProviderRuntimeEvent) =>
+      PubSub.publish(events, event).pipe(
+        Effect.andThen(Effect.yieldNow),
+        Effect.andThen(repository.drain),
+        Effect.andThen(Effect.yieldNow),
+      );
+
+    yield* publish(
+      makeEvent({
+        type: "turn.completed",
+        threadId: parentThreadId,
+        turnId: TurnId.make("parent-turn"),
+        payload: { state: "completed" },
+      } as never),
+    );
+    yield* publish(
+      makeEvent({
+        type: "user-input.requested",
+        threadId: childThreadId,
+        turnId: TurnId.make("child-turn"),
+        requestId: "request-1",
+        payload: {
+          questions: [
+            {
+              id: "scope",
+              header: "Scope",
+              question: "Which agent persona should I use?",
+              options: [{ label: "Plan", description: "Read-only planning." }],
+              multiSelect: false,
+            },
+          ],
+        },
+      } as never),
+    );
+
+    const wakes = yield* waitForWakeCount(commands, 1);
+    expect(wakes[0]!.message.text).toContain("opencode_respond");
+    expect(wakes[0]!.message.text).toContain(`runId '${run.id}'`);
+  }).pipe(Effect.scoped, Effect.provide(opencodeStreamingTestLayer), Effect.scoped),
 );
 
 it.effect("restores an unacked wake when the parent turn completes without turn.started", () =>

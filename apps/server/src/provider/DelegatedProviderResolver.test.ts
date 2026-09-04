@@ -82,6 +82,53 @@ const makeCodexSnapshot = (): ServerProvider =>
     ],
   });
 
+const openCodeCapabilities = {
+  optionDescriptors: [
+    {
+      id: "variant",
+      label: "Reasoning",
+      type: "select" as const,
+      options: [
+        { id: "low", label: "Low" },
+        { id: "medium", label: "Medium", isDefault: true },
+        { id: "high", label: "High" },
+        { id: "xhigh", label: "Extra High" },
+      ],
+      currentValue: "medium",
+    },
+    {
+      id: "agent",
+      label: "Agent",
+      type: "select" as const,
+      options: [
+        { id: "build", label: "Build", isDefault: true },
+        { id: "plan", label: "Plan" },
+      ],
+      currentValue: "build",
+    },
+  ],
+};
+
+const makeOpenCodeSnapshot = (): ServerProvider =>
+  makeSnapshot({
+    instanceId: "opencode",
+    driver: ProviderDriverKind.make("opencode"),
+    models: [
+      {
+        slug: "openai/gpt-5",
+        name: "GPT 5",
+        isCustom: false,
+        capabilities: openCodeCapabilities,
+      },
+      {
+        slug: "anthropic/claude-sonnet",
+        name: "Claude Sonnet",
+        isCustom: false,
+        capabilities: openCodeCapabilities,
+      },
+    ],
+  });
+
 describe("resolveDelegatedProvider", () => {
   it("resolves the default cursor instance and default model", () => {
     const result = resolveDelegatedProvider({
@@ -386,6 +433,46 @@ describe("resolveDelegatedProvider", () => {
     expect(result.value.requestedOptions).toBeUndefined();
     expect(result.value.resolvedOptions).toEqual([{ id: "serviceTier", value: "flex" }]);
   });
+
+  it("accepts OpenCode agent and variant option selections", () => {
+    const result = resolveDelegatedProvider({
+      providers: [makeOpenCodeSnapshot()],
+      provider: "opencode",
+      options: [
+        { id: "agent", value: "plan" },
+        { id: "variant", value: "high" },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.instance.instanceId).toBe("opencode");
+    expect(result.value.resolvedModel).toBe("openai/gpt-5");
+    expect(result.value.resolvedOptions).toEqual([
+      { id: "agent", value: "plan" },
+      { id: "variant", value: "high" },
+    ]);
+    expect(result.value.modelSelection).toEqual({
+      instanceId: "opencode",
+      model: "openai/gpt-5",
+      options: [
+        { id: "agent", value: "plan" },
+        { id: "variant", value: "high" },
+      ],
+    });
+  });
+
+  it("rejects unknown OpenCode agent options", () => {
+    const result = resolveDelegatedProvider({
+      providers: [makeOpenCodeSnapshot()],
+      provider: "opencode",
+      options: [{ id: "agent", value: "explore" }],
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      reasonCode: "model_unavailable",
+      message: expect.stringContaining("'build', 'plan'"),
+    });
+  });
 });
 
 describe("describeDelegatedProviderCapabilities", () => {
@@ -450,5 +537,34 @@ describe("describeDelegatedProviderCapabilities", () => {
     expect(capabilities.available).toBe(false);
     expect(capabilities.reason).toContain("No codex provider instance is configured");
     expect(capabilities.instances).toHaveLength(0);
+  });
+
+  it("reports OpenCode models and option descriptors", () => {
+    const capabilities = describeDelegatedProviderCapabilities({
+      providers: [makeOpenCodeSnapshot()],
+      provider: "opencode",
+      supportsCancellation: true,
+      supportsQuestions: false,
+    });
+    expect(capabilities.available).toBe(true);
+    expect(capabilities.instances).toHaveLength(1);
+    expect(capabilities.instances[0]).toMatchObject({
+      providerInstanceId: "opencode",
+      available: true,
+      models: ["openai/gpt-5", "anthropic/claude-sonnet"],
+      defaultModel: "openai/gpt-5",
+      modelDetails: [
+        {
+          model: "openai/gpt-5",
+          displayName: "GPT 5",
+          options: openCodeCapabilities.optionDescriptors,
+        },
+        {
+          model: "anthropic/claude-sonnet",
+          displayName: "Claude Sonnet",
+          options: openCodeCapabilities.optionDescriptors,
+        },
+      ],
+    });
   });
 });

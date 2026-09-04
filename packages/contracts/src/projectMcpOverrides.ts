@@ -1,11 +1,12 @@
 import * as Schema from "effect/Schema";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { DelegatedRunProvider } from "./delegatedProviders.ts";
 import { ProviderOptionSelections } from "./model.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 const ProjectDelegationTarget = Schema.Struct({
-  provider: Schema.Literals(["codex", "cursor", "claudeAgent", "antigravity", "inline"]),
+  provider: Schema.Union([DelegatedRunProvider, Schema.Literal("inline")]),
   providerInstanceId: Schema.optional(ProviderInstanceId),
   model: Schema.optional(TrimmedNonEmptyString),
   options: Schema.optional(ProviderOptionSelections),
@@ -47,6 +48,7 @@ export const ProjectMcpOverrides = Schema.Struct({
   cursorAgent: Schema.optional(Schema.Boolean),
   claudeAgent: Schema.optional(Schema.Boolean),
   antigravityAgent: Schema.optional(Schema.Boolean),
+  opencodeAgent: Schema.optional(Schema.Boolean),
   skills: Schema.optional(ProjectSkillOverrides),
   engine: Schema.optional(
     Schema.Struct({

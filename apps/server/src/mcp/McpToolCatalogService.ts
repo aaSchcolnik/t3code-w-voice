@@ -1,4 +1,10 @@
-import type { McpSettings, ProviderDriverKind } from "@t3tools/contracts";
+import {
+  DELEGATED_PROVIDERS,
+  delegatedToolName,
+  type DelegatedRunProvider,
+  type McpSettings,
+  type ProviderDriverKind,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
@@ -35,12 +41,26 @@ const PREVIEW_TOOLS = [
   "preview_recording_stop",
 ] as const;
 
-const DELEGATION_TOOLS = {
-  "codex-agent": ["codex_capabilities", "codex_start", "codex_cancel"],
-  "cursor-agent": ["cursor_capabilities", "cursor_start", "cursor_cancel", "cursor_respond"],
-  "claude-agent": ["claude_capabilities", "claude_start", "claude_cancel"],
-  "antigravity-agent": ["antigravity_capabilities", "antigravity_start", "antigravity_cancel"],
-} as const satisfies Partial<Record<McpCapability, ReadonlyArray<string>>>;
+const DELEGATION_TOOLS = Object.fromEntries(
+  Object.entries(DELEGATED_PROVIDERS).map(([provider, spec]) => [
+    spec.capability,
+    [
+      delegatedToolName(provider as DelegatedRunProvider, "capabilities"),
+      delegatedToolName(provider as DelegatedRunProvider, "start"),
+      delegatedToolName(provider as DelegatedRunProvider, "cancel"),
+      ...(spec.supportsQuestions
+        ? [delegatedToolName(provider as DelegatedRunProvider, "respond")]
+        : []),
+    ],
+  ]),
+) as Partial<Record<McpCapability, ReadonlyArray<string>>>;
+
+const DELEGATION_SETTING_BY_CAPABILITY = Object.fromEntries(
+  Object.values(DELEGATED_PROVIDERS).map((spec) => [spec.capability, spec.settingKey]),
+) as Record<
+  (typeof DELEGATED_PROVIDERS)[DelegatedRunProvider]["capability"],
+  (typeof DELEGATED_PROVIDERS)[DelegatedRunProvider]["settingKey"]
+>;
 
 const ENGINE_WORKFLOW_TOOLS = {
   "engine-planning": ["engine_plan_brief", "engine_plan"],
@@ -87,14 +107,6 @@ const settingAllows = (capability: McpCapability, settings: McpSettings | undefi
   switch (capability) {
     case "preview":
       return settings.preview;
-    case "codex-agent":
-      return settings.codexAgent;
-    case "cursor-agent":
-      return settings.cursorAgent;
-    case "claude-agent":
-      return settings.claudeAgent;
-    case "antigravity-agent":
-      return settings.antigravityAgent;
     case "engine-planning":
       return settings.engine.planning;
     case "engine-consensus":
@@ -111,6 +123,13 @@ const settingAllows = (capability: McpCapability, settings: McpSettings | undefi
       return settings.engine.typescript;
     case "engine-knowledge":
       return true;
+    default: {
+      const settingKey =
+        DELEGATION_SETTING_BY_CAPABILITY[
+          capability as (typeof DELEGATED_PROVIDERS)[DelegatedRunProvider]["capability"]
+        ];
+      return settingKey === undefined ? false : settings[settingKey];
+    }
   }
 };
 

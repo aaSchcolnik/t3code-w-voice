@@ -1,5 +1,6 @@
 import {
   CommandId,
+  DELEGATED_PROVIDERS,
   type EngineDelegationSettings,
   type EngineDelegationTarget,
   KnowledgeError,
@@ -66,12 +67,9 @@ const bootstrapWorkflow = `# Implementation Engine knowledge bootstrap
 
 Keep evidence in summaries. Do not write bootstrap files into the repository.`;
 
-const providerCapability = {
-  codex: "codex-agent",
-  cursor: "cursor-agent",
-  claudeAgent: "claude-agent",
-  antigravity: "antigravity-agent",
-} as const;
+const providerCapability = Object.fromEntries(
+  Object.entries(DELEGATED_PROVIDERS).map(([provider, spec]) => [provider, spec.capability]),
+) as Record<Exclude<EngineDelegationTarget["provider"], "inline">, McpCapability>;
 
 const targetAvailable = (
   target: EngineDelegationTarget,
@@ -87,12 +85,19 @@ const availableDelegationProviders = (
   providerDriver?: ProviderDriverKind,
 ) => {
   const providers = new Set<EngineDelegationTarget["provider"]>(["inline"]);
-  if (providerDriver === "claudeAgent" || capabilities.has("claude-agent")) {
-    providers.add("claudeAgent");
+  for (const [provider, spec] of Object.entries(DELEGATED_PROVIDERS) as ReadonlyArray<
+    [
+      Exclude<EngineDelegationTarget["provider"], "inline">,
+      (typeof DELEGATED_PROVIDERS)[keyof typeof DELEGATED_PROVIDERS],
+    ]
+  >) {
+    if (
+      (provider === "claudeAgent" && providerDriver === "claudeAgent") ||
+      capabilities.has(spec.capability)
+    ) {
+      providers.add(provider);
+    }
   }
-  if (capabilities.has("codex-agent")) providers.add("codex");
-  if (capabilities.has("cursor-agent")) providers.add("cursor");
-  if (capabilities.has("antigravity-agent")) providers.add("antigravity");
   return providers;
 };
 
