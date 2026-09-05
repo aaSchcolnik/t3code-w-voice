@@ -20,6 +20,8 @@ effectIt.layer(NodeServices.layer)("dispatchServerTurnStart", (it) => {
             return { sequence: 42 };
           }),
         readEvents: () => Stream.empty,
+        readThreadEvents: () => Stream.empty,
+        getThreadReplayStats: () => Effect.die("unused"),
         streamDomainEvents: Stream.empty,
         subscribeDomainEvents: Effect.succeed(Stream.empty),
         latestSequence: Effect.succeed(0),

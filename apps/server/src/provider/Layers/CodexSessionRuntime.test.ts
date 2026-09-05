@@ -15,11 +15,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
-import {
-  buildCodexDeveloperInstructions,
-  codexDefaultModeDeveloperInstructions,
-  codexPlanModeDeveloperInstructions,
-} from "../CodexDeveloperInstructions.ts";
+import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import {
   buildTurnStartParams,
@@ -537,6 +533,19 @@ describe("buildCodexDeveloperInstructions", () => {
     NodeAssert.match(instructions, /as gpt-5\.3-codex with high reasoning effort/);
   });
 
+  it("describes Markdown media support in the runtime context in both modes", () => {
+    for (const mode of ["default", "plan"] as const) {
+      const instructions = buildCodexDeveloperInstructions(mode, {
+        model: "gpt-5.3-codex",
+        reasoningEffort: "high",
+      });
+      NodeAssert.match(
+        instructions,
+        /<runtime_info>.*embed images and videos.*Markdown.*<\/runtime_info>/,
+      );
+    }
+  });
+
   it("includes runtime info alongside plan mode instructions", () => {
     const instructions = buildCodexDeveloperInstructions("plan", {
       model: "gpt-5.3-codex",
@@ -576,11 +585,11 @@ describe("buildCodexDeveloperInstructions", () => {
 });
 
 describe("T3 browser developer instructions", () => {
+  const runtime = { model: "gpt-5.3-codex", reasoningEffort: "high" };
+
   it("prefers the product-native preview tools in both collaboration modes", () => {
-    for (const instructions of [
-      codexDefaultModeDeveloperInstructions(true),
-      codexPlanModeDeveloperInstructions(true),
-    ]) {
+    for (const mode of ["default", "plan"] as const) {
+      const instructions = buildCodexDeveloperInstructions(mode, runtime, undefined, true);
       NodeAssert.match(instructions, /t3-code/);
       NodeAssert.match(instructions, /preview_status/);
       NodeAssert.match(instructions, /preview_open/);
@@ -589,10 +598,8 @@ describe("T3 browser developer instructions", () => {
   });
 
   it("omits the browser block entirely when the preview tools are not attached", () => {
-    for (const instructions of [
-      codexDefaultModeDeveloperInstructions(false),
-      codexPlanModeDeveloperInstructions(false),
-    ]) {
+    for (const mode of ["default", "plan"] as const) {
+      const instructions = buildCodexDeveloperInstructions(mode, runtime, undefined, false);
       NodeAssert.doesNotMatch(instructions, /preview_status/);
       NodeAssert.doesNotMatch(instructions, /preview_open/);
       NodeAssert.doesNotMatch(instructions, /T3 Code collaborative browser/);

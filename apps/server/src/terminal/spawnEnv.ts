@@ -1,3 +1,5 @@
+import { expandHomePath } from "../pathExpansion.ts";
+
 const TERMINAL_ENV_BLOCKLIST = new Set([
   "PORT",
   "ELECTRON_RENDERER_PORT",
@@ -218,8 +220,12 @@ export function createTerminalSpawnEnv(
   }
   if (runtimeEnv) {
     for (const [key, value] of Object.entries(runtimeEnv)) {
-      spawnEnv[key] = value;
+      spawnEnv[key] =
+        key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR" ? expandHomePath(value) : value;
     }
+  }
+  if (spawnEnv.COLORTERM === undefined || spawnEnv.COLORTERM === "") {
+    spawnEnv.COLORTERM = "truecolor";
   }
   return stripAppImageRuntimeEnv(spawnEnv);
 }

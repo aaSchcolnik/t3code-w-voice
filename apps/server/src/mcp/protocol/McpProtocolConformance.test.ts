@@ -177,7 +177,7 @@ describe("released Effect MCP transport decision", () => {
       expect(workspace).toContain("effect: 4.0.0-beta.103");
       expect(lockfile).toContain("'@anthropic-ai/claude-agent-sdk':");
       expect(lockfile).toContain(
-        "version: 0.3.170(@anthropic-ai/sdk@0.93.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0",
+        "version: 0.3.260(@anthropic-ai/sdk@0.93.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0",
       );
       expect(effectMcpProtocol).toContain('protocolVersion: "2025-06-18"');
       expect(effectMcpProtocol).not.toContain(MCP_STABLE_PROTOCOL_VERSION);

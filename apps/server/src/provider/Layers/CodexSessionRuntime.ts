@@ -199,6 +199,7 @@ export interface CodexSessionRuntimeShape {
   readonly sendTurn: (
     input: CodexSessionRuntimeSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, CodexSessionRuntimeError>;
+  readonly compactThread: Effect.Effect<void, CodexSessionRuntimeError>;
   readonly interruptTurn: (turnId?: TurnId) => Effect.Effect<void, CodexSessionRuntimeError>;
   readonly interruptChildTurn: (
     providerThreadId: string,
@@ -1295,7 +1296,7 @@ export const makeCodexSessionRuntime = (
       });
 
     const replayPersistedSubagents = Effect.fn("replayPersistedSubagents")(function* (
-      rootThread: EffectCodexSchema.V2ThreadStartResponse["thread"],
+      rootThread: CodexThreadOpenResponse["thread"],
     ) {
       const discovered: EffectCodexSchema.V2ThreadListResponse["data"][number][] = [];
       let cursor: string | undefined;
@@ -2454,6 +2455,10 @@ export const makeCodexSessionRuntime = (
     return {
       start,
       getSession: Ref.get(sessionRef),
+      compactThread: Effect.gen(function* () {
+        const providerThreadId = yield* readProviderThreadId;
+        yield* client.request("thread/compact/start", { threadId: providerThreadId });
+      }),
       sendTurn: (input) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;

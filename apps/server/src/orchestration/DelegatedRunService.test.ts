@@ -161,6 +161,7 @@ const makeStubbedProviderService = (
         updatedAt: now,
       }),
     sendTurn: ({ threadId }) => Effect.succeed({ threadId, turnId: TurnId.make("child-turn") }),
+    compactThread: () => Effect.die("unused"),
     interruptTurn: () => Effect.void,
     stopSession: () => onStopSession,
     listSessions: () => Effect.succeed([]),
@@ -180,6 +181,8 @@ const makeStubbedEngine = (
 ) =>
   OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
+    readThreadEvents: () => Stream.empty,
+    getThreadReplayStats: () => Effect.die("unused"),
     streamDomainEvents,
     subscribeDomainEvents: Effect.succeed(streamDomainEvents),
     latestSequence: Effect.sync(() => commands.length),
@@ -604,6 +607,7 @@ it.effect("starts, projects, and cancels a delegated run", () => {
         updatedAt: now,
       }),
     sendTurn: ({ threadId }) => Effect.succeed({ threadId, turnId: TurnId.make("child-turn") }),
+    compactThread: () => Effect.die("unused"),
     interruptTurn: () => Effect.void,
     stopSession: () => Effect.void,
     listSessions: () => Effect.succeed([]),
@@ -618,6 +622,8 @@ it.effect("starts, projects, and cancels a delegated run", () => {
   });
   const engine = OrchestrationEngineService.of({
     readEvents: () => Stream.empty,
+    readThreadEvents: () => Stream.empty,
+    getThreadReplayStats: () => Effect.die("unused"),
     streamDomainEvents: Stream.empty,
     subscribeDomainEvents: Effect.succeed(Stream.empty),
     latestSequence: Effect.sync(() => commands.length),
@@ -1621,6 +1627,8 @@ it.effect("restores a wake when server turn-start dispatch is rejected", () =>
         OrchestrationEngineService,
         OrchestrationEngineService.of({
           readEvents: () => Stream.empty,
+          readThreadEvents: () => Stream.empty,
+          getThreadReplayStats: () => Effect.die("unused"),
           streamDomainEvents: Stream.empty,
           subscribeDomainEvents: Effect.succeed(Stream.empty),
           latestSequence: Effect.sync(() => commands.length),

@@ -101,6 +101,11 @@ export interface ProjectionThreadMessageRepositoryShape {
     input: ListProjectionThreadMessagesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadMessage>, ProjectionRepositoryError>;
 
+  /** Read the latest user-message timestamp without loading message bodies. */
+  readonly getLatestUserMessageAt: (
+    input: ListProjectionThreadMessagesInput,
+  ) => Effect.Effect<ProjectionThreadMessage["createdAt"] | null, ProjectionRepositoryError>;
+
   /**
    * List terminal commands whose process state cannot survive a server restart.
    */

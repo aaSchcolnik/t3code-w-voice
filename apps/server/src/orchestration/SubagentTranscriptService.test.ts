@@ -43,6 +43,7 @@ const makeProviderServiceStub = (events: Stream.Stream<ProviderRuntimeEvent>) =>
   ProviderService.of({
     startSession: () => Effect.die("unused"),
     sendTurn: () => Effect.die("unused"),
+    compactThread: () => Effect.die("unused"),
     interruptTurn: () => Effect.die("unused"),
     stopSession: () => Effect.void,
     listSessions: () => Effect.succeed([]),

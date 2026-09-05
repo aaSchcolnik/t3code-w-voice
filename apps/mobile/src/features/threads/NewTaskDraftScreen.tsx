@@ -373,6 +373,7 @@ export function NewTaskDraftScreen(props: {
         : (flow.selectedWorktreePath ?? selectedProject?.workspaceRoot)) || null,
     selectedProviderStatus: flow.selectedProviderStatus,
     hasThread: false,
+    hasCompactableConversation: false,
     enabled: isComposerFocused && !isComposerInteractionLocked,
     onChangeDraftMessage: flow.setPrompt,
     onUpdateInteractionMode: flow.planModeEnabled ? flow.setInteractionMode : undefined,
@@ -958,7 +959,7 @@ export function NewTaskDraftScreen(props: {
     ) {
       Alert.alert(
         "Antigravity model unavailable",
-        "Open model settings to finish setup or choose another model.",
+        "Set up Antigravity on web or desktop, or choose another model.",
       );
       return;
     }
