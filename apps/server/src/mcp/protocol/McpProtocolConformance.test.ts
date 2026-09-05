@@ -170,24 +170,24 @@ describe("released Effect MCP transport decision", () => {
         fileSystem.readFileString(path.join(workspaceRoot, relativePath));
       const workspace = yield* readWorkspaceFile("pnpm-workspace.yaml");
       const lockfile = yield* readWorkspaceFile("pnpm-lock.yaml");
-      const effectMcpServer = yield* readWorkspaceFile(
-        ".repos/effect-smol/packages/effect/src/unstable/ai/McpServer.ts",
+      const effectMcpProtocol = yield* readWorkspaceFile(
+        ".repos/effect-smol/packages/effect/src/unstable/ai/McpProtocol.ts",
       );
 
-      expect(workspace).toContain("effect: 4.0.0-beta.102");
+      expect(workspace).toContain("effect: 4.0.0-beta.103");
       expect(lockfile).toContain("'@anthropic-ai/claude-agent-sdk':");
       expect(lockfile).toContain(
         "version: 0.3.170(@anthropic-ai/sdk@0.93.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0",
       );
-      expect(effectMcpServer).toContain('const LATEST_PROTOCOL_VERSION = "2025-06-18"');
-      expect(effectMcpServer).not.toContain(MCP_STABLE_PROTOCOL_VERSION);
-      expect(effectMcpServer).not.toContain('"server/discover"');
+      expect(effectMcpProtocol).toContain('protocolVersion: "2025-06-18"');
+      expect(effectMcpProtocol).not.toContain(MCP_STABLE_PROTOCOL_VERSION);
+      expect(effectMcpProtocol).not.toContain('"server/discover"');
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it("selects the isolated official SDK v2 adapter without a production transport change", () => {
     expect(compatibility.transportDecision).toMatchObject({
-      effectVersion: "4.0.0-beta.102",
+      effectVersion: "4.0.0-beta.103",
       effectLatestProtocolVersion: "2025-06-18",
       effectSupportsStableDualEra: false,
       modernTransport: "official-sdk-v2-adapter",

@@ -158,7 +158,7 @@
     }
   ],
   "transportDecision": {
-    "effectVersion": "4.0.0-beta.102",
+    "effectVersion": "4.0.0-beta.103",
     "effectLatestProtocolVersion": "2025-06-18",
     "effectSupportsStableDualEra": false,
     "modernTransport": "official-sdk-v2-adapter",
