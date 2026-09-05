@@ -4455,6 +4455,52 @@ describe("Preview remote streaming", () => {
     ),
   );
 
+  effectIt.effect(
+    "keeps remote capture streaming while hidden or minimized and ends it on close",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const wc = makeTestPreviewWebContents(async () => ({
+            toJPEG: () => Buffer.from("remote-frame"),
+            getSize: () => ({ width: 800, height: 600 }),
+          }));
+          fromId.mockReturnValue(wc);
+          let nextState = yield* Deferred.make<string>();
+          yield* manager.subscribeRemoteHostState((_tabId, state) =>
+            Deferred.succeed(nextState, state).pipe(Effect.asVoid),
+          );
+          const listeners = new Map<string, () => void>();
+          const setBackgroundThrottling = vi.fn();
+          yield* manager.setMainWindow({
+            isDestroyed: () => false,
+            once: vi.fn((event: string, listener: () => void) => {
+              listeners.set(event, listener);
+            }),
+            on: vi.fn((event: string, listener: () => void) => {
+              listeners.set(event, listener);
+            }),
+            webContents: Object.assign(wc.hostWebContents!, { setBackgroundThrottling }),
+          } as never);
+          yield* manager.createTab("tab_remote_background");
+          yield* manager.registerWebview("tab_remote_background", 42);
+          expect(yield* Deferred.await(nextState)).toBe("streaming");
+          nextState = yield* Deferred.make<string>();
+          yield* manager.startRemoteCapture("tab_remote_background");
+          expect(yield* Deferred.await(nextState)).toBe("streaming");
+          for (const event of ["hide", "show", "minimize", "restore"]) {
+            nextState = yield* Deferred.make<string>();
+            listeners.get(event)?.();
+            expect(yield* Deferred.await(nextState)).toBe("streaming");
+          }
+          expect(setBackgroundThrottling.mock.calls).toEqual([[false]]);
+          expect(wc.setBackgroundThrottling.mock.calls).toEqual([[false]]);
+          nextState = yield* Deferred.make<string>();
+          listeners.get("closed")?.();
+          expect(yield* Deferred.await(nextState)).toBe("host-gone");
+        }),
+      ),
+  );
+
   effectIt.effect("publishes remote viewer count and controller identity on tab state", () =>
     withManager((manager) =>
       Effect.gen(function* () {

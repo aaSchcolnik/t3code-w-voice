@@ -224,6 +224,13 @@ export const RemotePreviewControlMessage = Schema.Union([
 ]);
 export type RemotePreviewControlMessage = typeof RemotePreviewControlMessage.Type;
 
+/** Per-viewer transport state, never forwarded to the guest's input dispatcher. */
+export const RemotePreviewViewerVisibilityMessage = Schema.Struct({
+  type: Schema.Literal("viewerVisibility"),
+  visible: Schema.Boolean,
+});
+export type RemotePreviewViewerVisibilityMessage = typeof RemotePreviewViewerVisibilityMessage.Type;
+
 const RemotePreviewMotionFields = {
   ...RemotePreviewPointerFields,
   sequence: NonNegativeInt,
@@ -293,6 +300,11 @@ export const RemotePreviewControllerChangedEvent = Schema.Struct({
 });
 export type RemotePreviewControllerChangedEvent = typeof RemotePreviewControllerChangedEvent.Type;
 
+/**
+ * `capture-failed` is terminal for one start attempt: the desktop host could
+ * not read the tab or capture its frames, so no offer is coming until the
+ * viewer opens the tab again.
+ */
 export const RemotePreviewHostState = Schema.Literals([
   "streaming",
   "paused",
@@ -300,6 +312,7 @@ export const RemotePreviewHostState = Schema.Literals([
   "popup-open",
   "crashed",
   "host-gone",
+  "capture-failed",
 ]);
 export type RemotePreviewHostState = typeof RemotePreviewHostState.Type;
 

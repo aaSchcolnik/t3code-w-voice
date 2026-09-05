@@ -530,7 +530,7 @@ const clearActiveRecording = (recording: ActiveRecording): void => {
   publishActiveRecordingTabIds();
 };
 
-const waitForBrowserRecordingPaint = async (): Promise<void> => {
+export const waitForBrowserRecordingPaint = async (): Promise<void> => {
   let firstFrameId: number | null = null;
   let secondFrameId: number | null = null;
   let timeoutId: number | null = null;

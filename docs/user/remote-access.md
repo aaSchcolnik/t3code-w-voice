@@ -252,7 +252,12 @@ Keep the desktop app open on the machine that hosts the preview. From a paired w
 same thread and choose Browser. The remote Browser panel and mini player show the desktop tab when
 the host is available.
 
-On an iPad, open the thread and choose **Browser** from the thread toolbar. T3 Code mints a
+The desktop window can be hidden or minimized while you use a remote preview. Closing that window
+ends its hosted previews. When you switch away from the viewer's browser tab, its video traffic
+pauses; returning resumes it without creating a new connection. Read-only viewing uses a lower
+frame rate than taking control.
+
+In the mobile app on an iPad, open the thread and choose **Browser** from the thread toolbar. T3 Code mints a
 short-lived viewer link and opens it in the tablet inspector. The link contains no pairing or saved
 environment credential. Keep the desktop app open because it still hosts the browser tab.
 
@@ -267,7 +272,8 @@ enter full screen.
 
 The preview becomes read-only while the desktop has DevTools open. OAuth popups still appear on the
 desktop, so finish those steps there. If the desktop disconnects or the guest tab crashes, the remote
-viewer waits for the host to return.
+viewer waits for the host to return. If the desktop app could not capture the tab at all, the viewer
+says so instead of connecting forever; close the tab and open it again to retry.
 
 ## Security Notes
 

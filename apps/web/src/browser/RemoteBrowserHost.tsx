@@ -36,7 +36,7 @@ import {
   type RemotePreviewRect,
 } from "./remotePreviewCoordinates";
 import {
-  translateBeforeInput,
+  listenForRemotePreviewBeforeInput,
   translateCompositionEnd,
   translateKeyEvent,
 } from "./remotePreviewKeyboard";
@@ -251,21 +251,18 @@ function RemotePreviewSurface(props: {
   const releaseControlCommand = useAtomCommand(remotePreviewEnvironment.releaseControl, {
     reportFailure: false,
   });
-  const closeCommand = useAtomCommand(remotePreviewEnvironment.close, { reportFailure: false });
   const commandsRef = useRef({
     signal,
     requestControl: requestControlCommand,
     releaseControl: releaseControlCommand,
-    close: closeCommand,
   });
   useLayoutEffect(() => {
     commandsRef.current = {
       signal,
       requestControl: requestControlCommand,
       releaseControl: releaseControlCommand,
-      close: closeCommand,
     };
-  }, [closeCommand, releaseControlCommand, requestControlCommand, signal]);
+  }, [releaseControlCommand, requestControlCommand, signal]);
 
   const runtime = useRef<SurfaceRuntime>({
     source: null,
@@ -322,7 +319,7 @@ function RemotePreviewSurface(props: {
             controller,
             role,
             busyController: null,
-            takenOver: previousRole === "controller" && role === "viewer",
+            takenOver: previousRole === "controller" && role === "viewer" && controller !== null,
           });
         },
         onOpened: (_sessionId, role) => {
@@ -347,10 +344,19 @@ function RemotePreviewSurface(props: {
     [tabId, threadRef.environmentId, threadRef.threadId],
   );
   const [handlerAtom] = useState(() =>
-    Atom.make({
-      accept: viewer.acceptEvent,
-      fail: () => patchRemotePreviewViewer(runtimeTabId, { status: "failed" as const }),
-    }),
+    Atom.make((get) => {
+      viewer.activate();
+      get.addFinalizer(() => {
+        viewer.releaseAll();
+        viewer.dispose();
+        useBrowserPointerStore.getState().clear(runtimeTabId);
+        useRemotePreviewViewerStore.getState().remove(runtimeTabId);
+      });
+      return {
+        accept: viewer.acceptEvent,
+        fail: () => patchRemotePreviewViewer(runtimeTabId, { status: "failed" as const }),
+      };
+    }).pipe(Atom.setIdleTTL(0)),
   );
   const consumerAtom = useMemo(
     () =>
@@ -753,8 +759,15 @@ function RemotePreviewSurface(props: {
   }, [measure, runtimeTabId]);
 
   useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    return listenForRemotePreviewBeforeInput(textarea, { canSendInput, send: viewer.sendControl });
+  }, [canSendInput, viewer]);
+
+  useEffect(() => {
     const onVisibilityChange = () => {
       const video = videoRef.current;
+      viewer.setVisible(document.visibilityState !== "hidden" && props.visible);
       if (document.visibilityState === "hidden") {
         stopMomentum();
         applyTouchResult(cancelTouch(runtime.touch), null);
@@ -766,9 +779,10 @@ function RemotePreviewSurface(props: {
       void video?.play().catch(() => undefined);
       if (viewer.isConnectionFailed()) viewer.requestIceRestart();
     };
+    viewer.setVisible(document.visibilityState !== "hidden" && props.visible);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [applyTouchResult, releaseControl, runtime, stopMomentum, viewer]);
+  }, [applyTouchResult, props.visible, releaseControl, runtime, stopMomentum, viewer]);
 
   useEffect(() => {
     patchRemotePreviewViewer(runtimeTabId, {
@@ -784,21 +798,12 @@ function RemotePreviewSurface(props: {
   }, [applyTransform, releaseControl, requestControl, runtimeTabId, toggleFullscreen, viewer]);
 
   useEffect(() => {
-    const environmentId = threadRef.environmentId;
     return () => {
       if (runtime.frameHandle !== null) window.cancelAnimationFrame(runtime.frameHandle);
       if (runtime.momentumHandle !== null) window.cancelAnimationFrame(runtime.momentumHandle);
-      const sessionId = viewer.sessionId();
       viewer.releaseAll();
-      if (sessionId) {
-        void commandsRef.current.releaseControl({ environmentId, input: { sessionId } });
-        void commandsRef.current.close({ environmentId, input: { sessionId } });
-      }
-      viewer.dispose();
-      useBrowserPointerStore.getState().clear(runtimeTabId);
-      useRemotePreviewViewerStore.getState().remove(runtimeTabId);
     };
-  }, [runtime, runtimeTabId, threadRef.environmentId, viewer]);
+  }, [runtime, viewer]);
 
   const overlay = remotePreviewOverlayCopy({
     status: entry.status,
@@ -863,17 +868,6 @@ function RemotePreviewSurface(props: {
           if (canSendInput()) viewer.sendControl({ type: "focusRequest" });
         }}
         onBlur={() => patchRemotePreviewViewer(runtimeTabId, { keyboardOpen: false })}
-        onBeforeInput={(event) => {
-          const native = event.nativeEvent as InputEvent;
-          if (!canSendInput()) return;
-          for (const message of translateBeforeInput({
-            inputType: native.inputType,
-            data: native.data,
-            isComposing: native.isComposing,
-          })) {
-            viewer.sendControl(message);
-          }
-        }}
         onInput={(event) => {
           // The field only exists to raise the on-screen keyboard; the guest
           // owns the text, so nothing is allowed to accumulate here.

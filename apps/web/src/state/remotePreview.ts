@@ -4,6 +4,7 @@ import {
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "@t3tools/client-runtime/state/runtime";
 import { WS_METHODS } from "@t3tools/contracts";
+import * as Stream from "effect/Stream";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 
@@ -16,11 +17,17 @@ export const remotePreviewEnvironment = {
   /**
    * Viewer session stream. Disposed with its owner so the broker can drop the
    * viewer lease as soon as the surface goes away.
+   *
+   * A stream atom keeps only the last element of each chunk it pulls, so the
+   * atom value is the whole chunk: an offer that lands together with the
+   * host's source metadata, or a burst of ICE candidates, must all reach the
+   * viewer.
    */
   session: createEnvironmentRpcSubscriptionAtomFamily(connectionAtomRuntime, {
     label: "environment-data:remote-preview:session",
     tag: WS_METHODS.remotePreviewOpen,
     idleTtlMs: 0,
+    transform: Stream.chunks,
   }),
   /** Serial per session: an answer must reach the host before its candidates. */
   signal: createEnvironmentRpcCommand(connectionAtomRuntime, {

@@ -9,7 +9,7 @@ import type {
   RemotePreviewSourceMetadata,
   RemotePreviewTurnCredentials,
 } from "@t3tools/contracts";
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   createRemotePreviewViewer,
@@ -31,7 +31,9 @@ const mockCredentials = (url: string): RemotePreviewTurnCredentials => ({
 
 class MockRTCDataChannel {
   readyState = "open";
+  bufferedAmount = 0;
   onmessage: ((event: { data: string }) => void) | null = null;
+  onopen: (() => void) | null = null;
   sent: string[] = [];
   closed = false;
 
@@ -182,6 +184,157 @@ describe("remotePreviewViewer", () => {
       sentSignals,
     };
   };
+
+  it("discards an answer that finishes after the host session was replaced", async () => {
+    const rig = createTestRig();
+    const opened = {
+      type: "opened",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      role: "viewer",
+      iceServers: [],
+    } as const;
+    rig.viewer.acceptEvent(opened);
+    let resolveAnswer!: (value: RTCSessionDescriptionInit) => void;
+    const answer = {
+      promise: new Promise<RTCSessionDescriptionInit>((resolve) => {
+        resolveAnswer = resolve;
+      }),
+      resolve: (value: RTCSessionDescriptionInit) => resolveAnswer(value),
+    };
+    let signalCreating!: () => void;
+    const creating = {
+      promise: new Promise<void>((resolve) => {
+        signalCreating = resolve;
+      }),
+      resolve: () => signalCreating(),
+    };
+    const spy = vi
+      .spyOn(MockRTCPeerConnection.prototype, "createAnswer")
+      .mockImplementationOnce(() => {
+        creating.resolve();
+        return answer.promise;
+      });
+    rig.viewer.acceptEvent({
+      type: "offer",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      sdp: "offer",
+    });
+    await creating.promise;
+    const oldPeer = MockRTCPeerConnection.instances[0]!;
+    rig.viewer.acceptEvent({ ...opened, generation: MOCK_GENERATION_2 });
+    answer.resolve({ type: "answer", sdp: "obsolete-answer" });
+    await answer.promise;
+    expect(oldPeer.localDescription).toBeNull();
+    expect(rig.sentSignals).toEqual([]);
+    spy.mockRestore();
+  });
+
+  it("drops motion under uplink backpressure while preserving reliable input", async () => {
+    const rig = createTestRig();
+    rig.viewer.acceptEvent({
+      type: "opened",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      role: "controller",
+      iceServers: [],
+    });
+    rig.viewer.acceptEvent({
+      type: "offer",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      sdp: "offer",
+    });
+    const peer = MockRTCPeerConnection.instances[0]!;
+    const motion = new MockRTCDataChannel("motion");
+    const control = new MockRTCDataChannel("control");
+    peer.ondatachannel?.({ channel: motion as unknown as RTCDataChannel });
+    peer.ondatachannel?.({ channel: control as unknown as RTCDataChannel });
+    motion.bufferedAmount = 8_192;
+    const draft = {
+      type: "pointerMove",
+      pointerId: 1,
+      pointerType: "mouse",
+      x: 10,
+      y: 20,
+      modifiers: [],
+      button: "none",
+    } as const;
+    rig.viewer.sendMotion(draft);
+    rig.viewer.releaseAll();
+    expect(motion.sent).toEqual([]);
+    expect(control.sent).toHaveLength(1);
+    motion.bufferedAmount = 0;
+    rig.viewer.sendMotion({ ...draft, x: 30 });
+    expect(motion.sent.map((message) => JSON.parse(message))).toEqual([
+      { ...draft, x: 30, generation: 1, sequence: 1 },
+    ]);
+    rig.viewer.dispose();
+  });
+
+  it("accepts a fresh session after the owning effect is cleaned up and replayed", () => {
+    const rig = createTestRig();
+    rig.viewer.dispose();
+    rig.viewer.activate();
+    rig.viewer.acceptEvent({
+      type: "opened",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      role: "viewer",
+      iceServers: [],
+    });
+    rig.viewer.acceptEvent({
+      type: "hostState",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      state: "capture-failed",
+    });
+    expect(rig.openedEvents).toHaveLength(1);
+    expect(rig.hostStates).toEqual(["capture-failed"]);
+    rig.viewer.dispose();
+    rig.viewer.acceptEvent({
+      type: "hostState",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      state: "streaming",
+    });
+    expect(rig.hostStates).toEqual(["capture-failed"]);
+  });
+
+  it("replays hidden visibility when the channel opens and resumes without a new peer", () => {
+    const rig = createTestRig();
+    rig.viewer.setVisible(false);
+    rig.viewer.acceptEvent({
+      type: "opened",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      role: "viewer",
+      iceServers: [],
+    });
+    rig.viewer.acceptEvent({
+      type: "offer",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      sdp: "offer",
+    });
+    const channel = new MockRTCDataChannel("control");
+    channel.readyState = "connecting";
+    const peer = MockRTCPeerConnection.instances[0]!;
+    peer.ondatachannel?.({ channel: channel as unknown as RTCDataChannel });
+    expect(channel.sent).toEqual([]);
+    channel.readyState = "open";
+    channel.onopen?.();
+    rig.viewer.setVisible(true);
+    rig.viewer.setVisible(true);
+    expect(channel.sent.map((message) => JSON.parse(message))).toEqual([
+      { type: "viewerVisibility", visible: false },
+      { type: "viewerVisibility", visible: true },
+    ]);
+    expect(MockRTCPeerConnection.instances).toHaveLength(1);
+    rig.viewer.dispose();
+    expect(channel.onopen).toBeNull();
+  });
 
   it("handles opened event: sets session, applies iceServers, emits onOpened and connecting", () => {
     const rig = createTestRig();
@@ -525,6 +678,50 @@ describe("remotePreviewViewer", () => {
       sessionId: MOCK_SESSION_ID,
       generation: 10,
     });
+  });
+
+  it("answers with the offer's signaling generation even after guest metadata arrives", async () => {
+    const rig = createTestRig();
+
+    rig.viewer.acceptEvent({
+      type: "opened",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      role: "viewer",
+      iceServers: [],
+    });
+    rig.viewer.acceptEvent({
+      type: "offer",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      sdp: "v=0\r\no=offer-sdp\r\n",
+    });
+    // The host publishes its guest counter right behind the offer, before the
+    // answer has been created. That counter is not a signaling generation.
+    rig.viewer.acceptEvent({
+      type: "sourceMetadata",
+      sessionId: MOCK_SESSION_ID,
+      metadata: {
+        cssWidth: 1280,
+        cssHeight: 720,
+        deviceScaleFactor: 2,
+        zoomFactor: 1,
+        generation: 7 as RemotePreviewGeneration,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(rig.viewer.generation()).toBe(1);
+    expect(rig.sentSignals).toEqual([
+      {
+        type: "answer",
+        sessionId: MOCK_SESSION_ID,
+        generation: 1,
+        sdp: "v=0\r\no=mock-answer-sdp\r\n",
+      },
+    ]);
+    rig.viewer.sendControl({ type: "keyDown", key: "a", code: "KeyA", modifiers: [] });
   });
 
   it("host reconnect replaces peer cleanly with no leaks", async () => {

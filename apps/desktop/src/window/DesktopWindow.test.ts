@@ -1303,7 +1303,7 @@ describe("DesktopWindow", () => {
     }),
   );
 
-  it.effect("allows same-origin microphone media requests", () =>
+  it.effect("allows trusted renderer microphone and display capture requests", () =>
     Effect.gen(function* () {
       const fakeWindow = makeFakeBrowserWindow();
       const createCount = yield* Ref.make(0);
@@ -1334,6 +1334,17 @@ describe("DesktopWindow", () => {
 
         assert.isTrue(checkHandler(null, "media", "t3code-dev://app/", { mediaType: "audio" }));
         assert.isFalse(checkHandler(null, "media", "https://example.com/", { mediaType: "audio" }));
+        assert.isTrue(
+          checkHandler(fakeWindow.window.webContents, "display-capture", "t3code-dev://app/", {}),
+        );
+        assert.isFalse(
+          checkHandler(
+            fakeWindow.window.webContents,
+            "display-capture",
+            "https://example.com/",
+            {},
+          ),
+        );
 
         const granted = yield* Effect.promise(
           () =>
@@ -1345,6 +1356,33 @@ describe("DesktopWindow", () => {
             }),
         );
         assert.isTrue(granted);
+
+        const displayCaptureGranted = yield* Effect.promise(
+          () =>
+            new Promise<boolean>((resolve) => {
+              requestHandler(fakeWindow.window.webContents, "display-capture", resolve, {});
+            }),
+        );
+        assert.isTrue(displayCaptureGranted);
+
+        for (const [details, expected] of [
+          [{ mediaTypes: [], isMainFrame: true, securityOrigin: "t3code-dev://app/" }, true],
+          [{ mediaTypes: [], isMainFrame: true, securityOrigin: "https://example.com/" }, false],
+          [{ mediaTypes: [], isMainFrame: false, securityOrigin: "t3code-dev://app/" }, false],
+          [{ mediaTypes: [], isMainFrame: true }, false],
+          [
+            { mediaTypes: ["video"], isMainFrame: true, securityOrigin: "t3code-dev://app/" },
+            false,
+          ],
+        ] as const) {
+          const allowed = yield* Effect.promise(
+            () =>
+              new Promise<boolean>((resolve) => {
+                requestHandler(fakeWindow.window.webContents, "media", resolve, details);
+              }),
+          );
+          assert.equal(allowed, expected);
+        }
 
         const deniedVideo = yield* Effect.promise(
           () =>

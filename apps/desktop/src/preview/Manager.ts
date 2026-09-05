@@ -1555,9 +1555,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       const wc = yield* requireWebContents(tabId);
       if ((yield* Ref.get(popupCountsRef)).get(tabId)) return "popup-open" as const;
       if (wc.isDevToolsOpened()) return "devtools" as const;
-      if (!frameCaptureWindowOpen || (yield* Ref.get(mainWindowHiddenRef))) {
-        return "paused" as const;
-      }
+      if (!frameCaptureWindowOpen) return "host-gone" as const;
+      const remoteCaptureActive = (yield* SynchronizedRef.get(frameCaptureSessionsRef))
+        .get(tabId)
+        ?.consumers.has("remote-view");
+      // Remote capture holds the guest's activity lease and background rendering
+      // even when the local desktop window is hidden or minimized.
+      if ((yield* Ref.get(mainWindowHiddenRef)) && !remoteCaptureActive) return "paused" as const;
       return "streaming" as const;
     },
   );

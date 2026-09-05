@@ -226,9 +226,16 @@ The T3 server grants leases and relays signaling, but video and input travel ove
 
 #### Source generation
 
-A monotonically increasing counter for one captured guest surface. Guest replacement, source
-metadata changes, and ICE restart advance a generation. The desktop drops input stamped for an older
-generation.
+A monotonically increasing counter for one captured guest surface, carried only inside
+`RemotePreviewSourceMetadata`. Guest replacement and source metadata changes advance it. Viewers
+stamp input with it and the desktop drops input stamped for an older generation. It is distinct from
+the signaling generation.
+
+#### Signaling generation
+
+The broker session's counter for one remote preview session. It stamps the offer, answer, ICE
+candidates, host state, and agent pointer, and advances on ICE restart or host reconnect. Source
+metadata never advances it.
 
 ## Practical Shortcuts
 

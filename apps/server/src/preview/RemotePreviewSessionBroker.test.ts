@@ -570,3 +570,66 @@ it.effect("closes sessions when SessionStore emits clientRemoved", () =>
     }),
   ),
 );
+
+it.effect("keeps guest source-metadata generations out of the signaling generation", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker();
+      const connectedHost = yield* connectHost(broker, 1);
+      const connection = viewer(1);
+      const opened = yield* openViewer(broker, connection);
+      yield* takeHostRequest(connectedHost.events);
+      const sessionId = opened.opened.sessionId;
+      const generation = opened.opened.generation;
+
+      yield* signalFromHost(broker, 1, connectedHost.connectionId, {
+        type: "offer",
+        sessionId,
+        generation,
+        sdp: VIDEO_AND_DATA_SDP,
+      });
+      // The desktop's metadata counter starts above the session generation and
+      // is published right after the offer.
+      yield* signalFromHost(broker, 1, connectedHost.connectionId, {
+        type: "sourceMetadata",
+        sessionId,
+        metadata: {
+          cssWidth: 1280,
+          cssHeight: 720,
+          deviceScaleFactor: 2,
+          zoomFactor: 1,
+          generation: RemotePreviewGeneration.make(7),
+        },
+      });
+      yield* signalFromHost(broker, 1, connectedHost.connectionId, {
+        type: "iceCandidate",
+        sessionId,
+        generation,
+        candidate: "candidate:1 1 udp 2130706431 192.168.1.2 50000 typ host",
+        sdpMid: "0",
+        sdpMLineIndex: 0,
+        usernameFragment: null,
+      });
+      expect(yield* Queue.take(opened.events)).toMatchObject({ type: "offer", generation });
+      expect(yield* Queue.take(opened.events)).toMatchObject({
+        type: "sourceMetadata",
+        metadata: { generation: 7 },
+      });
+      expect(yield* Queue.take(opened.events)).toMatchObject({
+        type: "iceCandidate",
+        generation,
+      });
+
+      yield* broker.signal(connection, {
+        type: "answer",
+        sessionId,
+        generation,
+        sdp: MIRRORED_DATA_ANSWER_SDP,
+      });
+      expect(yield* takeHostRequest(connectedHost.events)).toMatchObject({
+        type: "signal",
+        signal: { type: "answer", generation },
+      });
+    }),
+  ),
+);

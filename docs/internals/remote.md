@@ -252,11 +252,61 @@ control and 10 fps while the session stays read-only. The reliable, ordered `con
 carries discrete input, metadata, host state, and the agent pointer. The unordered `motion` channel
 uses `maxRetransmits: 0` for pointer movement and wheel deltas.
 
+The bitrate limit is a ceiling per viewer, excluding transport overhead. Capture is shared with
+other viewers and recordings, but each viewer has its own encoder and connection. Sender updates
+are serialized because `setParameters` uses a transaction ID, and unchanged settings are skipped.
+The host preserves the 10 fps read-only policy across source metadata updates. Native WebRTC
+congestion control and the track's `detail` content hint handle bandwidth changes.
+
+The reliable channel also carries `viewerVisibility`, separate from controller input. A hidden
+viewer disables only its sender's encoding, retaining the peer connection and the shared capture.
+The viewer replays its latest visibility when the channel opens. Motion messages are dropped when
+the viewer's outgoing motion buffer exceeds 4 KiB so a slow uplink cannot accumulate stale movement.
+Hiding or minimizing the desktop window does not pause an active remote capture; closing it still
+releases captures and signals `host-gone`.
+
 Input coordinates use guest CSS pixels from `RemotePreviewSourceMetadata`. The host rejects points
 outside those bounds and messages from an older source generation. Electron main dispatches accepted
 touch, mouse, wheel, and keyboard messages through CDP after interrupting any in-flight agent browser
 step. Local desktop input temporarily suppresses remote input, so precedence remains local user,
 remote controller, then agent.
+
+The web and standalone keyboard proxies listen directly for the textarea's native `beforeinput`
+event. React's synthetic `onBeforeInput` can wrap `textInput`, which lacks `inputType`; treating it as
+an `InputEvent` drops text and throws in Safari. Composition commits remain separate so IME text is
+inserted only once.
+
+Two generation counters exist and must not be mixed. The signaling generation belongs to the broker
+session: it stamps the offer, answer, ICE candidates, host state, and the agent pointer, and it
+advances on ICE restart or when a host reconnects. The source generation belongs to the desktop's
+guest surface and travels only inside `RemotePreviewSourceMetadata`; viewers stamp input with it and
+the desktop drops input from an older source generation. The broker forwards `sourceMetadata`
+without touching the session generation, and the viewer never lets it advance the signaling
+generation, because the two counters start at different values and the host would otherwise discard
+the viewer's answer as foreign.
+
+Clients receive the broker streams through stream-backed atoms, which keep only the last element of
+each chunk they pull. Both the viewer session atom and the host request atom therefore emit whole
+chunks (`Stream.chunks`) and their consumers replay every event in order. Without this, an offer that
+arrives in the same chunk as the host's metadata, or a burst of ICE candidates, silently loses
+members and the viewer never leaves "Connecting…".
+
+The viewer's atom owns its peer lifetime. React effect cleanup must not independently close the
+broker session while its subscription is still mounted, including during Strict Mode effect replay.
+Host subscriptions install handlers before consumption and cancel queued work and late captures
+when their owning effect ends. An answer that finishes after a peer replacement is discarded.
+
+Electron 43.4.1 reports `getDisplayMedia` permission requests as `media` with `mediaTypes: []`.
+The main renderer permits that shape for its own main-frame origin; camera requests remain denied.
+The display-media handler separately enforces a one-shot capture arm tied to the requesting frame.
+Remote startup uses the same bounded paint wait as recording because animation frames can stop
+while the host window is hidden, before capture has disabled background throttling.
+
+If the desktop host cannot start a stream, because the tab is unknown, the webview never registered,
+or `getDisplayMedia` failed, it logs `[remote-preview] host could not start streaming` in its
+renderer console and signals the `capture-failed` host state so the viewer shows a terminal message
+instead of an endless spinner. The host renderer also logs each startup milestone (`start requested`,
+`source ready`, `capture acquired`, `offer sent`) so a stalled start names the step that hung.
 
 The broker permits at most two viewers per tab and one controller. A takeover revokes the previous
 controller and both peers receive `controllerChanged`. Closing the viewer's authenticated WebSocket

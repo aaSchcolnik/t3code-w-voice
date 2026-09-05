@@ -58,4 +58,18 @@ describe("remotePreviewOverlayCopy", () => {
       })?.title,
     ).toBe("Finish this on the desktop");
   });
+
+  it("replaces the connecting spinner when the host could not capture the tab", () => {
+    expect(
+      remotePreviewOverlayCopy({
+        status: "connecting",
+        hostState: "capture-failed",
+        environmentLabel: "Studio",
+      }),
+    ).toEqual({
+      title: "The desktop app could not stream this tab",
+      detail: "Close and reopen the tab to try again.",
+      opaque: true,
+    });
+  });
 });

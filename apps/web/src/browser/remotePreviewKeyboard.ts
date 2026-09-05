@@ -112,3 +112,19 @@ export function translateBeforeInput(
 export function translateCompositionEnd(data: string): readonly RemotePreviewControlDraft[] {
   return data.length === 0 ? [] : [{ type: "compositionCommit", text: data }];
 }
+
+/** React's onBeforeInput uses textInput/keypress events, which lack inputType. */
+export function listenForRemotePreviewBeforeInput(
+  textarea: HTMLTextAreaElement,
+  options: {
+    readonly canSendInput: () => boolean;
+    readonly send: (message: RemotePreviewControlDraft) => void;
+  },
+): () => void {
+  const beforeInput = (event: InputEvent) => {
+    if (!options.canSendInput()) return;
+    for (const message of translateBeforeInput(event)) options.send(message);
+  };
+  textarea.addEventListener("beforeinput", beforeInput);
+  return () => textarea.removeEventListener("beforeinput", beforeInput);
+}

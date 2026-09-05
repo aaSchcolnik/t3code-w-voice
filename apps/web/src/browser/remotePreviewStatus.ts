@@ -49,6 +49,12 @@ export function remotePreviewOverlayCopy(input: {
       };
     case "paused":
       return { title: "Preview paused", detail: null, opaque: true };
+    case "capture-failed":
+      return {
+        title: "The desktop app could not stream this tab",
+        detail: "Close and reopen the tab to try again.",
+        opaque: true,
+      };
     case "streaming":
       break;
   }

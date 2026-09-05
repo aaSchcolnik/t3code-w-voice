@@ -30,7 +30,7 @@ import {
   type RemotePreviewRect,
 } from "./remotePreviewCoordinates";
 import {
-  translateBeforeInput,
+  listenForRemotePreviewBeforeInput,
   translateCompositionEnd,
   translateKeyEvent,
 } from "./remotePreviewKeyboard";
@@ -219,6 +219,7 @@ export function StandaloneRemotePreviewViewer(props: {
   viewerRef.current = viewer;
 
   useEffect(() => {
+    viewer.activate();
     let cancelled = false;
     const fiber = Effect.runFork(
       Effect.scoped(
@@ -598,7 +599,14 @@ export function StandaloneRemotePreviewViewer(props: {
   ]);
 
   useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    return listenForRemotePreviewBeforeInput(textarea, { canSendInput, send: viewer.sendControl });
+  }, [canSendInput, viewer]);
+
+  useEffect(() => {
     const onVisibility = () => {
+      viewer.setVisible(document.visibilityState !== "hidden");
       if (document.visibilityState === "hidden") {
         if (runtime.role === "controller") releaseControl();
         viewer.releaseAll();
@@ -608,6 +616,7 @@ export function StandaloneRemotePreviewViewer(props: {
       void videoRef.current?.play().catch(() => undefined);
       if (viewer.isConnectionFailed()) viewer.requestIceRestart();
     };
+    viewer.setVisible(document.visibilityState !== "hidden");
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [releaseControl, runtime, viewer]);
@@ -659,17 +668,6 @@ export function StandaloneRemotePreviewViewer(props: {
           height: 1,
           left: -1000,
           top: 0,
-        }}
-        onBeforeInput={(event) => {
-          if (!canSendInput()) return;
-          const native = event.nativeEvent as InputEvent;
-          for (const message of translateBeforeInput({
-            inputType: native.inputType,
-            data: native.data,
-            isComposing: native.isComposing,
-          })) {
-            viewer.sendControl(message);
-          }
         }}
         onCompositionEnd={(event) => {
           if (!canSendInput()) return;

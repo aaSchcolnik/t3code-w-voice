@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   keyModifiers,
+  listenForRemotePreviewBeforeInput,
   keyText,
   translateBeforeInput,
   translateCompositionEnd,
@@ -97,5 +98,55 @@ describe("hidden textarea", () => {
   it("ignores edits it has no message for", () => {
     expect(translateBeforeInput({ inputType: "historyUndo", data: null })).toEqual([]);
     expect(translateBeforeInput({ inputType: "insertText", data: null })).toEqual([]);
+  });
+});
+
+describe("native textarea editing events", () => {
+  it("forwards Safari native text, paste and backspace once without reading React's textInput event", () => {
+    const textarea = new EventTarget() as HTMLTextAreaElement;
+    const send = vi.fn();
+    const remove = listenForRemotePreviewBeforeInput(textarea, { canSendInput: () => true, send });
+    for (const [inputType, data] of [
+      ["insertText", "hola"],
+      ["insertFromPaste", " mundo"],
+      ["deleteContentBackward", null],
+    ] as const) {
+      textarea.dispatchEvent(Object.assign(new Event("beforeinput"), { inputType, data }));
+      textarea.dispatchEvent(Object.assign(new Event("textInput"), { data }));
+    }
+    expect(send.mock.calls.map(([message]) => message)).toEqual([
+      { type: "insertText", text: "hola" },
+      { type: "insertText", text: " mundo" },
+      { type: "keyDown", key: "Backspace", code: "Backspace", modifiers: [] },
+      { type: "keyUp", key: "Backspace", code: "Backspace", modifiers: [] },
+    ]);
+    remove();
+    textarea.dispatchEvent(
+      Object.assign(new Event("beforeinput"), { inputType: "insertText", data: "closed" }),
+    );
+    expect(send).toHaveBeenCalledTimes(4);
+  });
+
+  it("waits for composition commit and rejects edits after control is released", () => {
+    const textarea = new EventTarget() as HTMLTextAreaElement;
+    const send = vi.fn();
+    let controller = true;
+    const remove = listenForRemotePreviewBeforeInput(textarea, {
+      canSendInput: () => controller,
+      send,
+    });
+    textarea.dispatchEvent(
+      Object.assign(new Event("beforeinput"), {
+        inputType: "insertCompositionText",
+        data: "に",
+        isComposing: true,
+      }),
+    );
+    controller = false;
+    textarea.dispatchEvent(
+      Object.assign(new Event("beforeinput"), { inputType: "insertText", data: "hidden" }),
+    );
+    expect(send).not.toHaveBeenCalled();
+    remove();
   });
 });

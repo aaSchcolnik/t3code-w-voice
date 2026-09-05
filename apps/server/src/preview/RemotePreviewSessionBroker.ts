@@ -288,10 +288,16 @@ const controllerIdentity = (session: ViewerSession): RemotePreviewControllerIden
   label: session.viewerLabel,
 });
 
-const signalGeneration = (event: RemotePreviewHostEvent): RemotePreviewGeneration => {
+/**
+ * The signaling generation an event belongs to, or `null` for events outside
+ * that space. Source metadata carries the guest's own counter, which viewers
+ * stamp on input; letting it gate or advance the session generation would make
+ * the host and viewer disagree about which offer/answer/candidates are current.
+ */
+const signalGeneration = (event: RemotePreviewHostEvent): RemotePreviewGeneration | null => {
   switch (event.type) {
     case "sourceMetadata":
-      return event.metadata.generation;
+      return null;
     case "offer":
     case "answer":
     case "iceCandidate":
@@ -946,6 +952,9 @@ export const make = Effect.gen(function* RemotePreviewSessionBrokerMake() {
         const session = snapshot.sessions.get(input.event.sessionId);
         if (!session || session.host?.queue !== host.queue) {
           return [{ type: "unauthorized" as const }, snapshot] as const;
+        }
+        if (eventGeneration === null) {
+          return [{ type: "ok" as const, session }, snapshot] as const;
         }
         if (eventGeneration < session.generation) {
           return [{ type: "stale" as const }, snapshot] as const;

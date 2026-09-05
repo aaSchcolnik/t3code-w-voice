@@ -5786,6 +5786,8 @@ function ChatViewContent(props: ChatViewProps) {
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
+      // The remote browser owns keys while its input layer is focused.
+      if (eventPathContainsSelector(event, "[data-remote-preview-tab]")) return;
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
         return;

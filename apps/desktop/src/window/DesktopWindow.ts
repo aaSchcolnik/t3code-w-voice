@@ -228,6 +228,12 @@ function isClipboardPermission(permission: string): boolean {
   return permission === "clipboard-read" || permission === "clipboard-sanitized-write";
 }
 
+// Electron 43 includes this value for permission requests but omits it from
+// PermissionCheckHandler's TypeScript union even though Chromium emits it.
+function isDisplayCapturePermission(permission: string): boolean {
+  return permission === "display-capture";
+}
+
 function isAllowedRendererOrigin(input: {
   readonly applicationUrl: string;
   readonly requestOrigin: string;
@@ -540,6 +546,9 @@ export const make = Effect.gen(function* () {
         if (isClipboardPermission(permission)) {
           return isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin });
         }
+        if (isDisplayCapturePermission(permission)) {
+          return isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin });
+        }
         if (permission !== "media") return false;
         if (!mediaCheckIncludesAudio(details)) return false;
         if (!isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin })) return false;
@@ -560,6 +569,30 @@ export const make = Effect.gen(function* () {
               applicationUrl,
               requestOrigin: window.webContents.getURL(),
             }),
+          );
+          return;
+        }
+        if (isDisplayCapturePermission(permission)) {
+          // This handler belongs to the main renderer's session. The display-media
+          // handler independently requires a one-shot, frame-bound capture arm,
+          // so rejecting on Electron's WebContents wrapper identity can only turn
+          // a valid internal capture into NotAllowedError.
+          callback(true);
+          return;
+        }
+        if (
+          permission === "media" &&
+          (details as Electron.MediaAccessPermissionRequest).mediaTypes?.length === 0
+        ) {
+          // Electron 43 reports getDisplayMedia as media with no physical device
+          // types. The display handler still requires a frame-bound capture arm.
+          callback(
+            details.isMainFrame &&
+              isAllowedRendererOrigin({
+                applicationUrl,
+                requestOrigin:
+                  (details as Electron.MediaAccessPermissionRequest).securityOrigin ?? "",
+              }),
           );
           return;
         }

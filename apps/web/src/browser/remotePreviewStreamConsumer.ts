@@ -1,7 +1,10 @@
 import type { RemotePreviewViewerStreamEvent } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
-type ViewerStreamResult<E> = AsyncResult.AsyncResult<RemotePreviewViewerStreamEvent, E>;
+type ViewerStreamResult<E> = AsyncResult.AsyncResult<
+  ReadonlyArray<RemotePreviewViewerStreamEvent>,
+  E
+>;
 
 /**
  * Drains a `remotePreview.open` stream into the viewer.
@@ -9,7 +12,9 @@ type ViewerStreamResult<E> = AsyncResult.AsyncResult<RemotePreviewViewerStreamEv
  * Reading the atom's value from a component would coalesce events, and a
  * dropped ICE candidate or `controllerChanged` is not recoverable. Subscribing
  * inside an atom delivers every emission, including the one that can land
- * before the subscription is installed.
+ * before the subscription is installed. Each emission is one stream chunk, so
+ * events that arrived together are replayed in order instead of collapsing to
+ * the newest one.
  */
 export function createRemotePreviewStreamConsumerAtom<E>(options: {
   readonly streamAtom: Atom.Atom<ViewerStreamResult<E>>;
@@ -31,7 +36,8 @@ export function createRemotePreviewStreamConsumerAtom<E>(options: {
         return;
       }
       if (!AsyncResult.isSuccess(result)) return;
-      get.once(options.handlerAtom).accept(result.value);
+      const handler = get.once(options.handlerAtom);
+      for (const event of result.value) handler.accept(event);
     };
 
     get.addFinalizer(() => {

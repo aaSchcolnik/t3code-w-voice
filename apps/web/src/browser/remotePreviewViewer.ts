@@ -45,6 +45,9 @@ export interface RemotePreviewViewerOptions {
 }
 
 export interface RemotePreviewViewerHandle {
+  /** Reopens the event consumer when React replays the owning effect. */
+  readonly activate: () => void;
+  readonly setVisible: (visible: boolean) => void;
   readonly acceptEvent: (event: RemotePreviewViewerStreamEvent) => void;
   readonly sendControl: (draft: RemotePreviewControlDraft) => void;
   readonly sendMotion: (draft: RemotePreviewMotionDraft) => void;
@@ -59,6 +62,8 @@ export interface RemotePreviewViewerHandle {
 
 const CONTROL_CHANNEL_LABEL = "control";
 const MOTION_CHANNEL_LABEL = "motion";
+// Motion is disposable. Do not queue stale pointer positions behind a slow uplink.
+const MAX_MOTION_BUFFER_BYTES = 4_096;
 
 const ZERO_GENERATION = 0 as RemotePreviewGeneration;
 
@@ -82,6 +87,8 @@ export function createRemotePreviewViewer(
   let sourceGeneration: RemotePreviewGeneration = ZERO_GENERATION;
   let motionSequence = 0;
   let disposed = false;
+  let visible = true;
+  let offerRevision = 0;
   let statsSample: { readonly bytes: number; readonly timestamp: number } | null = null;
   /** Candidates that beat the offer, which cannot be applied before it. */
   const pendingCandidates: RTCIceCandidateInit[] = [];
@@ -91,10 +98,12 @@ export function createRemotePreviewViewer(
   };
 
   const closePeer = () => {
+    offerRevision += 1;
     pendingCandidates.length = 0;
     statsSample = null;
     if (controlChannel) {
       controlChannel.onmessage = null;
+      controlChannel.onopen = null;
       try {
         controlChannel.close();
       } catch {}
@@ -127,6 +136,10 @@ export function createRemotePreviewViewer(
   const attachChannel = (channel: RTCDataChannel) => {
     if (channel.label === CONTROL_CHANNEL_LABEL) {
       controlChannel = channel;
+      channel.onopen = () => send(channel, { type: "viewerVisibility", visible });
+      if (channel.readyState === "open" && !visible) {
+        send(channel, { type: "viewerVisibility", visible });
+      }
       channel.onmessage = (message) => {
         if (typeof message.data !== "string") return;
         let payload: HostChannelEvent;
@@ -139,8 +152,10 @@ export function createRemotePreviewViewer(
           case "sourceMetadata": {
             const metadata = payload.metadata as RemotePreviewSourceMetadata | undefined;
             if (!metadata) return;
+            // Guest source generations only stamp input; the signaling
+            // generation stays with the host's offer so the answer and
+            // candidates are not dropped as foreign.
             sourceGeneration = metadata.generation;
-            observeSignalingGeneration(metadata.generation);
             events.onMetadata(metadata);
             return;
           }
@@ -219,17 +234,22 @@ export function createRemotePreviewViewer(
     if (!current) return;
     observeSignalingGeneration(offerGeneration);
     const connection = ensurePeer();
+    const revision = ++offerRevision;
+    const isCurrent = () => !disposed && peer === connection && offerRevision === revision;
     await connection.setRemoteDescription({ type: "offer", sdp });
+    if (!isCurrent()) return;
     for (const candidate of pendingCandidates.splice(0)) {
       await connection.addIceCandidate(candidate).catch(() => undefined);
+      if (!isCurrent()) return;
     }
     const answer = await connection.createAnswer();
+    if (!isCurrent()) return;
     await connection.setLocalDescription(answer);
-    if (disposed || !answer.sdp) return;
+    if (!isCurrent() || !answer.sdp) return;
     sendSignal({
       type: "answer",
       sessionId: current,
-      generation: signalingGeneration,
+      generation: offerGeneration,
       sdp: connection.localDescription?.sdp ?? answer.sdp,
     });
   };
@@ -240,7 +260,7 @@ export function createRemotePreviewViewer(
       channel.send(JSON.stringify(message));
     } catch {
       // A channel that closed between the check and the send is a teardown
-      // race, not an error the user can act on technique.
+      // race, not an error the user can act on.
     }
   };
 
@@ -248,6 +268,14 @@ export function createRemotePreviewViewer(
     sourceGeneration > 0 ? sourceGeneration : signalingGeneration;
 
   return {
+    activate: () => {
+      disposed = false;
+    },
+    setVisible: (next) => {
+      if (visible === next) return;
+      visible = next;
+      send(controlChannel, { type: "viewerVisibility", visible });
+    },
     acceptEvent: (event) => {
       if (disposed) return;
       switch (event.type) {
@@ -270,8 +298,10 @@ export function createRemotePreviewViewer(
           return;
         }
         case "offer": {
+          if (event.sessionId !== sessionId || event.generation < signalingGeneration) return;
+          const revision = offerRevision + 1;
           void applyOffer(event.sdp, event.generation).catch(() => {
-            events.onStatus("failed");
+            if (!disposed && offerRevision === revision) events.onStatus("failed");
           });
           return;
         }
@@ -300,7 +330,6 @@ export function createRemotePreviewViewer(
           return;
         case "sourceMetadata": {
           sourceGeneration = event.metadata.generation;
-          observeSignalingGeneration(event.metadata.generation);
           events.onMetadata(event.metadata);
           return;
         }
@@ -333,6 +362,7 @@ export function createRemotePreviewViewer(
     sendControl: (draft) =>
       send(controlChannel, { ...draft, generation: currentInputGeneration() }),
     sendMotion: (draft) => {
+      if (!motionChannel || motionChannel.bufferedAmount > MAX_MOTION_BUFFER_BYTES) return;
       motionSequence += 1;
       send(motionChannel, {
         ...draft,

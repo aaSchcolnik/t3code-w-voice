@@ -2,6 +2,7 @@ import {
   RemotePreviewControlMessage,
   RemotePreviewGeneration,
   RemotePreviewMotionMessage,
+  RemotePreviewViewerVisibilityMessage,
   type DesktopPreviewBridge,
   type DesktopPreviewPointerEvent,
   type RemotePreviewAgentPointerEvent,
@@ -23,14 +24,38 @@ import { acquireBrowserSurfaceActivity } from "./browserSurfaceStore";
 import {
   acquireTabMediaCapture,
   refreshTabMediaCapture,
+  waitForBrowserRecordingPaint,
   type TabMediaCaptureLease,
 } from "./browserRecording";
 
 const REMOTE_CAPTURE_FRAME_RATE = 30;
 const VIEWER_FRAME_RATE = 10;
 const MAX_BITRATE = 2_500_000;
-const VIEWER_IDLE_DELAY_MS = 2_000;
 const STATS_INTERVAL_MS = 5_000;
+const SOURCE_METADATA_RETRY_ATTEMPTS = 40;
+const SOURCE_METADATA_RETRY_DELAY_MS = 50;
+
+const waitForSourceMetadataRetry = (): Promise<void> =>
+  new Promise((resolve) => window.setTimeout(resolve, SOURCE_METADATA_RETRY_DELAY_MS));
+
+export async function readRemotePreviewSourceMetadata(
+  read: () => Promise<RemotePreviewSourceMetadata>,
+  options: {
+    readonly attempts?: number;
+    readonly wait?: () => Promise<void>;
+  } = {},
+): Promise<RemotePreviewSourceMetadata> {
+  const attempts = Math.max(1, options.attempts ?? SOURCE_METADATA_RETRY_ATTEMPTS);
+  const wait = options.wait ?? waitForSourceMetadataRetry;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await read();
+    } catch (cause) {
+      if (attempt >= attempts) throw cause;
+      await wait();
+    }
+  }
+}
 
 export const deriveScaleResolutionDownBy = (
   captureTrackWidth: number,
@@ -46,6 +71,62 @@ export const deriveScaleResolutionDownBy = (
   }
   return Math.max(1, captureTrackWidth / sourceCssWidth);
 };
+
+export const initialRemotePreviewEncoding = (
+  track: Pick<MediaStreamTrack, "getSettings">,
+  sourceCssWidth: number,
+  role: RemotePreviewRole = "controller",
+): RTCRtpEncodingParameters => ({
+  maxBitrate: MAX_BITRATE,
+  maxFramerate: role === "controller" ? REMOTE_CAPTURE_FRAME_RATE : VIEWER_FRAME_RATE,
+  scaleResolutionDownBy: deriveScaleResolutionDownBy(
+    track.getSettings().width ?? 0,
+    sourceCssWidth,
+  ),
+});
+
+export const preferH264Codecs = <Codec extends { readonly mimeType: string }>(
+  codecs: ReadonlyArray<Codec>,
+): Codec[] => [
+  ...codecs.filter((codec) => codec.mimeType.toLowerCase() === "video/h264"),
+  ...codecs.filter((codec) => codec.mimeType.toLowerCase() !== "video/h264"),
+];
+
+export async function applyRemotePreviewSenderPolicy(
+  sender: Pick<RTCRtpSender, "getParameters" | "setParameters" | "track">,
+  input: {
+    readonly maxFramerate: number;
+    readonly active?: boolean;
+    readonly sourceCssWidth: number;
+  },
+): Promise<void> {
+  const parameters = sender.getParameters();
+  const encoding = parameters.encodings[0];
+  // Chromium can expose no encodings before the first negotiation unless
+  // addTransceiver received sendEncodings. Never invent one here because the
+  // WebRTC API forbids setParameters from changing the encoding count.
+  if (!encoding) return;
+  const captureTrackWidth = sender.track?.getSettings().width ?? 0;
+  const active = input.active ?? true;
+  const scaleResolutionDownBy = deriveScaleResolutionDownBy(
+    captureTrackWidth,
+    input.sourceCssWidth,
+  );
+  if (
+    (encoding.active ?? true) === active &&
+    encoding.maxBitrate === MAX_BITRATE &&
+    encoding.maxFramerate === input.maxFramerate &&
+    encoding.scaleResolutionDownBy === scaleResolutionDownBy
+  )
+    return;
+  Object.assign(encoding, {
+    active,
+    maxBitrate: MAX_BITRATE,
+    maxFramerate: input.maxFramerate,
+    scaleResolutionDownBy,
+  });
+  await sender.setParameters(parameters);
+}
 
 export const acceptsMotionSequence = (
   previousSequence: number | undefined,
@@ -113,12 +194,6 @@ export function createMotionMessageCoalescer(
   };
 }
 
-const waitForCapturePaint = async (): Promise<void> => {
-  await new Promise<void>((resolve) =>
-    window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())),
-  );
-};
-
 const toRtcIceServers = (iceServers: RemotePreviewHostStartRequest["iceServers"]): RTCIceServer[] =>
   iceServers.map(({ urls, username, credential }) => ({
     urls: [...urls],
@@ -133,8 +208,19 @@ const videoTrack = (stream: MediaStream): MediaStreamTrack => {
   return track;
 };
 
+/**
+ * Host-side startup milestones. A viewer that never leaves "Connecting…" is
+ * diagnosed from this log: the last milestone printed names the step that hung
+ * or threw.
+ */
+const logHostMilestone = (step: string, details: Record<string, unknown>): void => {
+  console.info(`[remote-preview] host ${step}`, details);
+};
+
 const encodeChannelMessage = (message: unknown): string => JSON.stringify(message);
-const isRemotePreviewControlMessage = Schema.is(RemotePreviewControlMessage);
+const isRemotePreviewControlMessage = Schema.is(
+  Schema.Union([RemotePreviewControlMessage, RemotePreviewViewerVisibilityMessage]),
+);
 const isRemotePreviewMotionMessage = Schema.is(RemotePreviewMotionMessage);
 
 const decodeControlMessage = (data: unknown) => {
@@ -179,10 +265,12 @@ export class RemotePreviewPeer {
   private sourceMetadata: RemotePreviewSourceMetadata;
   private role: RemotePreviewRole;
   private hostState: RemotePreviewHostState = "streaming";
+  private viewerVisible = true;
   private generation: RemotePreviewHostStartRequest["generation"];
   private releaseSurfaceActivity: (() => void) | null;
   private statsInterval: number | null = null;
-  private viewerIdleTimer: number | null = null;
+  private iceRestartPromise: Promise<void> | null = null;
+  private senderPolicyPromise: Promise<void> = Promise.resolve();
   private watchedTrack: MediaStreamTrack | null = null;
   private trackRefreshPromise: Promise<void> | null = null;
   private readonly trackEndedListener: () => void;
@@ -230,7 +318,19 @@ export class RemotePreviewPeer {
     });
     this.controlChannel.addEventListener("message", (event) => {
       const message = decodeControlMessage(event.data);
-      if (!message || this.role !== "controller") return;
+      if (!message || this.closed) return;
+      if (message.type === "viewerVisibility") {
+        if (this.viewerVisible === message.visible) return;
+        this.viewerVisible = message.visible;
+        if (!message.visible) {
+          this.motionCoalescer.cancel();
+          if (this.role === "controller")
+            void this.releaseAll(options.bridge).catch(() => undefined);
+        }
+        this.applySenderPolicySafely();
+        return;
+      }
+      if (this.role !== "controller") return;
       void this.dispatchInput(options.bridge, message).catch((cause) =>
         console.warn("Remote preview control dispatch failed.", cause),
       );
@@ -267,10 +367,24 @@ export class RemotePreviewPeer {
 
   static async create(options: RemotePreviewPeerOptions): Promise<RemotePreviewPeer> {
     const releaseSurfaceActivity = acquireBrowserSurfaceActivity(options.runtimeTabId);
+    const milestone = {
+      sessionId: options.request.sessionId,
+      tabId: options.request.tabId,
+      generation: options.request.generation,
+    };
     let captureLease: TabMediaCaptureLease | null = null;
+    let connection: RTCPeerConnection | null = null;
+    let peer: RemotePreviewPeer | null = null;
     try {
-      await waitForCapturePaint();
-      const sourceMetadata = await options.bridge.remote.readSourceMetadata(options.runtimeTabId);
+      logHostMilestone("start requested", { ...milestone, role: options.request.role });
+      await waitForBrowserRecordingPaint();
+      // A remote client can create and select a tab before Electron has attached
+      // its webview. Registration normally follows within a few frames; wait for
+      // that readiness window instead of permanently abandoning the host request.
+      const sourceMetadata = await readRemotePreviewSourceMetadata(() =>
+        options.bridge.remote.readSourceMetadata(options.runtimeTabId),
+      );
+      logHostMilestone("source ready", { ...milestone, sourceMetadata });
       captureLease = await acquireTabMediaCapture({
         tabId: options.runtimeTabId,
         consumer: "remote-view",
@@ -279,18 +393,31 @@ export class RemotePreviewPeer {
         stopCapture: () => options.bridge.remote.stopCapture(options.runtimeTabId),
       });
       const track = videoTrack(captureLease.stream);
-      const connection = new RTCPeerConnection({
+      logHostMilestone("capture acquired", { ...milestone, track: track.getSettings() });
+      connection = new RTCPeerConnection({
         iceServers: toRtcIceServers(options.request.iceServers),
       });
       const transceiver = connection.addTransceiver(track, {
         direction: "sendonly",
         streams: [captureLease.stream],
+        // Chromium revisions disagree on whether setParameters is legal before
+        // negotiation. Declare the initial policy here so startup does not
+        // depend on that implementation detail.
+        sendEncodings: [
+          initialRemotePreviewEncoding(track, sourceMetadata.cssWidth, options.request.role),
+        ],
       });
-      const h264Codecs = RTCRtpSender.getCapabilities("video")?.codecs.filter(
-        (codec) => codec.mimeType.toLowerCase() === "video/h264",
-      );
-      if (h264Codecs && h264Codecs.length > 0) transceiver.setCodecPreferences(h264Codecs);
-      const peer = new RemotePreviewPeer({
+      const videoCodecs = RTCRtpReceiver.getCapabilities("video")?.codecs;
+      if (videoCodecs && videoCodecs.length > 0) {
+        try {
+          // Keep RTX and fallback codecs in the offer while preferring H.264
+          // for Safari's hardware decoder.
+          transceiver.setCodecPreferences(preferH264Codecs(videoCodecs));
+        } catch (cause) {
+          console.warn("Remote preview codec preference was not applied.", cause);
+        }
+      }
+      peer = new RemotePreviewPeer({
         ...options,
         connection,
         controlChannel: connection.createDataChannel("control", { ordered: true }),
@@ -303,13 +430,19 @@ export class RemotePreviewPeer {
         sourceMetadata,
         releaseSurfaceActivity,
       });
-      await peer.applySenderPolicy();
       await peer.sendOffer(options.signal, false);
+      logHostMilestone("offer sent", milestone);
       await peer.publishSourceMetadata(options.signal);
+      peer.applySenderPolicySafely();
       return peer;
     } catch (cause) {
-      await captureLease?.release().catch(() => undefined);
-      releaseSurfaceActivity();
+      if (peer) {
+        await peer.close(options.bridge);
+      } else {
+        connection?.close();
+        await captureLease?.release().catch(() => undefined);
+        releaseSurfaceActivity();
+      }
       throw cause;
     }
   }
@@ -354,7 +487,7 @@ export class RemotePreviewPeer {
     this.role = request.role;
     this.generation = request.generation;
     if (lostControl) await this.releaseAll(bridge);
-    await this.applySenderPolicy();
+    this.applySenderPolicySafely();
   }
 
   async updateSourceMetadata(
@@ -365,7 +498,7 @@ export class RemotePreviewPeer {
     if (this.closed) return;
     this.sourceMetadata = metadata;
     await this.replaceEndedTrack(bridge, signal);
-    await this.applySenderPolicy();
+    this.applySenderPolicySafely();
     await this.publishSourceMetadata(signal);
   }
 
@@ -378,6 +511,7 @@ export class RemotePreviewPeer {
       void this.releaseAll(bridge).catch(() => undefined);
     }
     this.hostState = state;
+    this.applySenderPolicySafely();
     const event: RemotePreviewHostStateEvent = {
       type: "hostState",
       sessionId: this.sessionId,
@@ -410,7 +544,6 @@ export class RemotePreviewPeer {
     if (this.closed) return;
     this.closed = true;
     this.motionCoalescer.cancel();
-    if (this.viewerIdleTimer !== null) window.clearTimeout(this.viewerIdleTimer);
     if (this.statsInterval !== null) window.clearInterval(this.statsInterval);
     this.watchTrack(null);
     await this.releaseAll(bridge).catch(() => undefined);
@@ -426,7 +559,13 @@ export class RemotePreviewPeer {
     bridge: DesktopPreviewBridge,
     message: RemotePreviewInputMessage,
   ): Promise<void> {
-    if (this.closed || this.role !== "controller" || this.hostState !== "streaming") return;
+    if (
+      this.closed ||
+      !this.viewerVisible ||
+      this.role !== "controller" ||
+      this.hostState !== "streaming"
+    )
+      return;
     if (!acceptsViewerInputGeneration(message.generation, this.sourceMetadata.generation)) return;
     await bridge.remote.dispatchInput(this.runtimeTabId, message);
   }
@@ -471,20 +610,31 @@ export class RemotePreviewPeer {
     });
   }
 
-  private async restartIce(
+  private restartIce(
     bridge: DesktopPreviewBridge,
     signal: RemotePreviewPeerOptions["signal"],
   ): Promise<void> {
-    await this.releaseAll(bridge).catch(() => undefined);
-    this.generation = RemotePreviewGeneration.make(this.generation + 1);
-    await signal({
-      type: "iceRestart",
-      sessionId: this.sessionId,
-      generation: this.generation,
+    if (this.closed) return Promise.resolve();
+    if (this.iceRestartPromise) return this.iceRestartPromise;
+    const restart = (async () => {
+      await this.releaseAll(bridge).catch(() => undefined);
+      if (this.closed) return;
+      this.generation = RemotePreviewGeneration.make(this.generation + 1);
+      await signal({
+        type: "iceRestart",
+        sessionId: this.sessionId,
+        generation: this.generation,
+      });
+      if (this.closed) return;
+      this.connection.restartIce();
+      await this.sendOffer(signal, true);
+      if (!this.closed) await this.publishSourceMetadata(signal);
+    })();
+    const trackedRestart = restart.finally(() => {
+      if (this.iceRestartPromise === trackedRestart) this.iceRestartPromise = null;
     });
-    this.connection.restartIce();
-    await this.sendOffer(signal, true);
-    await this.publishSourceMetadata(signal);
+    this.iceRestartPromise = trackedRestart;
+    return trackedRestart;
   }
 
   private watchTrack(track: MediaStreamTrack | null): void {
@@ -508,7 +658,7 @@ export class RemotePreviewPeer {
       const track = videoTrack(stream);
       await this.sender.replaceTrack(track);
       this.watchTrack(track);
-      await this.applySenderPolicy();
+      this.applySenderPolicySafely();
       await this.publishSourceMetadata(signal);
     })();
     const trackedReplacement = replacement.finally(() => {
@@ -518,50 +668,53 @@ export class RemotePreviewPeer {
     return this.trackRefreshPromise;
   }
 
-  private async applySenderPolicy(): Promise<void> {
-    if (this.closed) return;
-    if (this.viewerIdleTimer !== null) {
-      window.clearTimeout(this.viewerIdleTimer);
-      this.viewerIdleTimer = null;
-    }
-    const maxFramerate = this.role === "controller" ? REMOTE_CAPTURE_FRAME_RATE : VIEWER_FRAME_RATE;
-    if (this.role !== "controller") {
-      this.viewerIdleTimer = window.setTimeout(() => {
-        void this.setSenderParameters(VIEWER_FRAME_RATE);
-      }, VIEWER_IDLE_DELAY_MS);
-      await this.setSenderParameters(REMOTE_CAPTURE_FRAME_RATE);
-      return;
-    }
-    await this.setSenderParameters(maxFramerate);
+  private applySenderPolicy(): Promise<void> {
+    // getParameters returns a transaction ID. Finish each update before reading
+    // the next one so metadata, role and pause changes cannot race that ID.
+    const update = this.senderPolicyPromise.then(async () => {
+      if (this.closed) return;
+      await applyRemotePreviewSenderPolicy(this.sender, {
+        maxFramerate: this.role === "controller" ? REMOTE_CAPTURE_FRAME_RATE : VIEWER_FRAME_RATE,
+        sourceCssWidth: this.sourceMetadata.cssWidth,
+        active:
+          this.viewerVisible &&
+          (this.hostState === "streaming" ||
+            this.hostState === "devtools" ||
+            this.hostState === "popup-open"),
+      });
+    });
+    this.senderPolicyPromise = update.catch(() => undefined);
+    return update;
   }
 
-  private async setSenderParameters(maxFramerate: number): Promise<void> {
-    const parameters = this.sender.getParameters();
-    const encoding = parameters.encodings[0] ?? {};
-    const captureTrackWidth = this.sender.track?.getSettings().width ?? 0;
-    parameters.encodings = [
-      {
-        ...encoding,
-        maxBitrate: MAX_BITRATE,
-        maxFramerate,
-        scaleResolutionDownBy: deriveScaleResolutionDownBy(
-          captureTrackWidth,
-          this.sourceMetadata.cssWidth,
-        ),
-      },
-    ];
-    await this.sender.setParameters(parameters);
+  private applySenderPolicySafely(): void {
+    void this.applySenderPolicy().catch((cause) =>
+      console.warn("Remote preview sender policy was not applied.", cause),
+    );
   }
 
   private startStatsLogging(): void {
+    const previousSamples = new Map<string, { timestamp: number; bytesSent: number }>();
     this.statsInterval = window.setInterval(() => {
       void this.sender
         .getStats()
         .then((report) => {
+          if (this.closed) return;
           for (const raw of report.values()) {
             const stat = raw as RTCOutboundRtpStreamStats & Record<string, unknown>;
             if (stat.type !== "outbound-rtp" || stat.kind !== "video") continue;
             const codec = stat.codecId ? report.get(stat.codecId) : undefined;
+            const remote = stat.remoteId ? report.get(stat.remoteId) : undefined;
+            const previous = previousSamples.get(stat.id);
+            const bytesSent = stat.bytesSent ?? 0;
+            const bitrate =
+              previous && stat.timestamp > previous.timestamp && bytesSent >= previous.bytesSent
+                ? Math.round(
+                    ((bytesSent - previous.bytesSent) * 8_000) /
+                      (stat.timestamp - previous.timestamp),
+                  )
+                : null;
+            previousSamples.set(stat.id, { timestamp: stat.timestamp, bytesSent });
             console.info("[remote-preview] outbound video", {
               sessionId: this.sessionId,
               codec: codec?.mimeType ?? null,
@@ -570,6 +723,10 @@ export class RemotePreviewPeer {
               frameWidth: stat.frameWidth ?? null,
               frameHeight: stat.frameHeight ?? null,
               framesPerSecond: stat.framesPerSecond ?? null,
+              bitrate,
+              targetBitrate: stat.targetBitrate ?? null,
+              roundTripTime: remote?.roundTripTime ?? null,
+              qualityLimitationReason: stat.qualityLimitationReason ?? null,
             });
           }
         })

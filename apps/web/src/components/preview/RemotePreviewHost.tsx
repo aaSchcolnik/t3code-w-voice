@@ -1,6 +1,6 @@
 "use client";
 
-import { RegistryContext, useAtomSet, useAtomValue } from "@effect/atom-react";
+import { RegistryContext } from "@effect/atom-react";
 import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
@@ -20,10 +20,11 @@ import {
   type ScopedThreadRef,
   type PreviewAutomationClientId,
 } from "@t3tools/contracts";
-import { useContext, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useEffectEvent, useMemo, useRef } from "react";
+import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
-import { RemotePreviewPeer } from "~/browser/remotePreviewPeer";
+import { RemotePreviewPeer, type RemotePreviewPeerOptions } from "~/browser/remotePreviewPeer";
 import { readThreadPreviewState, reconcilePreviewServerSessions } from "~/previewStateStore";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
@@ -33,12 +34,16 @@ import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 import { previewBridge } from "./previewBridge";
 
+// The atom value is a whole stream chunk: a stream atom keeps only the newest
+// element per chunk, and losing a viewer's answer or ICE candidate that arrived
+// alongside another request would strand the session.
 const remotePreviewHostRequests = createEnvironmentRpcSubscriptionAtomFamily(
   connectionAtomRuntime,
   {
     label: "environment-data:remote-preview:host-requests",
     tag: WS_METHODS.remotePreviewHostConnect,
     idleTtlMs: 0,
+    transform: Stream.chunks,
   },
 );
 
@@ -59,30 +64,36 @@ interface HostedPeer {
   role: RemotePreviewRole;
 }
 
-type HostStreamResult<E> = AsyncResult.AsyncResult<RemotePreviewHostStreamEvent, E>;
+type HostStreamResult<E> = AsyncResult.AsyncResult<ReadonlyArray<RemotePreviewHostStreamEvent>, E>;
 
-const createRemotePreviewHostConsumerAtom = <E,>(options: {
+export const createRemotePreviewHostConsumerAtom = <E,>(options: {
   readonly streamAtom: Atom.Atom<HostStreamResult<E>>;
-  readonly handlerAtom: Atom.Atom<{
+  readonly handler: {
     readonly accept: (event: RemotePreviewHostStreamEvent) => Promise<void>;
     readonly fail: () => Promise<void>;
-  }>;
+  };
+  readonly lifetime: AbortSignal;
   readonly label: string;
 }) =>
   Atom.make((get) => {
-    get.mount(options.handlerAtom);
     let disposed = false;
     let emissions = 0;
     let tail = Promise.resolve();
+    const inactive = () => disposed || options.lifetime.aborted;
     const consume = (result: HostStreamResult<E>) => {
-      if (disposed || (!AsyncResult.isSuccess(result) && !AsyncResult.isFailure(result))) return;
+      if (inactive() || (!AsyncResult.isSuccess(result) && !AsyncResult.isFailure(result))) return;
       tail = tail
-        .then(() =>
-          AsyncResult.isSuccess(result)
-            ? get.once(options.handlerAtom).accept(result.value)
-            : get.once(options.handlerAtom).fail(),
-        )
-        .catch((cause) => console.warn("Remote preview host request failed.", cause));
+        .then(async () => {
+          if (inactive()) return;
+          if (!AsyncResult.isSuccess(result)) return options.handler.fail();
+          for (const event of result.value) {
+            if (inactive()) return;
+            await options.handler.accept(event);
+          }
+        })
+        .catch((cause) => {
+          if (!inactive()) console.warn("Remote preview host request failed.", cause);
+        });
     };
     get.addFinalizer(() => {
       disposed = true;
@@ -96,6 +107,24 @@ const createRemotePreviewHostConsumerAtom = <E,>(options: {
       if (emissions === 0) consume(initial);
     });
   }).pipe(Atom.setIdleTTL(0), Atom.withLabel(options.label));
+
+/** A capture can finish after its host subscription unmounts or is replaced. */
+export async function createRemotePreviewHostPeer(
+  options: RemotePreviewPeerOptions,
+  lifetime: AbortSignal,
+): Promise<RemotePreviewPeer | null> {
+  lifetime.throwIfAborted();
+  const peer = await RemotePreviewPeer.create({
+    ...options,
+    signal: async (event) => {
+      lifetime.throwIfAborted();
+      await options.signal(event);
+    },
+  });
+  if (!lifetime.aborted) return peer;
+  await peer.close(options.bridge);
+  return null;
+}
 
 export function RemotePreviewHost(props: {
   readonly environmentId: EnvironmentId;
@@ -157,7 +186,15 @@ export function RemotePreviewHost(props: {
         peer.publishHostState(hostState, bridge, signal);
       }
     }
-    for (const sessionId of Array.from(peersRef.current.keys())) await closePeer(sessionId);
+    const peers = Array.from(peersRef.current.values());
+    peersRef.current.clear();
+    await Promise.all(
+      peers.map(async ({ peer }) => {
+        if (!bridge) return;
+        await peer.close(bridge);
+        await publishPresence(peer.runtimeTabId);
+      }),
+    );
   };
 
   const resolveRuntimeTabId = async (
@@ -182,28 +219,56 @@ export function RemotePreviewHost(props: {
   const handleRequest = async (
     connectionId: RemotePreviewHostStreamEvent["connectionId"],
     request: RemotePreviewHostRequest,
+    lifetime: AbortSignal,
   ): Promise<void> => {
-    if (!bridge) return;
+    if (!bridge || lifetime.aborted) return;
     switch (request.type) {
       case "start": {
         await closePeer(request.sessionId);
-        const runtimeTabId = await resolveRuntimeTabId(request);
+        if (lifetime.aborted) return;
         const signal = async (event: Parameters<typeof hostSignal>[0]["input"]["event"]) => {
+          lifetime.throwIfAborted();
           const result = await hostSignal({
             environmentId,
             input: { clientId, connectionId, event },
           });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         };
-        const peer = await RemotePreviewPeer.create({
-          request,
-          runtimeTabId,
-          bridge,
-          signal,
-        });
+        let runtimeTabId: string;
+        let peer: RemotePreviewPeer | null;
+        try {
+          runtimeTabId = await resolveRuntimeTabId(request);
+          if (lifetime.aborted) return;
+          peer = await createRemotePreviewHostPeer(
+            { request, runtimeTabId, bridge, signal },
+            lifetime,
+          );
+          if (!peer) return;
+          if (lifetime.aborted) {
+            await peer.close(bridge);
+            return;
+          }
+        } catch (cause) {
+          if (lifetime.aborted) return;
+          // Without this the viewer sits on "Connecting…" forever with the only
+          // evidence buried in the desktop renderer console.
+          console.error("[remote-preview] host could not start streaming", {
+            sessionId: request.sessionId,
+            tabId: request.tabId,
+            cause,
+          });
+          await signal({
+            type: "hostState",
+            sessionId: request.sessionId,
+            generation: request.generation,
+            state: "capture-failed",
+          }).catch(() => undefined);
+          return;
+        }
         peersRef.current.set(request.sessionId, { peer, role: request.role });
         const latestMetadata = latestMetadataRef.current.get(runtimeTabId);
         if (latestMetadata) await peer.updateSourceMetadata(latestMetadata, bridge, signal);
+        if (lifetime.aborted) return;
         peer.publishHostState(
           latestHostStateRef.current.get(runtimeTabId) ?? "streaming",
           bridge,
@@ -216,6 +281,7 @@ export function RemotePreviewHost(props: {
         const hosted = peersRef.current.get(request.signal.sessionId);
         if (!hosted) return;
         const signal = async (event: Parameters<typeof hostSignal>[0]["input"]["event"]) => {
+          lifetime.throwIfAborted();
           const result = await hostSignal({
             environmentId,
             input: { clientId, connectionId, event },
@@ -238,56 +304,40 @@ export function RemotePreviewHost(props: {
     }
   };
 
-  const [handlerAtom] = useState(() =>
-    Atom.make({
-      accept: async (_event: RemotePreviewHostStreamEvent): Promise<void> => {},
-      fail: async (): Promise<void> => {},
-    }),
-  );
-  const setHandler = useAtomSet(handlerAtom);
-  const acceptHostEvent = useEffectEvent(async (event: RemotePreviewHostStreamEvent) => {
-    if (event.type === "connected") {
+  const acceptHostEvent = useEffectEvent(
+    async (event: RemotePreviewHostStreamEvent, lifetime: AbortSignal) => {
+      if (lifetime.aborted) return;
+      if (event.type === "connected") {
+        if (
+          activeConnectionIdRef.current !== null &&
+          activeConnectionIdRef.current !== event.connectionId
+        ) {
+          await closeAllPeers("host-gone");
+        }
+        if (!lifetime.aborted) activeConnectionIdRef.current = event.connectionId;
+        return;
+      }
       if (
         activeConnectionIdRef.current !== null &&
         activeConnectionIdRef.current !== event.connectionId
       ) {
-        await closeAllPeers("host-gone");
+        return;
       }
-      activeConnectionIdRef.current = event.connectionId;
-      return;
-    }
-    if (
-      activeConnectionIdRef.current !== null &&
-      activeConnectionIdRef.current !== event.connectionId
-    ) {
-      return;
-    }
-    activeConnectionIdRef.current ??= event.connectionId;
-    await handleRequest(event.connectionId, event.request);
-  });
-  useEffect(() => {
-    setHandler({
-      accept: acceptHostEvent,
-      fail: async () => {
-        await closeAllPeers("host-gone");
-        activeConnectionIdRef.current = null;
-      },
-    });
-  }, [setHandler]);
-
-  const consumerAtom = useMemo(
-    () =>
-      createRemotePreviewHostConsumerAtom({
-        streamAtom: requestsAtom,
-        handlerAtom,
-        label: `preview:remote-host:${environmentId}:${clientId}`,
-      }),
-    [clientId, environmentId, handlerAtom, requestsAtom],
+      activeConnectionIdRef.current ??= event.connectionId;
+      await handleRequest(event.connectionId, event.request, lifetime);
+    },
   );
-  useAtomValue(consumerAtom);
+  const failHostStream = useEffectEvent(async (lifetime: AbortSignal) => {
+    if (lifetime.aborted) return;
+    await closeAllPeers("host-gone");
+    if (!lifetime.aborted) activeConnectionIdRef.current = null;
+  });
+
+  const cleanupHostPeers = useEffectEvent(() => closeAllPeers());
 
   useEffect(() => {
     if (!bridge) return;
+    const lifetime = new AbortController();
     const removeMetadataListener = bridge.remote.onSourceMetadata((event) => {
       latestMetadataRef.current.set(event.tabId, event.metadata);
       for (const { peer } of peersRef.current.values()) {
@@ -295,6 +345,7 @@ export function RemotePreviewHost(props: {
         const connectionId = activeConnectionIdRef.current;
         if (!connectionId) continue;
         const signal = async (hostEvent: Parameters<typeof hostSignal>[0]["input"]["event"]) => {
+          lifetime.signal.throwIfAborted();
           const result = await hostSignal({
             environmentId,
             input: { clientId, connectionId, event: hostEvent },
@@ -311,6 +362,7 @@ export function RemotePreviewHost(props: {
       const connectionId = activeConnectionIdRef.current;
       if (!connectionId) return;
       const signal = async (hostEvent: Parameters<typeof hostSignal>[0]["input"]["event"]) => {
+        lifetime.signal.throwIfAborted();
         const result = await hostSignal({
           environmentId,
           input: { clientId, connectionId, event: hostEvent },
@@ -325,6 +377,7 @@ export function RemotePreviewHost(props: {
       const connectionId = activeConnectionIdRef.current;
       if (!connectionId) return;
       const signal = async (hostEvent: Parameters<typeof hostSignal>[0]["input"]["event"]) => {
+        lifetime.signal.throwIfAborted();
         const result = await hostSignal({
           environmentId,
           input: { clientId, connectionId, event: hostEvent },
@@ -335,15 +388,31 @@ export function RemotePreviewHost(props: {
         if (peer.runtimeTabId === pointer.tabId) peer.publishAgentPointer(pointer, signal);
       }
     });
+    // Install real handlers before subscribing. StrictMode/HMR cleanup expires
+    // this mount immediately, including queued requests and pending captures.
+    const unmountConsumer = registry.mount(
+      createRemotePreviewHostConsumerAtom({
+        streamAtom: requestsAtom,
+        handler: {
+          accept: (event) => acceptHostEvent(event, lifetime.signal),
+          fail: () => failHostStream(lifetime.signal),
+        },
+        lifetime: lifetime.signal,
+        label: `preview:remote-host:${environmentId}:${clientId}`,
+      }),
+    );
     return () => {
+      lifetime.abort();
+      unmountConsumer();
+      activeConnectionIdRef.current = null;
       removeMetadataListener();
       removeHostStateListener();
       removePointerListener();
-      void closeAllPeers("host-gone").catch((cause) =>
+      void cleanupHostPeers().catch((cause) =>
         console.warn("Remote preview host cleanup failed.", cause),
       );
     };
-  }, [bridge, clientId, environmentId, hostSignal]);
+  }, [clientId, environmentId, hostSignal, registry, requestsAtom]);
 
   return null;
 }
