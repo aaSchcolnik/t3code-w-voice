@@ -13,7 +13,7 @@ import {
 } from "./modelOptions";
 
 describe("mobile model options", () => {
-  it("does not expose delegated-only Antigravity models as main-thread choices", () => {
+  it("exposes available Antigravity models as main-thread choices", () => {
     const config = {
       providers: [
         {
@@ -38,8 +38,15 @@ describe("mobile model options", () => {
       model: "gemini-3.7-flash-high",
     };
 
-    expect(buildModelOptions(config, selection)).toEqual([]);
-    expect(resolveSelectableModelSelection(config, selection)).toBeNull();
+    expect(buildModelOptions(config, null)).toMatchObject([
+      {
+        providerDriver: "antigravity",
+        providerLabel: "Antigravity",
+        label: "Gemini 3.7 Flash (High)",
+        selection,
+      },
+    ]);
+    expect(resolveSelectableModelSelection(config, selection)).toBe(selection);
   });
 
   it("groups models by provider and flags legacy entries", () => {

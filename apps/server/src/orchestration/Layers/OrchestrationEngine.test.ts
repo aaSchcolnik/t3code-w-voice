@@ -189,7 +189,7 @@ describe("OrchestrationEngine", () => {
                     id: "0",
                     header: "Question",
                     question: "Which package manager?",
-                    options: [{ label: "pnpm", description: "" }],
+                    options: [{ label: "pnpm", description: "Use pnpm" }],
                   },
                   {
                     id: "1",

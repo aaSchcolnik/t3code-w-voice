@@ -884,10 +884,14 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const path = yield* Path.Path;
         const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
         const codexHomePath = yield* makeTempDir("t3code-codex-home-");
-        const configBaseDir = yield* makeTempDir("t3code-scanner-base-");
+        const realConfigBaseDir = yield* makeTempDir("t3code-scanner-base-");
         const linkParent = yield* makeTempDir("t3code-scanner-links-");
         const fileSystem = yield* FileSystem.FileSystem;
 
+        const configBaseDir = path.join(linkParent, "server-home");
+        yield* fileSystem.symlink(realConfigBaseDir, configBaseDir);
+
+        // Both the configured home and recorded cwd use symlinks.
         // The recorded cwd is a symlink whose own spelling looks harmless;
         // only its realpath reveals the managed sandbox.
         const worktreeCwd = path.join(configBaseDir, "worktrees", "t3code", "wt-3");

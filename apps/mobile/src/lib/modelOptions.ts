@@ -107,7 +107,6 @@ export function resolveSelectableModelSelection(
     return selection;
   }
   return provider &&
-    provider.driver !== "antigravity" &&
     provider.enabled &&
     provider.installed &&
     provider.auth.status !== "unauthenticated"
@@ -189,10 +188,7 @@ export function buildModelOptions(
     }
   }
 
-  const fallbackProvider = config?.providers.find(
-    (provider) => provider.instanceId === fallbackModelSelection?.instanceId,
-  );
-  if (fallbackModelSelection && fallbackProvider?.driver !== "antigravity") {
+  if (fallbackModelSelection) {
     const key = `${fallbackModelSelection.instanceId}:${fallbackModelSelection.model}`;
     const existing = options.get(key);
     if (existing) {

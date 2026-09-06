@@ -37,6 +37,7 @@ it("scrubs app variables while preserving runtime overrides", () => {
   );
 
   expect(env).toEqual({
+    COLORTERM: "truecolor",
     PATH: "/usr/local/bin:/usr/bin",
     KEEP: "yes",
     T3CODE_PROJECT_ROOT: "/repo",
@@ -67,6 +68,7 @@ it("removes package-runner and node process state from terminal environments", (
   });
 
   expect(env).toEqual({
+    COLORTERM: "truecolor",
     HOME: "/home/user",
     PATH: "/repo/node_modules/.bin:/usr/bin",
     NG_LINT_FLAGS: "--concurrency=4",
