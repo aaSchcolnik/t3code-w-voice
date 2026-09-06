@@ -1,6 +1,10 @@
 "use client";
 
+import type { RefObject } from "react";
+import type { RemotePreviewViewerHandle } from "./remotePreviewViewer";
+
 import type {
+  DesktopPreviewColorScheme,
   RemotePreviewControllerIdentity,
   RemotePreviewHostState,
   RemotePreviewRole,
@@ -15,6 +19,10 @@ import type { RemotePreviewViewerStats, RemotePreviewViewerStatus } from "./remo
  * peer without a round trip through React.
  */
 export interface RemotePreviewViewerControls {
+  readonly viewer: RemotePreviewViewerHandle;
+  readonly containerRef: RefObject<HTMLDivElement | null>;
+  readonly captureScreenshot: () => Promise<void>;
+  readonly togglePictureInPicture: () => Promise<void>;
   readonly requestControl: (takeover: boolean) => void;
   readonly releaseControl: () => void;
   /** Must be called inside a user gesture, or iPadOS will not raise the keyboard. */
@@ -35,6 +43,11 @@ export interface RemotePreviewViewerEntry {
   readonly keyboardOpen: boolean;
   readonly zoomed: boolean;
   readonly fullscreen: boolean;
+  readonly nativePictureInPicture: boolean;
+  readonly pictureInPictureSupported: boolean;
+  readonly zoomFactor: number;
+  readonly colorScheme: DesktopPreviewColorScheme;
+  readonly source: { readonly width: number; readonly height: number } | null;
   readonly controls: RemotePreviewViewerControls | null;
 }
 
@@ -48,6 +61,11 @@ export const EMPTY_REMOTE_PREVIEW_VIEWER: RemotePreviewViewerEntry = Object.free
   keyboardOpen: false,
   zoomed: false,
   fullscreen: false,
+  nativePictureInPicture: false,
+  pictureInPictureSupported: false,
+  source: null,
+  zoomFactor: 1,
+  colorScheme: "system",
   controls: null,
 });
 

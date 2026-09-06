@@ -381,6 +381,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
           viewerCount,
           controller,
         }),
+      readSelection: (tabId) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_READ_SELECTION_CHANNEL, { tabId }),
       readSourceMetadata: (tabId) =>
         ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_READ_SOURCE_METADATA_CHANNEL, { tabId }),
       onSourceMetadata: (listener) => {

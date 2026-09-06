@@ -114,3 +114,5 @@ export const VOICE_MODELS_PAUSE_DOWNLOAD_CHANNEL = "desktop:voice-models-pause-d
 export const VOICE_MODELS_CANCEL_DOWNLOAD_CHANNEL = "desktop:voice-models-cancel-download";
 export const VOICE_MODELS_REMOVE_CHANNEL = "desktop:voice-models-remove";
 export const VOICE_MODELS_PROGRESS_CHANNEL = "desktop:voice-models-progress";
+
+export const PREVIEW_REMOTE_READ_SELECTION_CHANNEL = "preview:remote:read-selection";

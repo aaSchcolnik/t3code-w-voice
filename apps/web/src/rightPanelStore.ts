@@ -596,6 +596,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               .filter((tabId) => !knownIds.has(`browser:${tabId}`))
               .map((tabId) => browserSurface(tabId));
             const surfaces = [...nonBrowser, ...existingBrowser, ...added];
+            if (
+              surfaces.length === current.surfaces.length &&
+              surfaces.every((surface, index) => surface === current.surfaces[index])
+            )
+              return current;
             const activeStillExists = surfaces.some(
               (surface) => surface.id === current.activeSurfaceId,
             );

@@ -60,7 +60,7 @@ export function translateKeyEvent(
   type: "keydown" | "keyup",
   event: RemotePreviewKeyEventLike,
 ): RemotePreviewControlDraft | null {
-  if (event.isComposing) return null;
+  if (event.isComposing || ["Unidentified", "Process", "Dead"].includes(event.key)) return null;
   return keyMessage(type === "keydown" ? "keyDown" : "keyUp", event);
 }
 
@@ -113,7 +113,7 @@ export function translateCompositionEnd(data: string): readonly RemotePreviewCon
   return data.length === 0 ? [] : [{ type: "compositionCommit", text: data }];
 }
 
-/** React's onBeforeInput uses textInput/keypress events, which lack inputType. */
+/** Own native editing events so hardware, software and IME input are sent once. */
 export function listenForRemotePreviewBeforeInput(
   textarea: HTMLTextAreaElement,
   options: {
@@ -121,10 +121,84 @@ export function listenForRemotePreviewBeforeInput(
     readonly send: (message: RemotePreviewControlDraft) => void;
   },
 ): () => void {
-  const beforeInput = (event: InputEvent) => {
-    if (!options.canSendInput()) return;
-    for (const message of translateBeforeInput(event)) options.send(message);
+  let composing = false;
+  let handledBeforeInput = false;
+  let committedText: string | null = null;
+  const reset = () => {
+    // Keep a character behind the caret so iOS emits deletion on an otherwise
+    // empty input. The remote page owns the actual editing buffer.
+    textarea.value = "\u200b";
+    textarea.setSelectionRange?.(1, 1);
   };
+  const send = (messages: readonly RemotePreviewControlDraft[]) => {
+    if (!options.canSendInput()) return;
+    for (const message of messages) options.send(message);
+  };
+  const beforeInput = (event: InputEvent) => {
+    if (composing || event.isComposing) return;
+    const compositionEcho =
+      event.inputType === "insertFromComposition" ||
+      (committedText !== null && event.inputType === "insertText" && event.data === committedText);
+    const messages = compositionEcho ? [] : translateBeforeInput(event);
+    handledBeforeInput = messages.length > 0 || compositionEcho;
+    send(messages);
+    if (handledBeforeInput && event.cancelable) {
+      event.preventDefault();
+      reset();
+      handledBeforeInput = false;
+    }
+  };
+  const input = (event: InputEvent) => {
+    if (composing || event.isComposing) return;
+    if (!handledBeforeInput && event.inputType !== "insertFromComposition") {
+      send(translateBeforeInput(event));
+    }
+    handledBeforeInput = false;
+    reset();
+  };
+  const compositionStart = () => {
+    composing = true;
+  };
+  const compositionEnd = (event: CompositionEvent) => {
+    composing = false;
+    committedText = event.data;
+    queueMicrotask(() => {
+      committedText = null;
+    });
+    send(translateCompositionEnd(event.data));
+    handledBeforeInput = true;
+    reset();
+  };
+  const key = (event: KeyboardEvent) => {
+    // Text and software-keyboard editing belong to beforeinput. Let clipboard
+    // shortcuts reach the browser's paste/copy event handlers.
+    if (composing || event.isComposing) return;
+    if ((event.metaKey || event.ctrlKey) && ["c", "v", "x"].includes(event.key.toLowerCase()))
+      return;
+    if (
+      !event.metaKey &&
+      !event.ctrlKey &&
+      ([...event.key].length === 1 || ["Backspace", "Delete", "Enter"].includes(event.key))
+    )
+      return;
+    const message = translateKeyEvent(event.type === "keydown" ? "keydown" : "keyup", event);
+    if (!message) return;
+    event.preventDefault();
+    send([message]);
+  };
+  reset();
   textarea.addEventListener("beforeinput", beforeInput);
-  return () => textarea.removeEventListener("beforeinput", beforeInput);
+  textarea.addEventListener("input", input);
+  textarea.addEventListener("compositionstart", compositionStart);
+  textarea.addEventListener("compositionend", compositionEnd);
+  textarea.addEventListener("keydown", key);
+  textarea.addEventListener("keyup", key);
+  return () => {
+    textarea.removeEventListener("beforeinput", beforeInput);
+    textarea.removeEventListener("input", input);
+    textarea.removeEventListener("compositionstart", compositionStart);
+    textarea.removeEventListener("compositionend", compositionEnd);
+    textarea.removeEventListener("keydown", key);
+    textarea.removeEventListener("keyup", key);
+  };
 }

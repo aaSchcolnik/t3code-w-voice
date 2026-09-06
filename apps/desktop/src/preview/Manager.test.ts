@@ -1,4 +1,5 @@
 import { it as effectIt } from "@effect/vitest";
+import * as NodeVM from "node:vm";
 import {
   DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER,
   RemotePreviewSessionId,
@@ -4113,6 +4114,100 @@ describe("Preview remote streaming", () => {
     powerSaveBlockerStop.mockClear();
   });
 
+  effectIt.effect("copies selected page text and excludes password fields", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        class Input {
+          type = "text";
+          value = "before selected after";
+          selectionStart = 7;
+          selectionEnd = 15;
+        }
+        const input = new Input();
+        const document = {
+          activeElement: input as Input | null,
+          getSelection: () => "page selection",
+        };
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        vi.mocked(wc.executeJavaScript).mockImplementation(async (expression) =>
+          NodeVM.runInNewContext(expression, {
+            document,
+            window: {},
+            HTMLInputElement: Input,
+            HTMLTextAreaElement: Input,
+          }),
+        );
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("selection");
+        yield* manager.registerWebview("selection", 42);
+        expect(yield* manager.readRemoteSelection("selection")).toBe("selected");
+        input.type = "password";
+        expect(yield* manager.readRemoteSelection("selection")).toBe("");
+        document.activeElement = null;
+        expect(yield* manager.readRemoteSelection("selection")).toBe("page selection");
+      }),
+    ),
+  );
+
+  effectIt.effect("remote key echoes do not lock out the rest of a sentence", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
+        const wc = Object.assign(
+          makeTestPreviewWebContents(async () => ({
+            toJPEG: () => Buffer.from("remote-input"),
+            getSize: () => ({ width: 800, height: 600 }),
+          })),
+          {
+            ipc: {
+              on: vi.fn((channel: string, listener: typeof humanInput) => {
+                if (channel === "preview:human-input") humanInput = listener;
+              }),
+              off: vi.fn(),
+            },
+          },
+        );
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("typing");
+        yield* manager.registerWebview("typing", 42);
+        const { generation } = yield* manager.readRemoteSourceMetadata("typing");
+        const original = vi.mocked(wc.debugger.sendCommand).getMockImplementation()!;
+        const inserted: string[] = [];
+        vi.mocked(wc.debugger.sendCommand).mockImplementation(async (method, params) => {
+          if (method === "Input.dispatchKeyEvent" && params?.type === "keyDown") {
+            inserted.push(String(params.text));
+            humanInput?.({}, { kind: "key", key: params.key, code: params.code });
+            return undefined;
+          }
+          return original(method, params);
+        });
+        for (const key of "hello world") {
+          const code = key === " " ? "Space" : `Key${key.toUpperCase()}`;
+          yield* manager.dispatchRemoteInput("typing", {
+            type: "keyDown",
+            generation,
+            key,
+            code,
+            text: key,
+            modifiers: [],
+          });
+          yield* TestClock.adjust(1);
+          yield* manager.dispatchRemoteInput("typing", {
+            type: "keyUp",
+            generation,
+            key,
+            code,
+            modifiers: [],
+          });
+        }
+        expect(inserted.join("")).toBe("hello world");
+      }),
+    ),
+  );
+
   effectIt.effect("interrupts agent work on only the first controller message", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -4601,6 +4696,27 @@ describe("Preview remote streaming", () => {
           touchPoints: [{ x: 30, y: 40, id: 2, radiusX: 1, radiusY: 1, force: 1 }],
           modifiers: 0,
         });
+      }),
+    ),
+  );
+
+  effectIt.effect("publishes appearance changes to remote viewers", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(async () => ({
+          toJPEG: () => Buffer.from("remote-input"),
+          getSize: () => ({ width: 800, height: 600 }),
+        }));
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_remote_appearance");
+        yield* manager.registerWebview("tab_remote_appearance", 42);
+        yield* manager.setColorScheme("tab_remote_appearance", "dark");
+        const metadata = yield* manager.readRemoteSourceMetadata("tab_remote_appearance");
+        expect(metadata.colorScheme).toBe("dark");
+        yield* manager.setColorScheme("tab_remote_appearance", "system");
+        expect((yield* manager.readRemoteSourceMetadata("tab_remote_appearance")).colorScheme).toBe(
+          "system",
+        );
       }),
     ),
   );

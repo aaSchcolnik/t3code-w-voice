@@ -1,10 +1,12 @@
 import {
+  EnvironmentAuthorizationError,
   RemotePreviewGeneration,
   RemotePreviewSessionId,
   type RemotePreviewViewerStreamEvent,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Stream from "effect/Stream";
-import { Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { createRemotePreviewStreamConsumerAtom } from "./remotePreviewStreamConsumer";
@@ -29,6 +31,37 @@ const events: ReadonlyArray<RemotePreviewViewerStreamEvent> = [
 ];
 
 describe("createRemotePreviewStreamConsumerAtom", () => {
+  it("preserves the authorization failure instead of reporting an unexplained disconnect", async () => {
+    const cause = Cause.fail(
+      new EnvironmentAuthorizationError({
+        message: "Missing required scope: preview:view",
+        requiredScope: "preview:view",
+      }),
+    );
+    const streamAtom = Atom.make(
+      AsyncResult.failure<
+        ReadonlyArray<RemotePreviewViewerStreamEvent>,
+        EnvironmentAuthorizationError
+      >(cause),
+    );
+    const fail = vi.fn();
+    const accept = vi.fn();
+    const registry = AtomRegistry.make();
+    const unmount = registry.mount(
+      createRemotePreviewStreamConsumerAtom({
+        streamAtom,
+        handlerAtom: Atom.make({ accept, fail }),
+        label: "test:denied",
+      }),
+    );
+
+    await Promise.resolve();
+    expect(fail).toHaveBeenCalledWith(cause);
+    expect(accept).not.toHaveBeenCalled();
+    unmount();
+    registry.dispose();
+  });
+
   it("replays every event of a chunk in order", async () => {
     // One chunk holding three events: the shape the RPC client produces when a
     // burst of signaling lands together. A stream atom only keeps a chunk's last

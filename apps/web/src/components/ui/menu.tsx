@@ -44,7 +44,13 @@ function MenuPopup({
     });
 
   return (
-    <MenuPrimitive.Portal>
+    <MenuPrimitive.Portal
+      container={
+        typeof document !== "undefined" && document.fullscreenElement instanceof HTMLElement
+          ? document.fullscreenElement
+          : undefined
+      }
+    >
       <MenuPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

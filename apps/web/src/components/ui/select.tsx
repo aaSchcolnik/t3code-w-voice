@@ -128,7 +128,13 @@ function SelectPopup({
   anchor?: SelectPrimitive.Positioner.Props["anchor"];
 }) {
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal
+      container={
+        typeof document !== "undefined" && document.fullscreenElement instanceof HTMLElement
+          ? document.fullscreenElement
+          : undefined
+      }
+    >
       <SelectPrimitive.Positioner
         align={align}
         alignItemWithTrigger={alignItemWithTrigger}

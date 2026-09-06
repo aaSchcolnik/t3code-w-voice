@@ -1,6 +1,36 @@
+import { EnvironmentAuthorizationError } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import { describe, expect, it } from "vite-plus/test";
 
-import { remotePreviewOverlayCopy } from "./remotePreviewStatus";
+import { remotePreviewOverlayCopy, remotePreviewStreamFailureStatus } from "./remotePreviewStatus";
+
+describe("remotePreviewStreamFailureStatus", () => {
+  it("explains how to recover a pairing that predates preview permissions", () => {
+    const status = remotePreviewStreamFailureStatus(
+      Cause.fail(
+        new EnvironmentAuthorizationError({
+          message: "Missing required scope: preview:view",
+          requiredScope: "preview:view",
+        }),
+      ),
+    );
+    expect(status).toBe("permission-required");
+    expect(
+      remotePreviewOverlayCopy({ status, hostState: "streaming", environmentLabel: "Studio" }),
+    ).toEqual({
+      title: "Preview access required",
+      detail: "Pair this device again using a new link with permission to view browser previews.",
+      opaque: true,
+    });
+  });
+
+  it("keeps transport failures separate from permission failures", () => {
+    expect(remotePreviewStreamFailureStatus(Cause.fail(new Error("Socket closed")))).toBe("failed");
+    expect(remotePreviewStreamFailureStatus(Cause.die(new Error("Unexpected failure")))).toBe(
+      "failed",
+    );
+  });
+});
 
 describe("remotePreviewOverlayCopy", () => {
   it("shows nothing while the stream is healthy", () => {

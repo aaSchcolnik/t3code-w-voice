@@ -17,6 +17,8 @@ import {
   AuthAdministrativeScopes,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
+  AuthPreviewViewScope,
+  AuthPreviewControlScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
   AuthReviewWriteScope,
@@ -199,6 +201,16 @@ const PAIRING_SCOPE_OPTIONS: ReadonlyArray<{
     scope: AuthTerminalOperateScope,
     title: "Use terminals",
     description: "Create terminals and send input to running shells.",
+  },
+  {
+    scope: AuthPreviewViewScope,
+    title: "View browser previews",
+    description: "Watch browser tabs streamed from the desktop app.",
+  },
+  {
+    scope: AuthPreviewControlScope,
+    title: "Control browser previews",
+    description: "Send mouse, touch, and keyboard input to streamed browser tabs.",
   },
   {
     scope: AuthReviewWriteScope,

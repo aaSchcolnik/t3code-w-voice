@@ -1688,6 +1688,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           cssHeight,
           deviceScaleFactor,
           zoomFactor: tab.zoomFactor,
+          colorScheme: tab.colorScheme,
           generation: RemotePreviewGeneration.make((previous?.generation ?? 0) + 1),
         };
         return [
@@ -3104,6 +3105,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const wc = webContents.fromId(webContentsId);
     if (!wc || wc.isDestroyed()) return;
     yield* applyColorScheme(tabId, wc, colorScheme);
+    yield* refreshRemoteSourceMetadata(tabId).pipe(Effect.ignore);
   });
 
   const setAudioMuted = Effect.fn("PreviewManager.setAudioMuted")(function* (
@@ -4387,6 +4389,34 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     if (existing?.webContentsId === wc.id) return existing.value;
     const directSend: SendCommand = Effect.fn("PreviewManager.sendRemoteInputCommand")(
       function* (method, commandParams) {
+        // CDP keys are trusted DOM events too. Consume their preload echo so
+        // remote typing does not activate the local-human 750 ms lockout.
+        if (
+          method === "Input.dispatchKeyEvent" &&
+          (commandParams?.type === "keyDown" || commandParams?.type === "rawKeyDown") &&
+          typeof commandParams.key === "string" &&
+          typeof commandParams.code === "string"
+        ) {
+          yield* expectAgentInput(tabId, {
+            kind: "key",
+            key: commandParams.key,
+            code: commandParams.code,
+          });
+        }
+        if (
+          method === "Input.dispatchMouseEvent" &&
+          commandParams?.type === "mousePressed" &&
+          typeof commandParams.x === "number" &&
+          typeof commandParams.y === "number"
+        ) {
+          yield* expectAgentInput(tabId, {
+            kind: "pointer",
+            x: commandParams.x,
+            y: commandParams.y,
+            button:
+              commandParams.button === "right" ? 2 : commandParams.button === "middle" ? 1 : 0,
+          });
+        }
         return yield* attemptPromise(
           { operation: `remoteInput.${method}`, tabId, webContentsId: wc.id },
           () => wc.debugger.sendCommand(method, commandParams),
@@ -4396,6 +4426,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const dispatcher = new HumanInputDispatcher({
       send: (method, commandParams) => runPromise(directSend(method, commandParams)),
       onFirstInput: () => runPromise(markHumanInput(tabId, "remote")),
+      onTouchStart: (x, y) =>
+        runPromise(expectAgentInput(tabId, { kind: "pointer", x, y, button: 0 })),
       focus: () =>
         runPromise(
           attempt({ operation: "remoteInput.focus", tabId, webContentsId: wc.id }, () =>
@@ -4412,6 +4444,28 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       }),
     );
     return dispatcher;
+  });
+
+  const readRemoteSelection = Effect.fn("PreviewManager.readRemoteSelection")(function* (
+    tabId: string,
+  ) {
+    const wc = yield* requireWebContents(tabId);
+    return yield* attemptPromise(
+      { operation: "remoteInput.readSelection", tabId, webContentsId: wc.id },
+      async () => {
+        const text: unknown = await wc.executeJavaScript(`(() => {
+        let root = document;
+        while (root.activeElement?.shadowRoot) root = root.activeElement.shadowRoot;
+        const element = root.activeElement;
+        if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+          if (element.type === "password") return "";
+          return element.value.slice(element.selectionStart ?? 0, element.selectionEnd ?? 0);
+        }
+        return String(root.getSelection?.() ?? window.getSelection() ?? "");
+      })()`);
+        return typeof text === "string" ? text : "";
+      },
+    );
   });
 
   const dispatchRemoteInput = Effect.fn("PreviewManager.dispatchRemoteInput")(function* (
@@ -4751,6 +4805,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     startRemoteCapture,
     closePictureInPicture,
     dispatchRemoteInput,
+    readRemoteSelection,
     readRemoteSourceMetadata,
     stopRecording,
     stopRemoteCapture,
@@ -5131,6 +5186,7 @@ export class PreviewManager extends Context.Service<
     readonly stopRecording: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly startRemoteCapture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly stopRemoteCapture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
+    readonly readRemoteSelection: (tabId: string) => Effect.Effect<string, PreviewManagerError>;
     readonly dispatchRemoteInput: (
       tabId: string,
       message: RemotePreviewInputMessage,
@@ -5271,6 +5327,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     startRemoteCapture: operations.startRemoteCapture,
     stopRemoteCapture: operations.stopRemoteCapture,
     dispatchRemoteInput: operations.dispatchRemoteInput,
+    readRemoteSelection: operations.readRemoteSelection,
     readRemoteSourceMetadata: operations.readRemoteSourceMetadata,
     setRemotePresence: operations.setRemotePresence,
     saveRecording: operations.saveRecording,

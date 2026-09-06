@@ -8,7 +8,7 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import type { DesktopPreviewPointerEvent } from "./ipc.ts";
-import { PreviewTabId } from "./preview.ts";
+import { PreviewTabId, PreviewViewportSetting } from "./preview.ts";
 import { PreviewAutomationClientId, PreviewAutomationConnectionId } from "./previewAutomation.ts";
 
 export const RemotePreviewRole = Schema.Literals(["viewer", "controller"]);
@@ -29,6 +29,7 @@ export const RemotePreviewSourceMetadata = Schema.Struct({
   cssHeight: PositiveFinite,
   deviceScaleFactor: PositiveFinite,
   zoomFactor: PositiveFinite,
+  colorScheme: Schema.optional(Schema.Literals(["system", "light", "dark"])),
   generation: RemotePreviewGeneration,
 });
 export type RemotePreviewSourceMetadata = typeof RemotePreviewSourceMetadata.Type;
@@ -223,6 +224,67 @@ export const RemotePreviewControlMessage = Schema.Union([
   RemotePreviewViewportAckMessage,
 ]);
 export type RemotePreviewControlMessage = typeof RemotePreviewControlMessage.Type;
+
+/** Explicit clipboard actions from the signed viewer to its native WebView host. */
+export const RemotePreviewDeviceClipboardRequest = Schema.Struct({
+  type: Schema.Literal("deviceClipboard"),
+  requestId: PositiveInt,
+  action: Schema.Literals(["read", "write"]),
+  text: Schema.optional(Schema.String),
+});
+export const RemotePreviewDeviceClipboardResult = Schema.Struct({
+  requestId: PositiveInt,
+  text: Schema.NullOr(Schema.String),
+  error: Schema.NullOr(Schema.String),
+});
+
+/** Controller actions carried by the reliable channel, outside guest input. */
+export const RemotePreviewSessionCommand = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("previewAction"),
+    requestId: PositiveInt,
+    generation: RemotePreviewGeneration,
+    action: Schema.Literals([
+      "goBack",
+      "goForward",
+      "refresh",
+      "hardReload",
+      "zoomIn",
+      "zoomOut",
+      "resetZoom",
+      "pickElement",
+      "cancelPickElement",
+    ]),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("setColorScheme"),
+    requestId: PositiveInt,
+    generation: RemotePreviewGeneration,
+    colorScheme: Schema.Literals(["system", "light", "dark"]),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("readSelection"),
+    requestId: PositiveInt,
+    generation: RemotePreviewGeneration,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("resizeViewport"),
+    requestId: PositiveInt,
+    generation: RemotePreviewGeneration,
+    viewport: PreviewViewportSetting,
+  }),
+]);
+export type RemotePreviewSessionCommand = typeof RemotePreviewSessionCommand.Type;
+
+export const RemotePreviewCommandResult = Schema.Struct({
+  type: Schema.Literal("commandResult"),
+  requestId: PositiveInt,
+  text: Schema.NullOr(Schema.String),
+  error: Schema.NullOr(Schema.String),
+  /** Large annotation crops are split across ordered, bounded messages. */
+  more: Schema.optional(Schema.Boolean),
+});
+export type RemotePreviewCommandResult = typeof RemotePreviewCommandResult.Type;
 
 /** Per-viewer transport state, never forwarded to the guest's input dispatcher. */
 export const RemotePreviewViewerVisibilityMessage = Schema.Struct({

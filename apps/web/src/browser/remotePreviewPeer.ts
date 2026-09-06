@@ -1,5 +1,8 @@
+import { createRemotePreviewCommands, remotePreviewAnnotationInput } from "./remotePreviewCommands";
 import {
   RemotePreviewControlMessage,
+  RemotePreviewSessionCommand,
+  type PreviewViewportSetting,
   RemotePreviewGeneration,
   RemotePreviewMotionMessage,
   RemotePreviewViewerVisibilityMessage,
@@ -219,7 +222,12 @@ const logHostMilestone = (step: string, details: Record<string, unknown>): void 
 
 const encodeChannelMessage = (message: unknown): string => JSON.stringify(message);
 const isRemotePreviewControlMessage = Schema.is(
-  Schema.Union([RemotePreviewControlMessage, RemotePreviewViewerVisibilityMessage]),
+  Schema.Union([
+    RemotePreviewControlMessage,
+    RemotePreviewMotionMessage,
+    RemotePreviewViewerVisibilityMessage,
+    RemotePreviewSessionCommand,
+  ]),
 );
 const isRemotePreviewMotionMessage = Schema.is(RemotePreviewMotionMessage);
 
@@ -248,6 +256,7 @@ export interface RemotePreviewPeerOptions {
   readonly runtimeTabId: string;
   readonly bridge: DesktopPreviewBridge;
   readonly signal: (event: RemotePreviewHostEvent) => Promise<void>;
+  readonly resizeViewport?: (viewport: PreviewViewportSetting) => Promise<void>;
 }
 
 export class RemotePreviewPeer {
@@ -275,12 +284,15 @@ export class RemotePreviewPeer {
   private trackRefreshPromise: Promise<void> | null = null;
   private readonly trackEndedListener: () => void;
   private closed = false;
+  private controlTail: Promise<void> = Promise.resolve();
+  private readonly commands: ReturnType<typeof createRemotePreviewCommands>;
 
   private constructor(options: {
     readonly request: RemotePreviewHostStartRequest;
     readonly runtimeTabId: string;
     readonly bridge: DesktopPreviewBridge;
     readonly signal: RemotePreviewPeerOptions["signal"];
+    readonly resizeViewport?: RemotePreviewPeerOptions["resizeViewport"];
     readonly connection: RTCPeerConnection;
     readonly controlChannel: RTCDataChannel;
     readonly motionChannel: RTCDataChannel;
@@ -313,6 +325,54 @@ export class RemotePreviewPeer {
       );
     });
 
+    this.commands = createRemotePreviewCommands({
+      bridge: options.bridge,
+      tabId: this.runtimeTabId,
+      resizeViewport: options.resizeViewport,
+      validate: (command) => {
+        if (
+          this.closed ||
+          this.role !== "controller" ||
+          !this.viewerVisible ||
+          this.hostState !== "streaming"
+        ) {
+          throw new Error("Take control of the stream first.");
+        }
+        if (
+          !(command.type === "previewAction" && command.action === "cancelPickElement") &&
+          command.generation !== this.sourceMetadata.generation
+        ) {
+          throw new Error("The page size changed. Try again.");
+        }
+      },
+      reply: async (result) => {
+        const channel = this.controlChannel;
+        if (this.closed || channel.readyState !== "open") return;
+        if (channel.bufferedAmount > 256 * 1024) {
+          await new Promise<void>((resolve, reject) => {
+            channel.bufferedAmountLowThreshold = 64 * 1024;
+            const cleanup = () => {
+              clearTimeout(timer);
+              channel.removeEventListener("bufferedamountlow", drained);
+              channel.removeEventListener("close", closed);
+            };
+            const drained = () => {
+              cleanup();
+              resolve();
+            };
+            const closed = () => {
+              cleanup();
+              reject(new Error("The stream disconnected."));
+            };
+            const timer = setTimeout(closed, 10_000);
+            channel.addEventListener("bufferedamountlow", drained);
+            channel.addEventListener("close", closed);
+          });
+        }
+        this.sendControl(result);
+      },
+    });
+
     this.controlChannel.addEventListener("open", () => {
       this.sendControl(this.sourceMetadataEvent());
     });
@@ -323,6 +383,7 @@ export class RemotePreviewPeer {
         if (this.viewerVisible === message.visible) return;
         this.viewerVisible = message.visible;
         if (!message.visible) {
+          void this.commands.cancelPick().catch(() => undefined);
           this.motionCoalescer.cancel();
           if (this.role === "controller")
             void this.releaseAll(options.bridge).catch(() => undefined);
@@ -330,10 +391,19 @@ export class RemotePreviewPeer {
         this.applySenderPolicySafely();
         return;
       }
-      if (this.role !== "controller") return;
-      void this.dispatchInput(options.bridge, message).catch((cause) =>
-        console.warn("Remote preview control dispatch failed.", cause),
-      );
+      this.controlTail = this.controlTail
+        .then(async () => {
+          if ("requestId" in message) {
+            if (message.type === "previewAction" && message.action === "pickElement") {
+              this.commands.startPick(message);
+            } else {
+              await this.commands.handle(message);
+            }
+            return;
+          }
+          await this.dispatchInput(options.bridge, message);
+        })
+        .catch((cause) => console.warn("Remote preview control dispatch failed.", cause));
     });
     this.motionChannel.addEventListener("message", (event) => {
       const message = decodeMotionMessage(event.data);
@@ -486,7 +556,10 @@ export class RemotePreviewPeer {
     const lostControl = this.role === "controller" && request.role !== "controller";
     this.role = request.role;
     this.generation = request.generation;
-    if (lostControl) await this.releaseAll(bridge);
+    if (lostControl) {
+      await this.commands.cancelPick();
+      await this.releaseAll(bridge);
+    }
     this.applySenderPolicySafely();
   }
 
@@ -508,6 +581,7 @@ export class RemotePreviewPeer {
     signal: RemotePreviewPeerOptions["signal"],
   ): void {
     if (this.hostState === "streaming" && state !== "streaming") {
+      void this.commands.cancelPick().catch(() => undefined);
       void this.releaseAll(bridge).catch(() => undefined);
     }
     this.hostState = state;
@@ -543,6 +617,7 @@ export class RemotePreviewPeer {
   async close(bridge: DesktopPreviewBridge): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    await this.commands.cancelPick().catch(() => undefined);
     this.motionCoalescer.cancel();
     if (this.statsInterval !== null) window.clearInterval(this.statsInterval);
     this.watchTrack(null);
@@ -567,7 +642,8 @@ export class RemotePreviewPeer {
     )
       return;
     if (!acceptsViewerInputGeneration(message.generation, this.sourceMetadata.generation)) return;
-    await bridge.remote.dispatchInput(this.runtimeTabId, message);
+    const input = this.commands.isPicking() ? remotePreviewAnnotationInput(message) : message;
+    if (input) await bridge.remote.dispatchInput(this.runtimeTabId, input);
   }
 
   private async releaseAll(bridge: DesktopPreviewBridge): Promise<void> {

@@ -1,7 +1,7 @@
 "use client";
 
 import type { DesktopPreviewColorScheme, EnvironmentId } from "@t3tools/contracts";
-import { Minus, MoreVertical, Plus as PlusIcon, RotateCcw } from "lucide-react";
+import { MoreVertical } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { RemotePreviewViewerStats } from "~/browser/remotePreviewViewer";
@@ -10,28 +10,15 @@ import {
   Menu,
   MenuItem,
   MenuPopup,
-  MenuRadioGroup,
-  MenuRadioItem,
   MenuGroup,
   MenuGroupLabel,
   MenuSeparator,
-  MenuSub,
-  MenuSubPopup,
-  MenuSubTrigger,
   MenuTrigger,
 } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 
 import { previewBridge } from "./previewBridge";
-
-const COLOR_SCHEME_OPTIONS: ReadonlyArray<{
-  value: DesktopPreviewColorScheme;
-  label: string;
-}> = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-];
+import { PreviewPageMenuItems } from "./PreviewPageMenuItems";
 
 interface Props {
   /** Active preview tab id. Tab-targeting actions are disabled without it. */
@@ -74,7 +61,11 @@ interface Props {
 
 const REMOTE_STATS_POLL_MS = 1_000;
 
-function RemoteStreamStats({ read }: { read: () => Promise<RemotePreviewViewerStats | null> }) {
+export function RemoteStreamStats({
+  read,
+}: {
+  read: () => Promise<RemotePreviewViewerStats | null>;
+}) {
   const [stats, setStats] = useState<RemotePreviewViewerStats | null>(null);
 
   useEffect(() => {
@@ -126,7 +117,6 @@ export function PreviewMoreMenu({
     void op(tabId).catch(() => undefined);
   };
 
-  const zoomLabel = `${Math.round(zoomFactor * 100)}%`;
   return (
     <Menu>
       <Tooltip>
@@ -156,89 +146,27 @@ export function PreviewMoreMenu({
         ) : null}
         {!bridge ? null : (
           <>
-            <MenuItem onClick={callTab(bridge.hardReload)} disabled={tabDisabled}>
-              Hard reload
-            </MenuItem>
-            <MenuItem onClick={callTab(bridge.openDevTools)} disabled={tabDisabled}>
-              Open DevTools
-            </MenuItem>
-            <MenuItem onClick={onNativePictureInPicture} disabled={tabDisabled}>
-              {nativePictureInPicture
-                ? "Close separate preview window"
-                : "Open separate preview window"}
-            </MenuItem>
-            <MenuItem onClick={onToggleDeviceToolbar} disabled={tabDisabled}>
-              {deviceToolbarVisible ? "Hide device toolbar" : "Show device toolbar"}
-            </MenuItem>
-            <MenuSub>
-              <MenuSubTrigger disabled={tabDisabled}>Appearance</MenuSubTrigger>
-              <MenuSubPopup className="min-w-32">
-                <MenuRadioGroup
-                  value={colorScheme}
-                  onValueChange={(value) => {
-                    if (!tabId) return;
-                    void bridge
-                      .setColorScheme(tabId, value as DesktopPreviewColorScheme)
-                      .catch(() => undefined);
-                  }}
-                >
-                  {COLOR_SCHEME_OPTIONS.map((option) => (
-                    <MenuRadioItem key={option.value} value={option.value}>
-                      {option.label}
-                    </MenuRadioItem>
-                  ))}
-                </MenuRadioGroup>
-              </MenuSubPopup>
-            </MenuSub>
-            <MenuSeparator />
-            {/*
-              Zoom row: label + inline control cluster. `closeOnClick=false`
-              keeps the menu open while the user clicks the +/− buttons.
-            */}
-            <MenuItem
-              closeOnClick={false}
-              onClick={(event: React.MouseEvent) => event.preventDefault()}
-              className="justify-between"
+            <PreviewPageMenuItems
               disabled={tabDisabled}
+              zoomFactor={zoomFactor}
+              colorScheme={colorScheme}
+              onAction={(action) => callTab(bridge[action])()}
+              onColorScheme={(value) => {
+                if (tabId) void bridge.setColorScheme(tabId, value).catch(() => undefined);
+              }}
             >
-              <span>Zoom</span>
-              <span className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="icon-xs"
-                  type="button"
-                  onClick={callTab(bridge.zoomOut)}
-                  aria-label="Zoom out"
-                  disabled={tabDisabled}
-                >
-                  <Minus />
-                </Button>
-                <span className="min-w-12 text-center text-xs tabular-nums text-muted-foreground">
-                  {zoomLabel}
-                </span>
-                <Button
-                  variant="outline"
-                  size="icon-xs"
-                  type="button"
-                  onClick={callTab(bridge.zoomIn)}
-                  aria-label="Zoom in"
-                  disabled={tabDisabled}
-                >
-                  <PlusIcon />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  type="button"
-                  onClick={callTab(bridge.resetZoom)}
-                  aria-label="Reset zoom"
-                  className="[:hover,[data-pressed]]:bg-foreground/10"
-                  disabled={tabDisabled}
-                >
-                  <RotateCcw />
-                </Button>
-              </span>
-            </MenuItem>
+              <MenuItem onClick={callTab(bridge.openDevTools)} disabled={tabDisabled}>
+                Open DevTools
+              </MenuItem>
+              <MenuItem onClick={onNativePictureInPicture} disabled={tabDisabled}>
+                {nativePictureInPicture
+                  ? "Close separate preview window"
+                  : "Open separate preview window"}
+              </MenuItem>
+              <MenuItem onClick={onToggleDeviceToolbar} disabled={tabDisabled}>
+                {deviceToolbarVisible ? "Hide device toolbar" : "Show device toolbar"}
+              </MenuItem>
+            </PreviewPageMenuItems>
             <MenuSeparator />
             {/*
               Grouped so the heading has a `MenuGroup` ancestor — `MenuGroupLabel`

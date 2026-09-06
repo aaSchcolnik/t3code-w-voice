@@ -11,6 +11,7 @@ export type HumanInputSend = (method: string, params?: Record<string, unknown>) 
 
 export interface HumanInputDispatcherOptions {
   readonly send: HumanInputSend;
+  readonly onTouchStart?: (x: number, y: number) => Promise<void>;
   readonly onFirstInput: () => Promise<void>;
   readonly focus: () => Promise<void>;
   readonly insertTextBeforeActivation: (text: string) => Promise<void>;
@@ -280,6 +281,7 @@ export class HumanInputDispatcher {
     }
     const pointer: HeldPointer = { ...message, button: "none" };
     this.heldTouchPointers.set(message.pointerId, pointer);
+    await this.options.onTouchStart?.(message.x, message.y);
     await this.options.send("Input.dispatchTouchEvent", {
       type: "touchStart",
       touchPoints: Array.from(this.heldTouchPointers.values(), touchPoint),

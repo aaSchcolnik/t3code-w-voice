@@ -1,7 +1,10 @@
+import { RemotePreviewDeviceClipboardRequest } from "@t3tools/contracts";
+import * as Clipboard from "expo-clipboard";
+import * as Schema from "effect/Schema";
 import type { EnvironmentId, PreviewTabId, ThreadId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 import * as Option from "effect/Option";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { WebView } from "react-native-webview";
 
@@ -17,6 +20,8 @@ import {
   resolveRemotePreviewViewerUrl,
 } from "./remotePreviewViewerUrl";
 
+const decodeClipboardRequest = Schema.decodeUnknownOption(RemotePreviewDeviceClipboardRequest);
+
 /**
  * Singleton WebView remote-preview surface for tablet layouts. Issues a signed
  * short-lived viewer URL over authenticated RPC, then loads only that origin.
@@ -26,6 +31,7 @@ export function ThreadBrowserInspector(props: {
   readonly threadId: ThreadId;
 }) {
   const { environmentId, threadId } = props;
+  const webviewRef = useRef<WebView>(null);
   const prepared = usePreparedConnection(environmentId);
   const httpBaseUrl = Option.getOrNull(prepared)?.httpBaseUrl ?? null;
 
@@ -127,6 +133,33 @@ export function ThreadBrowserInspector(props: {
   return (
     <View className="flex-1 bg-background">
       <WebView
+        ref={webviewRef}
+        onShouldStartLoadWithRequest={(request) => request.url === viewerUrl}
+        onMessage={(event) => {
+          if (!httpBaseUrl || event.nativeEvent.url !== viewerUrl) return;
+          let raw: unknown;
+          try {
+            raw = JSON.parse(event.nativeEvent.data);
+          } catch {
+            return;
+          }
+          const decoded = decodeClipboardRequest(raw);
+          if (decoded._tag === "None") return;
+          const request = decoded.value;
+          void (async () => {
+            let text: string | null = null;
+            let error: string | null = null;
+            try {
+              if (request.action === "read") text = await Clipboard.getStringAsync();
+              else await Clipboard.setStringAsync(request.text ?? "");
+            } catch {
+              error = "Could not access the device clipboard.";
+            }
+            webviewRef.current?.injectJavaScript(
+              `window.dispatchEvent(new CustomEvent("t3-device-clipboard", { detail: ${JSON.stringify({ requestId: request.requestId, text, error })} })); true;`,
+            );
+          })();
+        }}
         source={{ uri: viewerUrl }}
         originWhitelist={originWhitelist}
         allowsInlineMediaPlayback

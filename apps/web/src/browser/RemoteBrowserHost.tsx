@@ -1,5 +1,14 @@
 "use client";
 
+import { RemotePreviewPlayback } from "./RemotePreviewPlaybackOverlay";
+import { RemotePreviewClipboard, RemotePreviewTools } from "./RemotePreviewTools";
+import {
+  downloadRemotePreviewScreenshot,
+  isRemotePreviewPictureInPicture,
+  supportsRemotePreviewPictureInPicture,
+  toggleRemotePreviewPictureInPicture,
+} from "./remotePreviewVideoTools";
+
 import { useAtomValue } from "@effect/atom-react";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -11,8 +20,12 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
+import type * as Cause from "effect/Cause";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
+
+import { Button } from "~/components/ui/button";
+import { Shrink } from "lucide-react";
 
 import { AgentBrowserCursor } from "~/components/preview/AgentBrowserCursor";
 import { isElectron } from "~/env";
@@ -35,13 +48,9 @@ import {
   type RemotePreviewPoint,
   type RemotePreviewRect,
 } from "./remotePreviewCoordinates";
-import {
-  listenForRemotePreviewBeforeInput,
-  translateCompositionEnd,
-  translateKeyEvent,
-} from "./remotePreviewKeyboard";
+import { listenForRemotePreviewBeforeInput, translateKeyEvent } from "./remotePreviewKeyboard";
 import type { RemotePreviewMotionDraft } from "./remotePreviewMessages";
-import { remotePreviewOverlayCopy } from "./remotePreviewStatus";
+import { remotePreviewOverlayCopy, remotePreviewStreamFailureStatus } from "./remotePreviewStatus";
 import { createRemotePreviewStreamConsumerAtom } from "./remotePreviewStreamConsumer";
 import {
   beginTouch,
@@ -122,10 +131,14 @@ function RemoteBrowserSurface(props: {
         rect: current?.rect ?? null,
         visible: current?.visible ?? false,
         cornerRadius: current?.cornerRadius ?? 0,
+        zIndex: current?.zIndex ?? 30,
       };
     }),
   );
-  const active = presentation.visible && presentation.rect !== null;
+  const nativePictureInPicture = useRemotePreviewViewerStore(
+    (state) => state.byTabId[props.runtimeTabId]?.nativePictureInPicture ?? false,
+  );
+  const active = (presentation.visible || nativePictureInPicture) && presentation.rect !== null;
   const [attached, setAttached] = useState(active);
 
   useEffect(() => {
@@ -142,6 +155,7 @@ function RemoteBrowserSurface(props: {
       rect={presentation.rect}
       visible={presentation.visible}
       cornerRadius={presentation.cornerRadius}
+      zIndex={presentation.zIndex}
     />
   );
 }
@@ -228,6 +242,7 @@ function RemotePreviewSurface(props: {
   readonly rect: RemotePreviewRect;
   readonly visible: boolean;
   readonly cornerRadius: number;
+  readonly zIndex: number;
 }) {
   const { cornerRadius, rect, runtimeTabId, tabId, threadRef } = props;
   const environment = useEnvironment(threadRef.environmentId);
@@ -298,7 +313,14 @@ function RemotePreviewSurface(props: {
           const next = { width: metadata.cssWidth, height: metadata.cssHeight };
           const current = runtime.source;
           runtime.source = next;
-          if (current?.width !== next.width || current.height !== next.height) setSourceSize(next);
+          patchRemotePreviewViewer(runtimeTabId, {
+            zoomFactor: metadata.zoomFactor,
+            colorScheme: metadata.colorScheme ?? "system",
+          });
+          if (current?.width !== next.width || current.height !== next.height) {
+            setSourceSize(next);
+            patchRemotePreviewViewer(runtimeTabId, { source: next });
+          }
         },
         onHostState: (hostState) => {
           runtime.hostState = hostState;
@@ -354,7 +376,10 @@ function RemotePreviewSurface(props: {
       });
       return {
         accept: viewer.acceptEvent,
-        fail: () => patchRemotePreviewViewer(runtimeTabId, { status: "failed" as const }),
+        fail: (cause: Cause.Cause<unknown>) =>
+          patchRemotePreviewViewer(runtimeTabId, {
+            status: remotePreviewStreamFailureStatus(cause),
+          }),
       };
     }).pipe(Atom.setIdleTTL(0)),
   );
@@ -639,6 +664,7 @@ function RemotePreviewSurface(props: {
           applyTouchResult(cancelTouch(runtime.touch), null);
           return;
         }
+        flushMotion();
         applyTouchResult(endTouch(runtime.touch, touchEventOf(event, point)), point);
         return;
       }
@@ -759,6 +785,27 @@ function RemotePreviewSurface(props: {
   }, [measure, runtimeTabId]);
 
   useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const update = () =>
+      patchRemotePreviewViewer(runtimeTabId, {
+        nativePictureInPicture: isRemotePreviewPictureInPicture(video),
+        pictureInPictureSupported: supportsRemotePreviewPictureInPicture(video),
+      });
+    const events = [
+      "loadedmetadata",
+      "enterpictureinpicture",
+      "leavepictureinpicture",
+      "webkitpresentationmodechanged",
+    ];
+    for (const event of events) video.addEventListener(event, update);
+    update();
+    return () => {
+      for (const event of events) video.removeEventListener(event, update);
+    };
+  }, [runtimeTabId]);
+
+  useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     return listenForRemotePreviewBeforeInput(textarea, { canSendInput, send: viewer.sendControl });
@@ -767,26 +814,46 @@ function RemotePreviewSurface(props: {
   useEffect(() => {
     const onVisibilityChange = () => {
       const video = videoRef.current;
-      viewer.setVisible(document.visibilityState !== "hidden" && props.visible);
+      const pip = video ? isRemotePreviewPictureInPicture(video) : false;
+      viewer.setVisible(pip || (document.visibilityState !== "hidden" && props.visible));
       if (document.visibilityState === "hidden") {
         stopMomentum();
         applyTouchResult(cancelTouch(runtime.touch), null);
         viewer.releaseAll();
         releaseControl();
-        video?.pause();
+        if (!pip) video?.pause();
         return;
       }
-      void video?.play().catch(() => undefined);
       if (viewer.isConnectionFailed()) viewer.requestIceRestart();
     };
-    viewer.setVisible(document.visibilityState !== "hidden" && props.visible);
+    viewer.setVisible(
+      entry.nativePictureInPicture || (document.visibilityState !== "hidden" && props.visible),
+    );
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [applyTouchResult, props.visible, releaseControl, runtime, stopMomentum, viewer]);
+  }, [
+    applyTouchResult,
+    entry.nativePictureInPicture,
+    props.visible,
+    releaseControl,
+    runtime,
+    stopMomentum,
+    viewer,
+  ]);
 
   useEffect(() => {
     patchRemotePreviewViewer(runtimeTabId, {
       controls: {
+        viewer,
+        containerRef,
+        captureScreenshot: async () => {
+          if (!videoRef.current) throw new Error("The stream is not connected.");
+          await downloadRemotePreviewScreenshot(videoRef.current);
+        },
+        togglePictureInPicture: async () => {
+          if (!videoRef.current) throw new Error("The stream is not connected.");
+          await toggleRemotePreviewPictureInPicture(videoRef.current);
+        },
         requestControl,
         releaseControl,
         focusKeyboard: () => textareaRef.current?.focus(),
@@ -823,7 +890,7 @@ function RemotePreviewSurface(props: {
         top: rect.y,
         width: rect.width,
         height: rect.height,
-        zIndex: 30,
+        zIndex: props.zIndex,
         ...(cornerRadius > 0 ? { borderRadius: cornerRadius } : {}),
         visibility: props.visible ? "visible" : "hidden",
         pointerEvents: props.visible ? "auto" : "none",
@@ -832,14 +899,7 @@ function RemotePreviewSurface(props: {
     >
       <div ref={stageRef} className="absolute inset-0 origin-top-left">
         {/* A mirrored browser tab has no caption track and no audio. */}
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
-          disablePictureInPicture
-          className="size-full object-contain"
-        />
+        <video ref={videoRef} autoPlay muted playsInline className="size-full object-contain" />
         {cursorContent ? (
           <AgentBrowserCursor
             tabId={runtimeTabId}
@@ -851,6 +911,7 @@ function RemotePreviewSurface(props: {
       </div>
       <div
         ref={captureRef}
+        data-remote-input
         role="application"
         aria-label="Remote preview surface"
         tabIndex={0}
@@ -858,6 +919,7 @@ function RemotePreviewSurface(props: {
       />
       <textarea
         ref={textareaRef}
+        data-remote-input
         aria-label="Remote preview keyboard"
         className="absolute bottom-0 left-0 size-px resize-none border-0 bg-transparent p-0 text-transparent opacity-0 outline-none"
         autoCapitalize="off"
@@ -868,34 +930,46 @@ function RemotePreviewSurface(props: {
           if (canSendInput()) viewer.sendControl({ type: "focusRequest" });
         }}
         onBlur={() => patchRemotePreviewViewer(runtimeTabId, { keyboardOpen: false })}
-        onInput={(event) => {
-          // The field only exists to raise the on-screen keyboard; the guest
-          // owns the text, so nothing is allowed to accumulate here.
-          event.currentTarget.value = "";
-        }}
-        onCompositionEnd={(event) => {
-          if (canSendInput()) {
-            for (const message of translateCompositionEnd(event.data)) viewer.sendControl(message);
-          }
-          event.currentTarget.value = "";
-        }}
-        onKeyDown={(event) => {
-          // Printable characters arrive as `beforeinput`; only the editing and
-          // navigation keys need forwarding from here.
-          if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) return;
-          if (!canSendInput()) return;
-          const message = translateKeyEvent("keydown", event.nativeEvent);
-          if (!message) return;
-          event.preventDefault();
-          viewer.sendControl(message);
-        }}
-        onKeyUp={(event) => {
-          if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) return;
-          if (!canSendInput()) return;
-          const message = translateKeyEvent("keyup", event.nativeEvent);
-          if (message) viewer.sendControl(message);
-        }}
       />
+      <RemotePreviewPlayback
+        videoRef={videoRef}
+        visible={props.visible || entry.nativePictureInPicture}
+        connected={entry.status === "streaming" && entry.hostState === "streaming"}
+        reconnect={viewer.requestIceRestart}
+      />
+      <RemotePreviewClipboard
+        viewer={viewer}
+        containerRef={containerRef}
+        enabled={entry.role === "controller" && entry.hostState === "streaming"}
+      />
+      {entry.fullscreen ? (
+        <div className="absolute bottom-3 right-3 flex items-center gap-1 rounded-lg border border-border bg-background p-1">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Exit full screen"
+            onClick={toggleFullscreen}
+          >
+            <Shrink />
+          </Button>
+          <RemotePreviewTools
+            viewer={viewer}
+            containerRef={containerRef}
+            source={sourceSize}
+            enabled={entry.status === "streaming" && entry.hostState === "streaming"}
+            controlling={entry.role === "controller"}
+            onRequestControl={() => requestControl(false)}
+            presentation="chrome"
+            zoomFactor={entry.zoomFactor}
+            colorScheme={entry.colorScheme}
+            onCapture={entry.controls?.captureScreenshot}
+            onPictureInPicture={
+              entry.pictureInPictureSupported ? entry.controls?.togglePictureInPicture : undefined
+            }
+            pictureInPicture={entry.nativePictureInPicture}
+          />
+        </div>
+      ) : null}
       {entry.role === "viewer" && !overlay ? (
         <div className="pointer-events-none absolute left-3 top-3 z-40 rounded-full border border-border/70 bg-background/90 px-2.5 py-1 text-[11px] font-medium shadow-sm backdrop-blur">
           View only · tap to control

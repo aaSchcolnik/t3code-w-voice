@@ -499,6 +499,16 @@ export const dispatchRemoteInput = DesktopIpc.makeIpcMethod({
   }),
 });
 
+export const readRemoteSelection = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_REMOTE_READ_SELECTION_CHANNEL,
+  payload: DesktopPreviewTabInputSchema,
+  result: Schema.String,
+  handler: Effect.fn("desktop.ipc.preview.readRemoteSelection")(function* ({ tabId }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    return yield* manager.readRemoteSelection(tabId);
+  }),
+});
+
 export const readRemoteSourceMetadata = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PREVIEW_REMOTE_READ_SOURCE_METADATA_CHANNEL,
   payload: DesktopPreviewTabInputSchema,
@@ -562,6 +572,7 @@ export const methods = [
   startRemoteCapture,
   stopRemoteCapture,
   dispatchRemoteInput,
+  readRemoteSelection,
   readRemoteSourceMetadata,
   setRemotePresence,
   saveRecording,

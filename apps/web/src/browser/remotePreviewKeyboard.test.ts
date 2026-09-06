@@ -150,3 +150,56 @@ describe("native textarea editing events", () => {
     remove();
   });
 });
+
+describe("iPad editing sequences", () => {
+  it("lets software keys reach native editing and sends rapid inputs once", () => {
+    const textarea = new EventTarget() as HTMLTextAreaElement;
+    const send = vi.fn();
+    const remove = listenForRemotePreviewBeforeInput(textarea, { canSendInput: () => true, send });
+    for (const data of "hello") {
+      const down = Object.assign(
+        new Event("keydown", { cancelable: true }),
+        key({ key: "Unidentified", code: "" }),
+      );
+      textarea.dispatchEvent(down);
+      expect(down.defaultPrevented).toBe(false);
+      textarea.dispatchEvent(
+        Object.assign(new Event("beforeinput"), { inputType: "insertText", data }),
+      );
+      textarea.dispatchEvent(Object.assign(new Event("input"), { inputType: "insertText", data }));
+    }
+    expect(send.mock.calls.map(([message]) => message.text).join("")).toBe("hello");
+    expect(send).toHaveBeenCalledTimes(5);
+    expect(textarea.value).toBe("\u200b");
+    remove();
+  });
+
+  it.each(["insertFromComposition", "insertText"])(
+    "preserves composition and deduplicates the final %s event",
+    (inputType) => {
+      const textarea = new EventTarget() as HTMLTextAreaElement;
+      const send = vi.fn();
+      const remove = listenForRemotePreviewBeforeInput(textarea, {
+        canSendInput: () => true,
+        send,
+      });
+      textarea.dispatchEvent(new Event("compositionstart"));
+      textarea.value = "に";
+      textarea.dispatchEvent(
+        Object.assign(new Event("input"), {
+          inputType: "insertCompositionText",
+          data: "に",
+          isComposing: true,
+        }),
+      );
+      expect(textarea.value).toBe("に");
+      textarea.dispatchEvent(Object.assign(new Event("compositionend"), { data: "日本" }));
+      for (const type of ["beforeinput", "input"])
+        textarea.dispatchEvent(Object.assign(new Event(type), { inputType, data: "日本" }));
+      expect(send.mock.calls.map(([message]) => message)).toEqual([
+        { type: "compositionCommit", text: "日本" },
+      ]);
+      remove();
+    },
+  );
+});

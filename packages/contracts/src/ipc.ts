@@ -1370,6 +1370,7 @@ export interface DesktopPreviewBridge {
       viewerCount: number,
       controller: RemotePreviewControllerIdentity | null,
     ) => Promise<void>;
+    readSelection: (tabId: string) => Promise<string>;
     readSourceMetadata: (tabId: string) => Promise<RemotePreviewSourceMetadata>;
     onSourceMetadata: (
       listener: (event: DesktopPreviewRemoteSourceMetadataEvent) => void,

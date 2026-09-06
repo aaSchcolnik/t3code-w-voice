@@ -1,4 +1,5 @@
 import type { RemotePreviewViewerStreamEvent } from "@t3tools/contracts";
+import type * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 type ViewerStreamResult<E> = AsyncResult.AsyncResult<
@@ -20,7 +21,7 @@ export function createRemotePreviewStreamConsumerAtom<E>(options: {
   readonly streamAtom: Atom.Atom<ViewerStreamResult<E>>;
   readonly handlerAtom: Atom.Atom<{
     readonly accept: (event: RemotePreviewViewerStreamEvent) => void;
-    readonly fail: () => void;
+    readonly fail: (cause: Cause.Cause<E>) => void;
   }>;
   readonly label: string;
 }): Atom.Atom<void> {
@@ -32,7 +33,7 @@ export function createRemotePreviewStreamConsumerAtom<E>(options: {
     const consume = (result: ViewerStreamResult<E>) => {
       if (disposed) return;
       if (AsyncResult.isFailure(result)) {
-        get.once(options.handlerAtom).fail();
+        get.once(options.handlerAtom).fail(result.cause);
         return;
       }
       if (!AsyncResult.isSuccess(result)) return;

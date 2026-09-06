@@ -175,6 +175,7 @@ import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
 import { BrowserSettingsReadError } from "../browser/openFileInPreview";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
+import { usePreviewSession } from "./preview/usePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
@@ -1879,6 +1880,7 @@ export default function ChatView(props: ChatViewProps) {
   const sidebarPrRefreshKeyRef = useRef<string | null>(null);
   const threadPrRelinkKeysRef = useRef(new Map<string, string>());
   const threadPrRelinkWriteRef = useRef(Promise.resolve());
+  usePreviewSession(isServerThread ? activeThreadRef : null);
   const activePreviewState = useThreadPreviewState(activeThreadRef);
   const activePreviewServerEpoch = activePreviewState.serverEpoch;
   const resolvePreviewRuntimeTabId = useMemo(
@@ -1944,19 +1946,25 @@ export default function ChatView(props: ChatViewProps) {
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUseRightPanelSheet;
 
   useEffect(() => {
-    if (!activeThreadRef) return;
+    if (!activeThreadRef || activePreviewState.serverEpoch === null) return;
     useRightPanelStore
       .getState()
       .reconcileBrowserSurfaces(activeThreadRef, Object.keys(activePreviewState.sessions));
-  }, [activePreviewState.sessions, activeThreadRef]);
+  }, [activePreviewState.sessions, activePreviewState.serverEpoch, activeThreadRef]);
 
   useEffect(() => {
-    if (!activeThreadRef || !activePreviewMiniPlayer) return;
+    if (!activeThreadRef || !activePreviewMiniPlayer || activePreviewState.serverEpoch === null)
+      return;
     const miniTabStillExists = Boolean(activePreviewState.sessions[activePreviewMiniPlayer.tabId]);
     if (!miniTabStillExists) {
       usePreviewMiniPlayerStore.getState().close(activeThreadRef);
     }
-  }, [activePreviewMiniPlayer, activePreviewState.sessions, activeThreadRef]);
+  }, [
+    activePreviewMiniPlayer,
+    activePreviewState.sessions,
+    activePreviewState.serverEpoch,
+    activeThreadRef,
+  ]);
 
   const subagentsPanelOpen = activeRightPanelKind === "subagents";
   const existingOpenTerminalThreadKeys = useMemo(() => {

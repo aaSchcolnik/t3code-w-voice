@@ -1,5 +1,8 @@
 "use client";
 
+import { RemotePreviewPlayback } from "./RemotePreviewPlaybackOverlay";
+import { RemotePreviewTools, RemotePreviewClipboard } from "./RemotePreviewTools";
+
 import type {
   RemotePreviewControllerIdentity,
   RemotePreviewHostState,
@@ -29,13 +32,9 @@ import {
   type RemotePreviewPoint,
   type RemotePreviewRect,
 } from "./remotePreviewCoordinates";
-import {
-  listenForRemotePreviewBeforeInput,
-  translateCompositionEnd,
-  translateKeyEvent,
-} from "./remotePreviewKeyboard";
+import { listenForRemotePreviewBeforeInput, translateKeyEvent } from "./remotePreviewKeyboard";
 import type { RemotePreviewMotionDraft } from "./remotePreviewMessages";
-import { remotePreviewOverlayCopy } from "./remotePreviewStatus";
+import { remotePreviewOverlayCopy, remotePreviewStreamFailureStatus } from "./remotePreviewStatus";
 import {
   beginTouch,
   cancelTouch,
@@ -131,6 +130,7 @@ export function StandaloneRemotePreviewViewer(props: {
   const [busyController, setBusyController] = useState<RemotePreviewControllerIdentity | null>(
     null,
   );
+  const [sourceMetadata, setSourceMetadata] = useState<RemotePreviewSourceMetadata | null>(null);
   const [sourceSize, setSourceSize] = useState<{ width: number; height: number } | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
@@ -187,6 +187,7 @@ export function StandaloneRemotePreviewViewer(props: {
             if (video) video.srcObject = stream;
           },
           onMetadata: (metadata: RemotePreviewSourceMetadata) => {
+            setSourceMetadata(metadata);
             const next = { width: metadata.cssWidth, height: metadata.cssHeight };
             runtime.source = next;
             setSourceSize(next);
@@ -243,8 +244,9 @@ export function StandaloneRemotePreviewViewer(props: {
         Effect.catchCause((cause) =>
           Effect.sync(() => {
             if (cancelled) return;
-            setStatus("failed");
-            setErrorDetail(String(cause));
+            const status = remotePreviewStreamFailureStatus(cause);
+            setStatus(status);
+            setErrorDetail(status === "permission-required" ? null : String(cause));
           }),
         ),
       ),
@@ -613,7 +615,6 @@ export function StandaloneRemotePreviewViewer(props: {
         videoRef.current?.pause();
         return;
       }
-      void videoRef.current?.play().catch(() => undefined);
       if (viewer.isConnectionFailed()) viewer.requestIceRestart();
     };
     viewer.setVisible(document.visibilityState !== "hidden");
@@ -651,11 +652,13 @@ export function StandaloneRemotePreviewViewer(props: {
       />
       <div
         ref={captureRef}
+        data-remote-input
         tabIndex={0}
         style={{ position: "absolute", inset: 0, outline: "none" }}
       />
       <textarea
         ref={textareaRef}
+        data-remote-input
         aria-label="Remote keyboard"
         autoCapitalize="off"
         autoCorrect="off"
@@ -669,26 +672,27 @@ export function StandaloneRemotePreviewViewer(props: {
           left: -1000,
           top: 0,
         }}
-        onCompositionEnd={(event) => {
-          if (!canSendInput()) return;
-          for (const message of translateCompositionEnd(event.data)) {
-            viewer.sendControl(message);
-          }
-        }}
-        onKeyDown={(event) => {
-          if (!canSendInput()) return;
-          const message = translateKeyEvent("keydown", event.nativeEvent);
-          if (!message) return;
-          event.preventDefault();
-          viewer.sendControl(message);
-        }}
-        onKeyUp={(event) => {
-          if (!canSendInput()) return;
-          const message = translateKeyEvent("keyup", event.nativeEvent);
-          if (!message) return;
-          event.preventDefault();
-          viewer.sendControl(message);
-        }}
+      />
+      <RemotePreviewPlayback
+        videoRef={videoRef}
+        visible={true}
+        connected={status === "streaming" && hostState === "streaming"}
+        reconnect={viewer.requestIceRestart}
+      />
+      <RemotePreviewClipboard
+        viewer={viewer}
+        containerRef={containerRef}
+        enabled={role === "controller" && hostState === "streaming" && status === "streaming"}
+      />
+      <RemotePreviewTools
+        viewer={viewer}
+        containerRef={containerRef}
+        source={sourceSize}
+        enabled={hostState === "streaming" && status === "streaming"}
+        controlling={role === "controller"}
+        onRequestControl={() => requestControl(false)}
+        zoomFactor={sourceMetadata?.zoomFactor ?? 1}
+        colorScheme={sourceMetadata?.colorScheme ?? "system"}
       />
       {sourceSize && runtime.containerRect ? (
         <AgentBrowserCursor

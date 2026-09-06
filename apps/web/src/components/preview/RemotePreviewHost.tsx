@@ -138,6 +138,7 @@ export function RemotePreviewHost(props: {
   const latestHostStateRef = useRef(new Map<string, RemotePreviewHostState>());
   const activeConnectionIdRef = useRef<string | null>(null);
   const listPreviews = useAtomQueryRunner(previewEnvironment.list, { reportFailure: false });
+  const resizePreview = useAtomCommand(previewEnvironment.resize, "remote preview resize");
   const hostSignal = useAtomCommand(sendRemotePreviewHostSignal, {
     label: "remote preview host signal",
     reportFailure: false,
@@ -240,7 +241,24 @@ export function RemotePreviewHost(props: {
           runtimeTabId = await resolveRuntimeTabId(request);
           if (lifetime.aborted) return;
           peer = await createRemotePreviewHostPeer(
-            { request, runtimeTabId, bridge, signal },
+            {
+              request,
+              runtimeTabId,
+              bridge,
+              signal,
+              resizeViewport: async (viewport) => {
+                lifetime.throwIfAborted();
+                const result = await resizePreview({
+                  environmentId,
+                  input: {
+                    threadId: request.threadId,
+                    tabId: request.tabId,
+                    viewport,
+                  },
+                });
+                if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+              },
+            },
             lifetime,
           );
           if (!peer) return;

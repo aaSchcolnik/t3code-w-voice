@@ -50,6 +50,7 @@ interface Props {
   onCapture?: ((record: boolean) => void) | undefined;
   captureDisabled?: boolean | undefined;
   recording?: boolean | undefined;
+  recordingSupported?: boolean | undefined;
   onPictureInPicture?: (() => void) | undefined;
   pictureInPicture?: boolean | undefined;
   pictureInPictureDisabled?: boolean | undefined;
@@ -116,6 +117,7 @@ export function PreviewChromeRow({
   onCapture,
   captureDisabled,
   recording,
+  recordingSupported = true,
   onPictureInPicture,
   pictureInPicture,
   pictureInPictureDisabled,
@@ -148,10 +150,15 @@ export function PreviewChromeRow({
   };
 
   return (
-    <div className="relative">
+    <div className="relative @container">
       <form
         onSubmit={submit}
-        className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent"
+        className={cn(
+          "flex min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:border-b-transparent",
+          remoteViewer
+            ? "flex-wrap py-1"
+            : "h-10 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7",
+        )}
         data-surface-subheader
       >
         <div className="flex items-center gap-0.5" role="group" aria-label="Navigation">
@@ -273,165 +280,176 @@ export function PreviewChromeRow({
           ) : null}
         </InputGroup>
 
-        {onPickElement ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant={pickActive ? "secondary" : "ghost"}
-                  size="icon-xs"
-                  onClick={onPickElement}
-                  disabled={pickDisabled}
-                  aria-label={pickActive ? "Cancel annotation" : "Annotate preview"}
-                  aria-pressed={pickActive ? "true" : "false"}
-                  type="button"
-                />
-              }
-            >
-              <MousePointerClick className={cn(pickActive && "text-primary")} />
-            </TooltipTrigger>
-            <TooltipPopup>
-              {pickDisabled && pickDisabledReason
-                ? pickDisabledReason
-                : pickActive
-                  ? "Cancel annotation (Esc)"
-                  : "Annotate elements, regions, and drawings"}
-            </TooltipPopup>
-          </Tooltip>
-        ) : null}
-        {onCapture ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant={recording ? "secondary" : "ghost"}
-                  size="icon-xs"
-                  onClick={(event) => onCapture(event.shiftKey)}
-                  aria-label={recording ? "Stop recording" : "Capture screenshot"}
-                  type="button"
-                  className="relative"
-                  disabled={captureDisabled}
-                />
-              }
-            >
-              <Camera className={cn(recording && "text-destructive")} />
-              {recording ? (
-                <span className="absolute right-0.5 top-0.5 size-1.5 animate-status-pulse rounded-full bg-destructive" />
-              ) : null}
-            </TooltipTrigger>
-            <TooltipPopup>
-              {recording ? "Stop recording" : "Screenshot · Shift-click to record"}
-            </TooltipPopup>
-          </Tooltip>
-        ) : null}
-        {remoteViewer ? (
-          <>
+        <div
+          className={cn(
+            "flex shrink-0 items-center gap-0.5",
+            remoteViewer && "@max-[640px]:w-full @max-[640px]:justify-end",
+          )}
+        >
+          {onPickElement ? (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
-                    variant={remoteViewer.controlling ? "secondary" : "ghost"}
+                    variant={pickActive ? "secondary" : "ghost"}
                     size="icon-xs"
-                    onClick={
-                      remoteViewer.controlling
-                        ? remoteViewer.onReleaseControl
-                        : remoteViewer.onRequestControl
-                    }
-                    disabled={remoteViewer.controlDisabled}
-                    aria-label={remoteViewer.controlling ? "Release control" : "Take control"}
-                    aria-pressed={remoteViewer.controlling ? "true" : "false"}
+                    onClick={onPickElement}
+                    disabled={pickDisabled}
+                    aria-label={pickActive ? "Cancel annotation" : "Annotate preview"}
+                    aria-pressed={pickActive ? "true" : "false"}
                     type="button"
                   />
                 }
               >
-                {remoteViewer.controlling ? <Pointer className="text-primary" /> : <PointerOff />}
+                <MousePointerClick className={cn(pickActive && "text-primary")} />
               </TooltipTrigger>
               <TooltipPopup>
-                {remoteViewer.controlling ? "Release control" : "Take control of this tab"}
+                {pickDisabled && pickDisabledReason
+                  ? pickDisabledReason
+                  : pickActive
+                    ? "Cancel annotation (Esc)"
+                    : "Annotate elements, regions, and drawings"}
               </TooltipPopup>
             </Tooltip>
+          ) : null}
+          {onCapture ? (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
-                    variant={remoteViewer.keyboardOpen ? "secondary" : "ghost"}
+                    variant={recording ? "secondary" : "ghost"}
                     size="icon-xs"
-                    // Must run inside this click: a remote focus cannot raise
-                    // the on-screen keyboard, only a local gesture can.
-                    onClick={remoteViewer.onShowKeyboard}
-                    disabled={remoteViewer.controlDisabled}
-                    aria-label="Show keyboard"
-                    aria-pressed={remoteViewer.keyboardOpen ? "true" : "false"}
+                    onClick={(event) => onCapture(recordingSupported && event.shiftKey)}
+                    aria-label={recording ? "Stop recording" : "Capture screenshot"}
                     type="button"
+                    className="relative"
+                    disabled={captureDisabled}
                   />
                 }
               >
-                <Keyboard className={cn(remoteViewer.keyboardOpen && "text-primary")} />
-              </TooltipTrigger>
-              <TooltipPopup>Type into the preview</TooltipPopup>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={remoteViewer.onToggleFullscreen}
-                    aria-label={remoteViewer.fullscreen ? "Exit full screen" : "Full screen"}
-                    type="button"
-                  />
-                }
-              >
-                {remoteViewer.fullscreen ? <Shrink /> : <Expand />}
+                <Camera className={cn(recording && "text-destructive")} />
+                {recording ? (
+                  <span className="absolute right-0.5 top-0.5 size-1.5 animate-status-pulse rounded-full bg-destructive" />
+                ) : null}
               </TooltipTrigger>
               <TooltipPopup>
-                {remoteViewer.fullscreen ? "Exit full screen" : "Full screen on this device"}
+                {recording
+                  ? "Stop recording"
+                  : recordingSupported
+                    ? "Screenshot · Shift-click to record"
+                    : "Save screenshot"}
               </TooltipPopup>
             </Tooltip>
-          </>
-        ) : null}
-        {remoteHostIndicator && remoteHostIndicator.viewerCount > 0 ? (
-          <div
-            className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground select-none shrink-0"
-            data-testid="remote-host-indicator"
-          >
-            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>
-              {remoteHostIndicator.controller?.label
-                ? `Remote: ${remoteHostIndicator.viewerCount} ${
-                    remoteHostIndicator.viewerCount === 1 ? "viewer" : "viewers"
-                  }, controlled by ${remoteHostIndicator.controller.label}`
-                : `Remote: ${remoteHostIndicator.viewerCount} ${
-                    remoteHostIndicator.viewerCount === 1 ? "viewer" : "viewers"
-                  }`}
-            </span>
-          </div>
-        ) : null}
-        {onPictureInPicture ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant={pictureInPicture ? "secondary" : "ghost"}
-                  size="icon-xs"
-                  onClick={onPictureInPicture}
-                  aria-label={
-                    pictureInPicture ? "Close floating preview" : "Float preview over chat"
+          ) : null}
+          {remoteViewer ? (
+            <>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant={remoteViewer.controlling ? "secondary" : "ghost"}
+                      size="icon-xs"
+                      onClick={
+                        remoteViewer.controlling
+                          ? remoteViewer.onReleaseControl
+                          : remoteViewer.onRequestControl
+                      }
+                      disabled={remoteViewer.controlDisabled}
+                      aria-label={remoteViewer.controlling ? "Release control" : "Take control"}
+                      aria-pressed={remoteViewer.controlling ? "true" : "false"}
+                      type="button"
+                    />
                   }
-                  aria-pressed={pictureInPicture ? "true" : "false"}
-                  type="button"
-                  disabled={pictureInPictureDisabled}
-                />
-              }
+                >
+                  {remoteViewer.controlling ? <Pointer className="text-primary" /> : <PointerOff />}
+                </TooltipTrigger>
+                <TooltipPopup>
+                  {remoteViewer.controlling ? "Release control" : "Take control of this tab"}
+                </TooltipPopup>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant={remoteViewer.keyboardOpen ? "secondary" : "ghost"}
+                      size="icon-xs"
+                      // Must run inside this click: a remote focus cannot raise
+                      // the on-screen keyboard, only a local gesture can.
+                      onClick={remoteViewer.onShowKeyboard}
+                      disabled={remoteViewer.controlDisabled}
+                      aria-label="Show keyboard"
+                      aria-pressed={remoteViewer.keyboardOpen ? "true" : "false"}
+                      type="button"
+                    />
+                  }
+                >
+                  <Keyboard className={cn(remoteViewer.keyboardOpen && "text-primary")} />
+                </TooltipTrigger>
+                <TooltipPopup>Type into the preview</TooltipPopup>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={remoteViewer.onToggleFullscreen}
+                      aria-label={remoteViewer.fullscreen ? "Exit full screen" : "Full screen"}
+                      type="button"
+                    />
+                  }
+                >
+                  {remoteViewer.fullscreen ? <Shrink /> : <Expand />}
+                </TooltipTrigger>
+                <TooltipPopup>
+                  {remoteViewer.fullscreen ? "Exit full screen" : "Full screen on this device"}
+                </TooltipPopup>
+              </Tooltip>
+            </>
+          ) : null}
+          {remoteHostIndicator && remoteHostIndicator.viewerCount > 0 ? (
+            <div
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/60 px-2 py-0.5 text-[11px] font-medium text-muted-foreground select-none shrink-0"
+              data-testid="remote-host-indicator"
             >
-              <PictureInPicture2 className={cn(pictureInPicture && "text-primary")} />
-            </TooltipTrigger>
-            <TooltipPopup>
-              {pictureInPicture ? "Close floating preview" : "Float preview over chat"}
-            </TooltipPopup>
-          </Tooltip>
-        ) : null}
-        {trailingActions}
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>
+                {remoteHostIndicator.controller?.label
+                  ? `Remote: ${remoteHostIndicator.viewerCount} ${
+                      remoteHostIndicator.viewerCount === 1 ? "viewer" : "viewers"
+                    }, controlled by ${remoteHostIndicator.controller.label}`
+                  : `Remote: ${remoteHostIndicator.viewerCount} ${
+                      remoteHostIndicator.viewerCount === 1 ? "viewer" : "viewers"
+                    }`}
+              </span>
+            </div>
+          ) : null}
+          {onPictureInPicture ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant={pictureInPicture ? "secondary" : "ghost"}
+                    size="icon-xs"
+                    onClick={onPictureInPicture}
+                    aria-label={
+                      pictureInPicture ? "Close floating preview" : "Float preview over chat"
+                    }
+                    aria-pressed={pictureInPicture ? "true" : "false"}
+                    type="button"
+                    disabled={pictureInPictureDisabled}
+                  />
+                }
+              >
+                <PictureInPicture2 className={cn(pictureInPicture && "text-primary")} />
+              </TooltipTrigger>
+              <TooltipPopup>
+                {pictureInPicture ? "Close floating preview" : "Float preview over chat"}
+              </TooltipPopup>
+            </Tooltip>
+          ) : null}
+          {trailingActions}
+        </div>
       </form>
       <div
         aria-hidden

@@ -1,5 +1,15 @@
+import { REMOTE_PREVIEW_RESULT_MAX_LENGTH } from "./remotePreviewCommands";
+import {
+  RemotePreviewCommandResult,
+  PreviewAnnotationSubmissionResultSchema,
+  type PreviewAnnotationSubmissionResult,
+  type DesktopPreviewColorScheme,
+} from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import type {
   DesktopPreviewPointerEvent,
+  PreviewViewportSetting,
+  RemotePreviewSessionCommand,
   RemotePreviewControllerIdentity,
   RemotePreviewGeneration,
   RemotePreviewHostState,
@@ -11,6 +21,11 @@ import type {
 } from "@t3tools/contracts";
 
 import type { RemotePreviewControlDraft, RemotePreviewMotionDraft } from "./remotePreviewMessages";
+
+const decodeCommandResult = Schema.decodeUnknownOption(RemotePreviewCommandResult);
+const decodeAnnotation = Schema.decodeUnknownSync(
+  Schema.NullOr(PreviewAnnotationSubmissionResultSchema),
+);
 
 export interface RemotePreviewViewerEvents {
   readonly onStatus: (status: RemotePreviewViewerStatus) => void;
@@ -29,6 +44,7 @@ export type RemotePreviewViewerStatus =
   | "connecting"
   | "streaming"
   | "failed"
+  | "permission-required"
   | "waiting-for-host"
   | "closed";
 
@@ -56,6 +72,14 @@ export interface RemotePreviewViewerHandle {
   readonly isConnectionFailed: () => boolean;
   readonly sessionId: () => RemotePreviewSessionId | null;
   readonly generation: () => RemotePreviewGeneration;
+  readonly readSelection: () => Promise<string>;
+  readonly previewAction: (
+    action: Extract<RemotePreviewSessionCommand, { type: "previewAction" }>["action"],
+  ) => Promise<void>;
+  readonly setColorScheme: (colorScheme: DesktopPreviewColorScheme) => Promise<void>;
+  readonly pickElement: () => Promise<PreviewAnnotationSubmissionResult | null>;
+  readonly cancelPickElement: () => Promise<void>;
+  readonly resizeViewport: (viewport: PreviewViewportSetting) => Promise<void>;
   readonly readStats: () => Promise<RemotePreviewViewerStats | null>;
   readonly dispose: () => void;
 }
@@ -87,17 +111,34 @@ export function createRemotePreviewViewer(
   let sourceGeneration: RemotePreviewGeneration = ZERO_GENERATION;
   let motionSequence = 0;
   let disposed = false;
+  let picking = false;
   let visible = true;
   let offerRevision = 0;
   let statsSample: { readonly bytes: number; readonly timestamp: number } | null = null;
   /** Candidates that beat the offer, which cannot be applied before it. */
   const pendingCandidates: RTCIceCandidateInit[] = [];
+  let requestSequence = 0;
+  const pendingCommands = new Map<
+    number,
+    {
+      resolve: (text: string | null) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+      chunks: string[];
+      length: number;
+    }
+  >();
 
   const observeSignalingGeneration = (next: RemotePreviewGeneration) => {
     if (next > signalingGeneration) signalingGeneration = next;
   };
 
   const closePeer = () => {
+    for (const pending of pendingCommands.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("The stream disconnected."));
+    }
+    pendingCommands.clear();
     offerRevision += 1;
     pendingCandidates.length = 0;
     statsSample = null;
@@ -146,6 +187,28 @@ export function createRemotePreviewViewer(
         try {
           payload = JSON.parse(message.data) as HostChannelEvent;
         } catch {
+          return;
+        }
+        if (payload.type === "commandResult") {
+          const result = decodeCommandResult(payload);
+          if (result._tag === "None") return;
+          const pending = pendingCommands.get(result.value.requestId);
+          if (!pending) return;
+          if (result.value.text !== null) {
+            pending.length += result.value.text.length;
+            if (pending.length > REMOTE_PREVIEW_RESULT_MAX_LENGTH) {
+              pendingCommands.delete(result.value.requestId);
+              clearTimeout(pending.timer);
+              pending.reject(new Error("The annotation is too large. Select a smaller region."));
+              return;
+            }
+            pending.chunks.push(result.value.text);
+          }
+          if (result.value.more && !result.value.error) return;
+          pendingCommands.delete(result.value.requestId);
+          clearTimeout(pending.timer);
+          if (result.value.error) pending.reject(new Error(result.value.error));
+          else pending.resolve(pending.chunks.length ? pending.chunks.join("") : result.value.text);
           return;
         }
         switch (payload.type) {
@@ -267,7 +330,68 @@ export function createRemotePreviewViewer(
   const currentInputGeneration = (): RemotePreviewGeneration =>
     sourceGeneration > 0 ? sourceGeneration : signalingGeneration;
 
+  const request = (
+    command:
+      | {
+          type: "previewAction";
+          action: Extract<RemotePreviewSessionCommand, { type: "previewAction" }>["action"];
+        }
+      | { type: "setColorScheme"; colorScheme: DesktopPreviewColorScheme }
+      | { type: "readSelection" }
+      | { type: "resizeViewport"; viewport: PreviewViewportSetting },
+  ): Promise<string | null> =>
+    new Promise((resolve, reject) => {
+      if (!controlChannel || controlChannel.readyState !== "open") {
+        reject(new Error("The stream is not connected."));
+        return;
+      }
+      const requestId = ++requestSequence;
+      const timer = setTimeout(
+        () => {
+          pendingCommands.delete(requestId);
+          reject(new Error("The host did not respond. Try again."));
+        },
+        command.type === "previewAction" && command.action === "pickElement" ? 10 * 60_000 : 10_000,
+      );
+      pendingCommands.set(requestId, { resolve, reject, timer, chunks: [], length: 0 });
+      const message: RemotePreviewSessionCommand = {
+        ...command,
+        requestId,
+        generation: currentInputGeneration(),
+      };
+      try {
+        controlChannel.send(JSON.stringify(message));
+      } catch (cause) {
+        clearTimeout(timer);
+        pendingCommands.delete(requestId);
+        reject(cause);
+      }
+    });
+
   return {
+    previewAction: async (action) => {
+      await request({ type: "previewAction", action });
+    },
+    setColorScheme: async (colorScheme) => {
+      await request({ type: "setColorScheme", colorScheme });
+    },
+    pickElement: async () => {
+      if (picking) throw new Error("An annotation is already in progress.");
+      picking = true;
+      try {
+        const text = await request({ type: "previewAction", action: "pickElement" });
+        return decodeAnnotation(JSON.parse(text ?? "null"));
+      } finally {
+        picking = false;
+      }
+    },
+    cancelPickElement: async () => {
+      await request({ type: "previewAction", action: "cancelPickElement" });
+    },
+    readSelection: async () => (await request({ type: "readSelection" })) ?? "",
+    resizeViewport: async (viewport) => {
+      await request({ type: "resizeViewport", viewport });
+    },
     activate: () => {
       disposed = false;
     },
@@ -362,9 +486,12 @@ export function createRemotePreviewViewer(
     sendControl: (draft) =>
       send(controlChannel, { ...draft, generation: currentInputGeneration() }),
     sendMotion: (draft) => {
-      if (!motionChannel || motionChannel.bufferedAmount > MAX_MOTION_BUFFER_BYTES) return;
+      // Annotation moves share ordering with down/up so a delayed datagram
+      // cannot append a stroke after its pointer has already been released.
+      const channel = picking ? controlChannel : motionChannel;
+      if (!channel || channel.bufferedAmount > MAX_MOTION_BUFFER_BYTES) return;
       motionSequence += 1;
-      send(motionChannel, {
+      send(channel, {
         ...draft,
         generation: currentInputGeneration(),
         sequence: motionSequence,

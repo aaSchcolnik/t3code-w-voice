@@ -78,6 +78,10 @@ const previewSessionSyncAtom = Atom.family((threadKey: string) => {
   }).pipe(Atom.setIdleTTL(1_000), Atom.withLabel(`preview:session-sync:${threadKey}`));
 });
 
-export function usePreviewSession(threadRef: ScopedThreadRef): void {
-  useAtomValue(previewSessionSyncAtom(scopedThreadKey(threadRef)));
+const emptyPreviewSessionSyncAtom = Atom.make(undefined);
+
+export function usePreviewSession(threadRef: ScopedThreadRef | null): void {
+  useAtomValue(
+    threadRef ? previewSessionSyncAtom(scopedThreadKey(threadRef)) : emptyPreviewSessionSyncAtom,
+  );
 }

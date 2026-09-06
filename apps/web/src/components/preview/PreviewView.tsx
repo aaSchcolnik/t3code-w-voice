@@ -1,5 +1,7 @@
 "use client";
 
+import { RemotePreviewTools } from "~/browser/RemotePreviewTools";
+
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
@@ -88,6 +90,13 @@ function previewProfileName(
   return profiles.find((profile) => profile.id === profileId)?.name ?? "Removed profile";
 }
 
+const reportRemoteAction = (cause: unknown) =>
+  toastManager.add({
+    type: "error",
+    title: "Preview action failed",
+    description: cause instanceof Error ? cause.message : "Try again.",
+  });
+
 const localApi = typeof window === "undefined" ? null : ensureLocalApi();
 
 /**
@@ -125,6 +134,8 @@ export function PreviewView({
     ? new URL(environmentHttpBaseUrl).hostname
     : null;
   const open = useAtomCommand(previewEnvironment.open);
+  const navigate = useAtomCommand(previewEnvironment.navigate);
+  const refresh = useAtomCommand(previewEnvironment.refresh);
   const resize = useAtomCommand(previewEnvironment.resize, "preview viewport resize");
 
   usePreviewSession(threadRef);
@@ -174,6 +185,10 @@ export function PreviewView({
   // desktop app hosts the guest itself and never has a viewer session.
   const remoteViewer = useRemotePreviewViewer(runtimeTabId);
   const remoteControls = remoteViewer?.controls ?? null;
+  const remoteReady =
+    remoteViewer?.status === "streaming" && remoteViewer.hostState === "streaming";
+  const captureReady = previewBridge ? Boolean(desktopOverlay?.hasWebContents) : remoteReady;
+
   const remoteViewerChrome = remoteControls
     ? {
         controlling: remoteViewer!.role === "controller",
@@ -219,6 +234,16 @@ export function PreviewView({
         rememberPreviewUrl(threadRef, resolvedUrl);
         return true;
       }
+      if (tabId) {
+        const result = await navigate({
+          environmentId: threadRef.environmentId,
+          input: { threadId: threadRef.threadId, tabId, url: resolvedUrl },
+        });
+        if (result._tag === "Failure") return false;
+        updatePreviewServerSnapshot(threadRef, result.value);
+        rememberPreviewUrl(threadRef, resolvedUrl);
+        return true;
+      }
       const result = await openPreviewSession({ openPreview: open, threadRef, url: resolvedUrl });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
@@ -232,7 +257,7 @@ export function PreviewView({
       }
       return result._tag === "Success";
     },
-    [open, runtimeTabId, threadRef],
+    [navigate, open, runtimeTabId, tabId, threadRef],
   );
 
   const handleSubmitUrl = useCallback(
@@ -265,19 +290,31 @@ export function PreviewView({
 
   const handleRefresh = useCallback(() => {
     if (previewBridge && runtimeTabId) void previewBridge.refresh(runtimeTabId);
-  }, [runtimeTabId]);
+    else if (tabId)
+      void refresh({
+        environmentId: threadRef.environmentId,
+        input: { threadId: threadRef.threadId, tabId },
+      });
+  }, [refresh, runtimeTabId, tabId, threadRef]);
 
   const handleZoomIn = useCallback(() => {
     if (previewBridge && runtimeTabId) void previewBridge.zoomIn(runtimeTabId);
-  }, [runtimeTabId]);
+    else if (remoteControls)
+      void remoteControls.viewer.previewAction("zoomIn").catch(reportRemoteAction);
+  }, [remoteControls, runtimeTabId]);
 
   const handleZoomOut = useCallback(() => {
     if (previewBridge && runtimeTabId) void previewBridge.zoomOut(runtimeTabId);
-  }, [runtimeTabId]);
+    else if (remoteControls)
+      void remoteControls.viewer.previewAction("zoomOut").catch(reportRemoteAction);
+  }, [remoteControls, runtimeTabId]);
 
   const handleResetZoom = useCallback(() => {
     if (previewBridge && runtimeTabId) void previewBridge.resetZoom(runtimeTabId);
-    else if (remoteControls) remoteControls.resetZoom();
+    else if (remoteControls) {
+      remoteControls.resetZoom();
+      void remoteControls.viewer.previewAction("resetZoom").catch(reportRemoteAction);
+    }
   }, [previewBridge, remoteControls, runtimeTabId]);
 
   const handleViewportChange = useCallback(
@@ -329,11 +366,15 @@ export function PreviewView({
 
   const handleBack = useCallback(() => {
     if (previewBridge && runtimeTabId) void previewBridge.goBack(runtimeTabId);
-  }, [runtimeTabId]);
+    else if (remoteControls)
+      void remoteControls.viewer.previewAction("goBack").catch(reportRemoteAction);
+  }, [remoteControls, runtimeTabId]);
 
   const handleForward = useCallback(() => {
     if (previewBridge && runtimeTabId) void previewBridge.goForward(runtimeTabId);
-  }, [runtimeTabId]);
+    else if (remoteControls)
+      void remoteControls.viewer.previewAction("goForward").catch(reportRemoteAction);
+  }, [remoteControls, runtimeTabId]);
 
   const handleOpenInBrowser = useCallback(() => {
     if (!localApi || !url) return;
@@ -366,6 +407,10 @@ export function PreviewView({
 
   const handleCapture = useCallback(
     (record: boolean) => {
+      if (!previewBridge && remoteControls) {
+        void remoteControls.captureScreenshot().catch(reportRemoteAction);
+        return;
+      }
       if (!previewBridge || !runtimeTabId || !tabId) return;
       const bridge = previewBridge;
       if (recordingRuntimeTabId) {
@@ -602,13 +647,26 @@ export function PreviewView({
         },
       );
     },
-    [recordingRuntimeTabId, runtimeTabId, tabId, threadRef],
+    [recordingRuntimeTabId, remoteControls, runtimeTabId, tabId, threadRef],
   );
 
   const handlePickElement = useCallback(() => {
-    if (!previewBridge || !runtimeTabId) return;
+    if (!runtimeTabId) return;
+    const bridge = previewBridge;
+    const picker = bridge
+      ? {
+          pick: () => bridge.pickElement(runtimeTabId),
+          cancel: () => bridge.cancelPickElement(runtimeTabId),
+        }
+      : remoteControls
+        ? {
+            pick: remoteControls.viewer.pickElement,
+            cancel: remoteControls.viewer.cancelPickElement,
+          }
+        : null;
+    if (!picker) return;
     if (pickActiveRef.current) {
-      void previewBridge.cancelPickElement(runtimeTabId).catch(() => undefined);
+      void picker.cancel().catch(reportRemoteAction);
       return;
     }
     // Snapshot whatever the user was focused on (typically the chat
@@ -622,7 +680,7 @@ export function PreviewView({
     setPickActive(true);
     void (async () => {
       try {
-        const result = await previewBridge.pickElement(runtimeTabId);
+        const result = await picker.pick();
         if (!result) return;
         const { annotation: picked, submission, screenshotFailed = false } = result;
         // The structured annotation is still sendable when its optional crop
@@ -666,8 +724,8 @@ export function PreviewView({
         if (submission === "send") {
           onSendAnnotation?.(annotation, image);
         }
-      } catch {
-        // Picker failed (e.g. webview navigated). Treat as silent cancel.
+      } catch (cause) {
+        reportRemoteAction(cause);
       } finally {
         pickActiveRef.current = false;
         // Avoid `setState on unmounted component` if the panel/thread closed
@@ -689,7 +747,7 @@ export function PreviewView({
         }
       }
     })();
-  }, [addImage, addPreviewAnnotation, onSendAnnotation, runtimeTabId, threadRef]);
+  }, [addImage, addPreviewAnnotation, onSendAnnotation, remoteControls, runtimeTabId, threadRef]);
 
   // If the active tab changes mid-pick (close, thread switch, hot restart),
   // tell main to tear down the in-flight session AND reset our local toggle
@@ -700,10 +758,11 @@ export function PreviewView({
       pickActiveRef.current = false;
       if (previewBridge && runtimeTabId) {
         void previewBridge.cancelPickElement(runtimeTabId).catch(() => undefined);
-      }
+      } else if (remoteControls)
+        void remoteControls.viewer.cancelPickElement().catch(() => undefined);
       if (isMountedRef.current) setPickActive(false);
     };
-  }, [runtimeTabId]);
+  }, [remoteControls, runtimeTabId]);
 
   // Subscribe only while visible; `toggle-panel` is owned by ChatView's
   // URL-aware handler regardless of whether the panel is currently mounted.
@@ -749,20 +808,31 @@ export function PreviewView({
         onRefresh={handleRefresh}
         onSubmit={(next) => void handleSubmitUrl(next)}
         onOpenInBrowser={tabId ? handleOpenInBrowser : undefined}
-        onCapture={previewBridge && tabId ? handleCapture : undefined}
-        captureDisabled={!desktopOverlay || isUnreachable}
+        onCapture={tabId && (previewBridge || remoteControls) ? handleCapture : undefined}
+        captureDisabled={!captureReady || isUnreachable}
+        recordingSupported={Boolean(previewBridge)}
         recording={recordingRuntimeTabId !== null}
-        onPictureInPicture={previewBridge && tabId ? handlePictureInPicture : undefined}
+        onPictureInPicture={tabId ? handlePictureInPicture : undefined}
         pictureInPicture={miniPlayer?.tabId === tabId}
-        pictureInPictureDisabled={!desktopOverlay?.hasWebContents || isUnreachable}
-        onPickElement={previewBridge && tabId ? handlePickElement : undefined}
+        pictureInPictureDisabled={
+          (previewBridge ? !desktopOverlay?.hasWebContents : !snapshot) || isUnreachable
+        }
+        onPickElement={tabId && (previewBridge || remoteControls) ? handlePickElement : undefined}
         pickActive={pickActive}
         // Disable when there's no tab (nothing to pick on) OR the page
         // failed to load (a React overlay covers the webview, so the
         // user wouldn't be able to actually click anything underneath).
-        pickDisabled={!tabId || isUnreachable}
+        pickDisabled={
+          !tabId ||
+          isUnreachable ||
+          (!previewBridge && (!remoteReady || remoteViewer?.role !== "controller"))
+        }
         pickDisabledReason={
-          isUnreachable ? "Page didn't load — pick unavailable until the page renders" : undefined
+          isUnreachable
+            ? "Wait for the page to load"
+            : !previewBridge && remoteViewer?.role !== "controller"
+              ? "Take control to annotate the preview"
+              : undefined
         }
         remoteViewer={remoteViewerChrome}
         remoteHostIndicator={remoteHostIndicator}
@@ -787,7 +857,26 @@ export function PreviewView({
           ) : null
         }
         trailingActions={
-          previewBridge || remoteControls ? (
+          !previewBridge && remoteControls ? (
+            <RemotePreviewTools
+              viewer={remoteControls.viewer}
+              containerRef={remoteControls.containerRef}
+              source={remoteViewer?.source ?? null}
+              viewport={viewport}
+              zoomFactor={remoteViewer?.zoomFactor ?? 1}
+              colorScheme={remoteViewer?.colorScheme ?? "system"}
+              enabled={remoteReady}
+              controlling={remoteViewer?.role === "controller"}
+              onRequestControl={() => remoteControls.requestControl(false)}
+              presentation="chrome"
+              onPictureInPicture={
+                remoteViewer?.pictureInPictureSupported
+                  ? remoteControls.togglePictureInPicture
+                  : undefined
+              }
+              pictureInPicture={remoteViewer?.nativePictureInPicture ?? false}
+            />
+          ) : previewBridge ? (
             <PreviewMoreMenu
               environmentId={threadRef.environmentId}
               profileId={activeProfileId}

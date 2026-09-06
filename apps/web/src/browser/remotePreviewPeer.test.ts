@@ -308,6 +308,7 @@ const setupPeer = () => {
   const channels = [0, 1].map(() =>
     Object.assign(new EventTarget(), {
       readyState: "connecting",
+      send: vi.fn(),
       close: vi.fn(),
     }),
   );
@@ -338,6 +339,7 @@ const setupPeer = () => {
   const bridge = {
     remote: {
       readSourceMetadata: vi.fn(async () => metadata),
+      readSelection: vi.fn(async () => "selected text"),
       dispatchInput: vi.fn(async () => undefined),
       startCapture: vi.fn(),
       stopCapture: vi.fn(),
@@ -540,6 +542,89 @@ describe("remote preview host lifecycle", () => {
       maxFramerate: 10,
       scaleResolutionDownBy: 2.56,
     });
+    await peer.close(options.bridge);
+  });
+});
+
+describe("remote viewer commands", () => {
+  it.each(["viewer", "controller"] as const)(
+    "handles selection and viewport requests as %s",
+    async (role) => {
+      const { options, channels } = setupPeer();
+      const resizeViewport = vi.fn(async () => undefined);
+      const peer = await RemotePreviewPeer.create({
+        ...options,
+        request: { ...options.request, role },
+        resizeViewport,
+      });
+      const channel = channels[0]!;
+      channel.readyState = "open";
+      const request = (message: object) =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          channel.send.mockImplementationOnce((data: string) => resolve(JSON.parse(data)));
+          channel.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(message) }));
+        });
+      const selection = await request({ type: "readSelection", requestId: 1, generation: 1 });
+      const resized = await request({
+        type: "resizeViewport",
+        requestId: 2,
+        generation: 1,
+        viewport: { _tag: "freeform", width: 820, height: 1180 },
+      });
+      if (role === "controller") {
+        expect(selection).toMatchObject({ requestId: 1, text: "selected text", error: null });
+        expect(resized).toMatchObject({ requestId: 2, error: null });
+        expect(resizeViewport).toHaveBeenCalledWith({ _tag: "freeform", width: 820, height: 1180 });
+      } else {
+        expect(selection.error).toBe("Take control of the stream first.");
+        expect(resized.error).toBe("Take control of the stream first.");
+        expect(options.bridge.remote.readSelection).not.toHaveBeenCalled();
+        expect(resizeViewport).not.toHaveBeenCalled();
+      }
+      const stale = await request({ type: "readSelection", requestId: 3, generation: 0 });
+      expect(stale.error).toBeTruthy();
+      await peer.close(options.bridge);
+    },
+  );
+
+  it("keeps a rapid key sequence ordered through asynchronous host dispatch", async () => {
+    const { options, channels } = setupPeer();
+    const peer = await RemotePreviewPeer.create({
+      ...options,
+      request: { ...options.request, role: "controller" },
+    });
+    let finishFirst!: () => void;
+    let firstStarted!: () => void;
+    let lastFinished!: () => void;
+    const started = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const finished = new Promise<void>((resolve) => {
+      lastFinished = resolve;
+    });
+    const first = new Promise<void>((resolve) => {
+      finishFirst = resolve;
+    });
+    const delivered: string[] = [];
+    vi.mocked(options.bridge.remote.dispatchInput).mockImplementation(async (_tab, message) => {
+      delivered.push(message.type);
+      if (delivered.length === 1) {
+        firstStarted();
+        await first;
+      }
+      if (delivered.length === 2) lastFinished();
+    });
+    for (const type of ["keyDown", "keyUp"])
+      channels[0]!.dispatchEvent(
+        new MessageEvent("message", {
+          data: JSON.stringify({ type, generation: 1, key: "a", code: "KeyA", modifiers: [] }),
+        }),
+      );
+    await started;
+    expect(delivered).toEqual(["keyDown"]);
+    finishFirst();
+    await finished;
+    expect(delivered).toEqual(["keyDown", "keyUp"]);
     await peer.close(options.bridge);
   });
 });

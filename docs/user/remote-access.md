@@ -176,8 +176,13 @@ Keep the desktop app open on the machine that hosts the preview. From a paired w
 same thread and choose Browser. The remote Browser panel and mini player show the desktop tab when
 the host is available.
 
+If the viewer says **Preview access required**, create a new pairing link in the desktop app's
+**Settings → Connections** with **View browser previews** enabled, then pair the device again.
+Enable **Control browser previews** too if you want to interact with the tab. Devices paired before
+streaming was added need a new link because their saved permissions do not include preview access.
+
 The desktop window can be hidden or minimized while you use a remote preview. Closing that window
-ends its hosted previews. When you switch away from the viewer's browser tab, its video traffic
+ends its hosted previews. When you switch away from the viewer's browser tab without picture in picture, its video traffic
 pauses; returning resumes it without creating a new connection. Read-only viewing uses a lower
 frame rate than taking control.
 
@@ -193,6 +198,25 @@ takeover releases the other viewer's held keys and pointers before control chang
 Use the keyboard button to open the device keyboard. Remote focus alone cannot open the iPadOS
 keyboard. The full-screen button expands only the local video; it does not ask the remote page to
 enter full screen.
+
+Use **Stream options** to copy selected page text to your device or paste your device's clipboard
+into the page. Clipboard transfer supports plain text. Browser clipboard buttons require HTTPS;
+the mobile app uses its native clipboard.
+
+The same menu provides device presets and custom viewport width and height. **Use this device's
+size** resizes the hosted page to match your viewer, while **Fit host panel** restores the desktop
+panel size. These changes affect every viewer of the tab. Pinch zoom and full screen change only
+your local view.
+
+In the web app, the Browser panel lists the thread's existing desktop tabs. Selecting a recent URL
+or entering an address navigates the selected tab. Use **+** to open another tab.
+
+Use **Annotate preview** while controlling the tab to select elements, mark regions, or draw and
+attach the result to the conversation. **Capture screenshot** saves the streamed frame to your
+device. **Float preview over chat** keeps the same stream visible while you work in the conversation.
+The stream menu also offers native **Picture in picture** when the browser supports it. Support can
+differ between Safari and an iPad Home Screen web app; the floating preview over chat remains
+available in either. DevTools and the separate desktop preview window stay on the host.
 
 The preview becomes read-only while the desktop has DevTools open. OAuth popups still appear on the
 desktop, so finish those steps there. If the desktop disconnects or the guest tab crashes, the remote

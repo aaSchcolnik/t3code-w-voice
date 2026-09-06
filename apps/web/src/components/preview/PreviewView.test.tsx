@@ -12,6 +12,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
+  remote: false,
+  navigateRemote: vi.fn(async () => ({ _tag: "Success", value: { tabId: "tab-1" } })),
+  openRemote: vi.fn(),
+  pickRemote: vi.fn(),
+  cancelRemotePick: vi.fn(async () => undefined),
+  captureRemote: vi.fn(async () => undefined),
+
   navigate: vi.fn(async (_tabId: string, _url: string): Promise<void> => undefined),
   rememberPreviewUrl: vi.fn(),
   readPreparedConnection: vi.fn(() => ({ httpBaseUrl: "http://172.25.85.75:3773" })),
@@ -142,11 +149,12 @@ vi.mock("~/state/environments", () => ({
 }));
 
 vi.mock("~/state/preview", () => ({
-  previewEnvironment: { open: {}, resize: {} },
+  previewEnvironment: { open: "open", resize: "resize", navigate: "navigate", refresh: "refresh" },
 }));
 
 vi.mock("~/state/use-atom-command", () => ({
-  useAtomCommand: () => vi.fn(),
+  useAtomCommand: (command: string) =>
+    command === "navigate" ? mocks.navigateRemote : command === "open" ? mocks.openRemote : vi.fn(),
 }));
 
 vi.mock("~/browser/browserRecording", () => ({
@@ -156,6 +164,22 @@ vi.mock("~/browser/browserRecording", () => ({
   stopBrowserRecording: vi.fn(),
   useActiveBrowserRecordingTabIds: () => new Set(),
 }));
+
+vi.mock("~/browser/remotePreviewViewerStore", () => ({
+  useRemotePreviewViewer: () =>
+    mocks.remote
+      ? {
+          status: "streaming",
+          hostState: "streaming",
+          role: "controller",
+          controls: remoteControls,
+        }
+      : null,
+}));
+const remoteControls = {
+  viewer: { pickElement: mocks.pickRemote, cancelPickElement: mocks.cancelRemotePick },
+  captureScreenshot: mocks.captureRemote,
+};
 
 vi.mock("~/browser/browserSurfaceStore", () => ({
   useBrowserSurfaceStore: (
@@ -203,13 +227,17 @@ vi.mock("~/components/ui/toast", () => ({
 }));
 
 vi.mock("./previewBridge", () => ({
-  previewBridge: {
-    navigate: mocks.navigate,
-    pickElement: mocks.pickElement,
-    pictureInPicture: {
-      open: mocks.openPictureInPicture,
-      close: mocks.closePictureInPicture,
-    },
+  get previewBridge() {
+    return mocks.remote
+      ? null
+      : {
+          navigate: mocks.navigate,
+          pickElement: mocks.pickElement,
+          pictureInPicture: {
+            open: mocks.openPictureInPicture,
+            close: mocks.closePictureInPicture,
+          },
+        };
   },
 }));
 
@@ -325,6 +353,11 @@ function installTestDom() {
 
 describe("PreviewView navigation", () => {
   beforeEach(() => {
+    mocks.remote = false;
+    mocks.navigateRemote.mockClear();
+    mocks.openRemote.mockClear();
+    mocks.pickRemote.mockReset();
+    mocks.cancelRemotePick.mockClear();
     mocks.navigate.mockClear();
     mocks.rememberPreviewUrl.mockClear();
     mocks.readPreparedConnection.mockClear();
@@ -350,6 +383,67 @@ describe("PreviewView navigation", () => {
     mocks.showEmptyState = false;
     mocks.loading = false;
     mocks.recordVisitForThread.mockClear();
+  });
+
+  it("navigates the selected remote tab from recent URLs without creating another tab", async () => {
+    mocks.remote = true;
+    mocks.showEmptyState = true;
+    const document = installTestDom();
+    const { createRoot } = await import("react-dom/client");
+    const root = createRoot(document.createElement("div") as unknown as Element);
+    try {
+      await act(() =>
+        root.render(<PreviewView threadRef={TEST_THREAD_REF} tabId="tab-1" visible />),
+      );
+      await act(async () => {
+        mocks.emptyStateUrl?.("https://google.com/");
+      });
+      expect(mocks.navigateRemote).toHaveBeenCalledWith({
+        environmentId: "environment-1",
+        input: { threadId: "thread-1", tabId: "tab-1", url: "https://google.com/" },
+      });
+      expect(mocks.openRemote).not.toHaveBeenCalled();
+      expect(mocks.rememberPreviewUrl).toHaveBeenCalledWith(TEST_THREAD_REF, "https://google.com/");
+    } finally {
+      await act(() => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("attaches remote annotations to the same composer and floats the existing streamed tab", async () => {
+    mocks.remote = true;
+    const annotation = {
+      id: "remote-note",
+      pageUrl: "https://example.com/",
+      comment: "Adjust spacing",
+      screenshot: null,
+    };
+    mocks.pickRemote.mockResolvedValue({ annotation, submission: "send" });
+    const send = vi.fn();
+    const document = installTestDom();
+    const { createRoot } = await import("react-dom/client");
+    const root = createRoot(document.createElement("div") as unknown as Element);
+    try {
+      await act(() =>
+        root.render(
+          <PreviewView threadRef={TEST_THREAD_REF} tabId="tab-1" visible onSendAnnotation={send} />,
+        ),
+      );
+      await act(async () => {
+        mocks.toggleAnnotation?.();
+      });
+      expect(send).toHaveBeenCalledWith(annotation, null);
+      expect(mocks.addPreviewAnnotation).toHaveBeenCalledWith(TEST_THREAD_REF, annotation);
+      await act(() => {
+        mocks.togglePictureInPicture?.();
+      });
+      expect(mocks.openMiniPlayer).toHaveBeenCalledWith(TEST_THREAD_REF, "tab-1");
+      expect(mocks.closeRightPanel).toHaveBeenCalledWith(TEST_THREAD_REF);
+      expect(mocks.openRemote).not.toHaveBeenCalled();
+    } finally {
+      await act(() => root.unmount());
+      vi.unstubAllGlobals();
+    }
   });
 
   it("does not rerender while loading time passes", async () => {

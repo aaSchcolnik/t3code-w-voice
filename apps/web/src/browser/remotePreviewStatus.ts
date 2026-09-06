@@ -1,6 +1,20 @@
-import type { RemotePreviewHostState } from "@t3tools/contracts";
+import { EnvironmentAuthorizationError, type RemotePreviewHostState } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 
 import type { RemotePreviewViewerStatus } from "./remotePreviewViewer";
+
+const isAuthorizationError = Schema.is(EnvironmentAuthorizationError);
+
+export function remotePreviewStreamFailureStatus(
+  cause: Cause.Cause<unknown>,
+): RemotePreviewViewerStatus {
+  return cause.reasons.some(
+    (reason) => Cause.isFailReason(reason) && isAuthorizationError(reason.error),
+  )
+    ? "permission-required"
+    : "failed";
+}
 
 export interface RemotePreviewOverlayCopy {
   readonly title: string;
@@ -21,6 +35,13 @@ export function remotePreviewOverlayCopy(input: {
   readonly hostState: RemotePreviewHostState;
   readonly environmentLabel: string;
 }): RemotePreviewOverlayCopy | null {
+  if (input.status === "permission-required") {
+    return {
+      title: "Preview access required",
+      detail: "Pair this device again using a new link with permission to view browser previews.",
+      opaque: true,
+    };
+  }
   if (input.hostState === "host-gone" || input.status === "waiting-for-host") {
     return {
       title: `Waiting for the desktop app on ${input.environmentLabel}`,

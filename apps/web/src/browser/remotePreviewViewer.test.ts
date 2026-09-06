@@ -1,3 +1,4 @@
+import { remotePreviewResultChunks } from "./remotePreviewCommands";
 import type {
   DesktopPreviewPointerEvent,
   RemotePreviewControllerIdentity,
@@ -184,6 +185,119 @@ describe("remotePreviewViewer", () => {
       sentSignals,
     };
   };
+
+  it("correlates command replies and rejects pending work on disconnect", async () => {
+    const { viewer } = createTestRig();
+    viewer.acceptEvent({
+      type: "opened",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      role: "controller",
+      iceServers: [],
+    });
+    viewer.acceptEvent({
+      type: "offer",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      sdp: "offer",
+    });
+    const channel = new MockRTCDataChannel("control");
+    MockRTCPeerConnection.instances[0]!.ondatachannel!({
+      channel: channel as unknown as RTCDataChannel,
+    });
+    const selection = viewer.readSelection();
+    const resize = viewer.resizeViewport({ _tag: "freeform", width: 820, height: 1180 });
+    const requests = channel.sent.map((data) => JSON.parse(data));
+    expect(requests).toMatchObject([
+      { type: "readSelection", generation: 1 },
+      { type: "resizeViewport", viewport: { _tag: "freeform", width: 820, height: 1180 } },
+    ]);
+    channel.onmessage!({
+      data: JSON.stringify({
+        type: "commandResult",
+        requestId: requests[1].requestId,
+        text: null,
+        error: null,
+      }),
+    });
+    await resize;
+    channel.onmessage!({
+      data: JSON.stringify({
+        type: "commandResult",
+        requestId: requests[0].requestId,
+        text: "selected",
+        error: null,
+      }),
+    });
+    await expect(selection).resolves.toBe("selected");
+    const pending = viewer.readSelection();
+    const rejected = expect(pending).rejects.toThrow("disconnected");
+    viewer.dispose();
+    await rejected;
+  });
+
+  it("assembles a large annotation while preserving stroke input order", async () => {
+    const { viewer } = createTestRig();
+    viewer.acceptEvent({
+      type: "opened",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      role: "controller",
+      iceServers: [],
+    });
+    viewer.acceptEvent({
+      type: "offer",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      sdp: "offer",
+    });
+    const control = new MockRTCDataChannel("control");
+    const motion = new MockRTCDataChannel("motion");
+    const peer = MockRTCPeerConnection.instances[0]!;
+    peer.ondatachannel!({ channel: control as unknown as RTCDataChannel });
+    peer.ondatachannel!({ channel: motion as unknown as RTCDataChannel });
+    const result = {
+      annotation: {
+        id: "pick",
+        pageUrl: "https://example.com/",
+        pageTitle: "Example",
+        comment: "Note ".repeat(6_000),
+        elements: [],
+        regions: [],
+        strokes: [],
+        styleChanges: [],
+        screenshot: null,
+        createdAt: "2026-09-06T00:00:00.000Z",
+      },
+      submission: "attach",
+    };
+    const picked = viewer.pickElement();
+    const requestId = JSON.parse(control.sent[0]!).requestId;
+    viewer.sendMotion({
+      type: "touchMove",
+      pointerType: "touch",
+      pointerId: 1,
+      x: 4,
+      y: 5,
+      modifiers: [],
+    });
+    expect(JSON.parse(control.sent.at(-1)!)).toMatchObject({ type: "touchMove", x: 4, y: 5 });
+    expect(motion.sent).toHaveLength(0);
+    for (const chunk of remotePreviewResultChunks(requestId, JSON.stringify(result))) {
+      control.onmessage!({ data: JSON.stringify(chunk) });
+    }
+    await expect(picked).resolves.toEqual(result);
+    viewer.sendMotion({
+      type: "touchMove",
+      pointerType: "touch",
+      pointerId: 1,
+      x: 5,
+      y: 6,
+      modifiers: [],
+    });
+    expect(motion.sent).toHaveLength(1);
+    viewer.dispose();
+  });
 
   it("discards an answer that finishes after the host session was replaced", async () => {
     const rig = createTestRig();
