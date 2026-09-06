@@ -1,4 +1,5 @@
 import type { RemotePreviewControllerIdentity } from "@t3tools/contracts";
+import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,7 +11,6 @@ import {
   PictureInPicture2,
   Pointer,
   PointerOff,
-  RotateCw,
   Shrink,
 } from "lucide-react";
 import {
@@ -202,7 +202,7 @@ export function PreviewChromeRow({
                 />
               }
             >
-              <RotateCw className={cn(loading && "animate-spin")} />
+              <RefreshIcon refreshing={loading} />
             </TooltipTrigger>
             <TooltipPopup>{loading ? "Loading…" : "Refresh"}</TooltipPopup>
           </Tooltip>

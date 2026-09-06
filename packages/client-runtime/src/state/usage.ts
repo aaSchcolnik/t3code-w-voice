@@ -5,6 +5,8 @@ import type {
   SubscriptionUsageValueMetric,
 } from "@t3tools/contracts";
 
+export { refreshUsage } from "./usageRefresh.ts";
+
 interface UsageNumberFormatter {
   readonly format: (value: number) => string;
 }
