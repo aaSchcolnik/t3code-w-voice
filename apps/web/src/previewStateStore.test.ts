@@ -324,6 +324,7 @@ describe("previewStateStore (single-tab)", () => {
       zoomFactor: 1,
       pictureInPicture: false,
       colorScheme: "system",
+      audioOutput: "desktop" as const,
       audioMuted: false,
       audible: false,
       controller: "none",
@@ -345,6 +346,7 @@ describe("previewStateStore (single-tab)", () => {
       zoomFactor: 1,
       pictureInPicture: false,
       colorScheme: "system" as const,
+      audioOutput: "desktop" as const,
       audioMuted: false,
       audible: false,
       controller: "none" as const,
@@ -377,6 +379,7 @@ describe("previewStateStore (single-tab)", () => {
       zoomFactor: 1,
       pictureInPicture: false,
       colorScheme: "system" as const,
+      audioOutput: "desktop" as const,
       audioMuted: false,
       audible: false,
       controller: "none" as const,
@@ -416,6 +419,13 @@ describe("previewStateStore (single-tab)", () => {
     expect(updateCount).toBe(3);
     expect(readThreadPreviewState(ref).desktopOverlay?.remoteController?.label).toBe("iPad");
 
+    applyPreviewDesktopState(ref, snapshot.tabId, {
+      ...readThreadPreviewState(ref).desktopOverlay!,
+      audioOutput: "remote",
+    });
+    expect(updateCount).toBe(4);
+    expect(readThreadPreviewState(ref).desktopOverlay?.audioOutput).toBe("remote");
+
     unsubscribe();
   });
 
@@ -432,6 +442,7 @@ describe("previewStateStore (single-tab)", () => {
       zoomFactor: 1,
       pictureInPicture: false,
       colorScheme: "system",
+      audioOutput: "desktop" as const,
       audioMuted: false,
       audible: false,
       controller: "none",
@@ -483,6 +494,7 @@ describe("previewStateStore (single-tab)", () => {
       zoomFactor: 1,
       pictureInPicture: false,
       colorScheme: "system",
+      audioOutput: "desktop" as const,
       audioMuted: false,
       audible: false,
       controller: "none",
@@ -600,6 +612,7 @@ describe("previewStateStore (single-tab)", () => {
       zoomFactor: 1,
       pictureInPicture: false,
       colorScheme: "system",
+      audioOutput: "desktop" as const,
       audioMuted: false,
       audible: false,
       controller: "none",

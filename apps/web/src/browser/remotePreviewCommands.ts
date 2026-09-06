@@ -1,4 +1,5 @@
 import type {
+  RemotePreviewAudioOutput,
   DesktopPreviewBridge,
   RemotePreviewCommandResult,
   RemotePreviewSessionCommand,
@@ -59,6 +60,7 @@ export function createRemotePreviewCommands(options: {
   tabId: string;
   validate: (command: RemotePreviewSessionCommand) => void;
   reply: (result: RemotePreviewCommandResult) => Promise<void>;
+  setAudioOutput?: ((output: RemotePreviewAudioOutput) => Promise<void>) | undefined;
   resizeViewport?: ((viewport: PreviewViewportSetting) => Promise<void>) | undefined;
 }) {
   let pick: object | null = null;
@@ -88,6 +90,10 @@ export function createRemotePreviewCommands(options: {
         options.validate(command);
         const { bridge, tabId } = options;
         switch (command.type) {
+          case "setAudioOutput":
+            if (!options.setAudioOutput) throw new Error("This host cannot route audio.");
+            await options.setAudioOutput(command.audioOutput);
+            return null;
           case "readSelection":
             return bridge.remote.readSelection(tabId);
           case "resizeViewport":

@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 import type { RemotePreviewViewerHandle } from "./remotePreviewViewer";
 
 import type {
+  RemotePreviewAudioOutput,
   DesktopPreviewColorScheme,
   RemotePreviewControllerIdentity,
   RemotePreviewHostState,
@@ -20,6 +21,7 @@ import type { RemotePreviewViewerStats, RemotePreviewViewerStatus } from "./remo
  */
 export interface RemotePreviewViewerControls {
   readonly viewer: RemotePreviewViewerHandle;
+  readonly setAudioOutput: (output: RemotePreviewAudioOutput) => Promise<void>;
   readonly containerRef: RefObject<HTMLDivElement | null>;
   readonly captureScreenshot: () => Promise<void>;
   readonly togglePictureInPicture: () => Promise<void>;
@@ -33,6 +35,8 @@ export interface RemotePreviewViewerControls {
 }
 
 export interface RemotePreviewViewerEntry {
+  readonly audioOutput: RemotePreviewAudioOutput;
+  readonly audioMuted: boolean;
   readonly status: RemotePreviewViewerStatus;
   readonly hostState: RemotePreviewHostState;
   readonly role: RemotePreviewRole;
@@ -52,6 +56,8 @@ export interface RemotePreviewViewerEntry {
 }
 
 export const EMPTY_REMOTE_PREVIEW_VIEWER: RemotePreviewViewerEntry = Object.freeze({
+  audioOutput: "desktop",
+  audioMuted: false,
   status: "connecting",
   hostState: "streaming",
   role: "viewer",

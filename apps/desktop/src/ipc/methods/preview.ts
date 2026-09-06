@@ -27,6 +27,7 @@ import {
   DesktopPreviewWebviewConfigSchema,
   PreviewAnnotationSubmissionResultSchema,
   PreviewAutomationSnapshot,
+  RemotePreviewAudioOutput,
   RemotePreviewSourceMetadata,
   DEFAULT_BROWSER_PROFILE_ID,
   INCOGNITO_BROWSER_PROFILE_ID,
@@ -202,11 +203,30 @@ export const stopRecording = tabMethod(
   "desktop.ipc.preview.stopRecording",
   (manager, tabId) => manager.stopRecording(tabId),
 );
-export const startRemoteCapture = tabMethod(
-  IpcChannels.PREVIEW_REMOTE_START_CAPTURE_CHANNEL,
-  "desktop.ipc.preview.startRemoteCapture",
-  (manager, tabId) => manager.startRemoteCapture(tabId),
-);
+export const startRemoteCapture = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_REMOTE_START_CAPTURE_CHANNEL,
+  payload: Schema.Struct({
+    ...DesktopPreviewTabInputSchema.fields,
+    options: Schema.optional(Schema.Struct({ audio: RemotePreviewAudioOutput })),
+  }),
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.preview.startRemoteCapture")(function* ({ tabId, options }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    yield* manager.startRemoteCapture(tabId, options);
+  }),
+});
+export const commitAudioOutput = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_REMOTE_COMMIT_AUDIO_OUTPUT_CHANNEL,
+  payload: Schema.Struct({
+    ...DesktopPreviewTabInputSchema.fields,
+    audioOutput: RemotePreviewAudioOutput,
+  }),
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.preview.commitAudioOutput")(function* ({ tabId, audioOutput }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    yield* manager.commitAudioOutput(tabId, audioOutput);
+  }),
+});
 export const stopRemoteCapture = tabMethod(
   IpcChannels.PREVIEW_REMOTE_STOP_CAPTURE_CHANNEL,
   "desktop.ipc.preview.stopRemoteCapture",
@@ -569,6 +589,7 @@ export const methods = [
   automationWaitFor,
   startRecording,
   stopRecording,
+  commitAudioOutput,
   startRemoteCapture,
   stopRemoteCapture,
   dispatchRemoteInput,

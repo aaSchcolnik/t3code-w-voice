@@ -172,6 +172,8 @@ devices. For server version warnings, follow [Updating T3 Code](./updating.md).
 
 ## Remote preview streaming
 
+Use **Stream options → Audio** to play a preview tab's sound on **Computer**, **This device**, or **Both**. Listening requires control of the preview. Sound returns to the computer when the controlling device disconnects, releases control, or backgrounds the app. Both may echo because of network delay. Stop an active recording before switching to This device or Both; returning to Computer is always available. Recordings remain video-only. Tab mute applies to every output.
+
 Keep the desktop app open on the machine that hosts the preview. From a paired web client, open the
 same thread and choose Browser. The remote Browser panel and mini player show the desktop tab when
 the host is available.

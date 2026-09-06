@@ -1,5 +1,6 @@
 import { remotePreviewResultChunks } from "./remotePreviewCommands";
 import type {
+  RemotePreviewAudioOutput,
   DesktopPreviewPointerEvent,
   RemotePreviewControllerIdentity,
   RemotePreviewGeneration,
@@ -122,6 +123,12 @@ class MockRTCPeerConnection {
 
 class MockMediaStream {
   tracks: MediaStreamTrack[];
+  getTracks() {
+    return this.tracks;
+  }
+  addTrack(track: MediaStreamTrack) {
+    this.tracks.push(track);
+  }
   constructor(tracks: MediaStreamTrack[] = []) {
     this.tracks = tracks;
   }
@@ -146,6 +153,7 @@ describe("remotePreviewViewer", () => {
   });
 
   const createTestRig = () => {
+    const audioStates: { output: RemotePreviewAudioOutput; muted: boolean }[] = [];
     const statuses: RemotePreviewViewerStatus[] = [];
     const streams: (MediaStream | null)[] = [];
     const metadatas: RemotePreviewSourceMetadata[] = [];
@@ -159,6 +167,7 @@ describe("remotePreviewViewer", () => {
     const sentSignals: RemotePreviewSignal[] = [];
 
     const events: RemotePreviewViewerEvents = {
+      onAudioOutput: (output, muted) => audioStates.push({ output, muted }),
       onStatus: (status) => statuses.push(status),
       onStream: (stream) => streams.push(stream),
       onMetadata: (metadata) => metadatas.push(metadata),
@@ -175,6 +184,7 @@ describe("remotePreviewViewer", () => {
 
     return {
       viewer,
+      audioStates,
       statuses,
       streams,
       metadatas,
@@ -185,6 +195,79 @@ describe("remotePreviewViewer", () => {
       sentSignals,
     };
   };
+
+  it.each(["audio", "video"])(
+    "keeps both tracks in one receiver stream when %s arrives first",
+    async (first) => {
+      const r = createTestRig();
+      r.viewer.acceptEvent({
+        type: "opened",
+        sessionId: MOCK_SESSION_ID,
+        generation: MOCK_GENERATION_1,
+        role: "controller",
+        iceServers: [],
+      });
+      r.viewer.acceptEvent({
+        type: "offer",
+        sessionId: MOCK_SESSION_ID,
+        generation: MOCK_GENERATION_1,
+        sdp: "offer",
+      });
+      const peer = MockRTCPeerConnection.instances[0]!;
+      const tracks = [first, first === "audio" ? "video" : "audio"].map(
+        (kind) => ({ kind }) as MediaStreamTrack,
+      );
+      for (const track of tracks) peer.ontrack?.({ track, streams: [] });
+      expect(r.streams).toHaveLength(2);
+      expect(r.streams.at(-1)?.getTracks()).toEqual(tracks);
+      r.viewer.dispose();
+    },
+  );
+
+  it("orders audio state received through signaling and the control channel", async () => {
+    const r = createTestRig();
+    r.viewer.acceptEvent({
+      type: "opened",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      role: "controller",
+      iceServers: [],
+    });
+    r.viewer.acceptEvent({
+      type: "offer",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      sdp: "offer",
+    });
+    const channel = new MockRTCDataChannel("control");
+    MockRTCPeerConnection.instances[0]!.ondatachannel?.({
+      channel: channel as unknown as RTCDataChannel,
+    });
+    const event = {
+      type: "audioOutput" as const,
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_1,
+      revision: 1,
+      audioOutput: "remote" as const,
+      audioMuted: false,
+    };
+    channel.onmessage?.({ data: JSON.stringify(event) });
+    r.viewer.acceptEvent({ ...event, revision: 2, audioOutput: "both", audioMuted: true });
+    channel.onmessage?.({ data: JSON.stringify(event) });
+    r.viewer.acceptEvent({
+      type: "iceRestart",
+      sessionId: MOCK_SESSION_ID,
+      generation: MOCK_GENERATION_2,
+    });
+    r.viewer.acceptEvent({ ...event, revision: 3 });
+    channel.onmessage?.({ data: JSON.stringify({ ...event, revision: 4, sessionId: "foreign" }) });
+    expect(r.audioStates).toEqual([
+      { output: "desktop", muted: false },
+      { output: "remote", muted: false },
+      { output: "both", muted: true },
+    ]);
+    r.viewer.dispose();
+  });
 
   it("correlates command replies and rejects pending work on disconnect", async () => {
     const { viewer } = createTestRig();

@@ -6,6 +6,8 @@ import {
   RemotePreviewGeneration,
   RemotePreviewMotionMessage,
   RemotePreviewViewerVisibilityMessage,
+  type RemotePreviewAudioOutput,
+  type RemotePreviewAudioOutputEvent,
   type DesktopPreviewBridge,
   type DesktopPreviewPointerEvent,
   type RemotePreviewAgentPointerEvent,
@@ -27,6 +29,7 @@ import { acquireBrowserSurfaceActivity } from "./browserSurfaceStore";
 import {
   acquireTabMediaCapture,
   refreshTabMediaCapture,
+  readTabAudioOutput,
   waitForBrowserRecordingPaint,
   type TabMediaCaptureLease,
 } from "./browserRecording";
@@ -257,6 +260,9 @@ export interface RemotePreviewPeerOptions {
   readonly bridge: DesktopPreviewBridge;
   readonly signal: (event: RemotePreviewHostEvent) => Promise<void>;
   readonly resizeViewport?: (viewport: PreviewViewportSetting) => Promise<void>;
+  readonly setAudioOutput?: (output: RemotePreviewAudioOutput) => Promise<void>;
+  readonly onCaptureChanged?: () => Promise<void>;
+  readonly onAudioFailure?: () => Promise<void>;
 }
 
 export class RemotePreviewPeer {
@@ -268,6 +274,13 @@ export class RemotePreviewPeer {
   private readonly controlChannel: RTCDataChannel;
   private readonly motionChannel: RTCDataChannel;
   private readonly sender: RTCRtpSender;
+  private readonly audioSender: RTCRtpSender;
+  private readonly signal: RemotePreviewPeerOptions["signal"];
+  private readonly onCaptureChanged: RemotePreviewPeerOptions["onCaptureChanged"];
+  private readonly onAudioFailure: RemotePreviewPeerOptions["onAudioFailure"];
+  private audioOutput: RemotePreviewAudioOutput = "desktop";
+  private audioMuted = false;
+  private audioRevision = 0;
   private readonly motionCoalescer: MotionMessageCoalescer;
   private readonly pendingCandidates: RTCIceCandidateInit[] = [];
   private captureLease: TabMediaCaptureLease;
@@ -278,6 +291,7 @@ export class RemotePreviewPeer {
   private generation: RemotePreviewHostStartRequest["generation"];
   private releaseSurfaceActivity: (() => void) | null;
   private statsInterval: number | null = null;
+  private recoveringIce = false;
   private iceRestartPromise: Promise<void> | null = null;
   private senderPolicyPromise: Promise<void> = Promise.resolve();
   private watchedTrack: MediaStreamTrack | null = null;
@@ -297,6 +311,10 @@ export class RemotePreviewPeer {
     readonly controlChannel: RTCDataChannel;
     readonly motionChannel: RTCDataChannel;
     readonly sender: RTCRtpSender;
+    readonly audioSender: RTCRtpSender;
+    readonly setAudioOutput?: RemotePreviewPeerOptions["setAudioOutput"];
+    readonly onCaptureChanged?: RemotePreviewPeerOptions["onCaptureChanged"];
+    readonly onAudioFailure?: RemotePreviewPeerOptions["onAudioFailure"];
     readonly captureLease: TabMediaCaptureLease;
     readonly sourceMetadata: RemotePreviewSourceMetadata;
     readonly releaseSurfaceActivity: () => void;
@@ -310,6 +328,10 @@ export class RemotePreviewPeer {
     this.controlChannel = options.controlChannel;
     this.motionChannel = options.motionChannel;
     this.sender = options.sender;
+    this.audioSender = options.audioSender;
+    this.signal = options.signal;
+    this.onCaptureChanged = options.onCaptureChanged;
+    this.onAudioFailure = options.onAudioFailure;
     this.captureLease = options.captureLease;
     this.sourceMetadata = options.sourceMetadata;
     this.releaseSurfaceActivity = options.releaseSurfaceActivity;
@@ -329,7 +351,13 @@ export class RemotePreviewPeer {
       bridge: options.bridge,
       tabId: this.runtimeTabId,
       resizeViewport: options.resizeViewport,
+      setAudioOutput: options.setAudioOutput,
       validate: (command) => {
+        if (command.type === "setAudioOutput") {
+          if (this.closed || this.role !== "controller")
+            throw new Error("Take control of the stream first.");
+          return;
+        }
         if (
           this.closed ||
           this.role !== "controller" ||
@@ -375,6 +403,7 @@ export class RemotePreviewPeer {
 
     this.controlChannel.addEventListener("open", () => {
       this.sendControl(this.sourceMetadataEvent());
+      this.publishAudioOutput(this.audioOutput, this.audioMuted);
     });
     this.controlChannel.addEventListener("message", (event) => {
       const message = decodeControlMessage(event.data);
@@ -426,7 +455,14 @@ export class RemotePreviewPeer {
         .catch((cause) => console.warn("Remote preview ICE candidate relay failed.", cause));
     });
     this.connection.addEventListener("iceconnectionstatechange", () => {
+      if (["connected", "completed"].includes(this.connection.iceConnectionState))
+        this.recoveringIce = false;
       if (this.connection.iceConnectionState === "failed") {
+        if (this.recoveringIce)
+          void this.onAudioFailure?.().catch((cause) =>
+            console.warn("Remote preview audio recovery failed.", cause),
+          );
+        this.recoveringIce = true;
         void this.restartIce(options.bridge, options.signal).catch((cause) =>
           console.warn("Remote preview ICE restart failed.", cause),
         );
@@ -477,6 +513,10 @@ export class RemotePreviewPeer {
           initialRemotePreviewEncoding(track, sourceMetadata.cssWidth, options.request.role),
         ],
       });
+      const audioTransceiver = connection.addTransceiver("audio", {
+        direction: "sendonly",
+        streams: [captureLease.stream],
+      });
       const videoCodecs = RTCRtpReceiver.getCapabilities("video")?.codecs;
       if (videoCodecs && videoCodecs.length > 0) {
         try {
@@ -496,6 +536,7 @@ export class RemotePreviewPeer {
           maxRetransmits: 0,
         }),
         sender: transceiver.sender,
+        audioSender: audioTransceiver.sender,
         captureLease,
         sourceMetadata,
         releaseSurfaceActivity,
@@ -548,11 +589,17 @@ export class RemotePreviewPeer {
     }
   }
 
+  acceptsRoleChange(request: RemotePreviewHostRoleChangedRequest): boolean {
+    return (
+      !this.closed && request.sessionId === this.sessionId && request.generation >= this.generation
+    );
+  }
+
   async updateRole(
     request: RemotePreviewHostRoleChangedRequest,
     bridge: DesktopPreviewBridge,
   ): Promise<void> {
-    if (request.sessionId !== this.sessionId || request.generation < this.generation) return;
+    if (!this.acceptsRoleChange(request)) return;
     const lostControl = this.role === "controller" && request.role !== "controller";
     this.role = request.role;
     this.generation = request.generation;
@@ -612,6 +659,37 @@ export class RemotePreviewPeer {
       console.warn("Remote preview agent-pointer relay failed.", cause),
     );
     this.sendControl(event);
+  }
+
+  async setAudioTrack(track: MediaStreamTrack | null): Promise<void> {
+    if (this.closed) return;
+    await this.audioSender.replaceTrack(track);
+  }
+
+  async adoptCaptureStream(stream: MediaStream): Promise<void> {
+    if (this.closed) return;
+    const track = videoTrack(stream);
+    if (this.sender.track !== track) await this.sender.replaceTrack(track);
+    this.watchTrack(track);
+    this.applySenderPolicySafely();
+  }
+
+  publishAudioOutput(audioOutput: RemotePreviewAudioOutput, audioMuted: boolean): void {
+    this.audioOutput = audioOutput;
+    this.audioMuted = audioMuted;
+    if (this.closed) return;
+    const event: RemotePreviewAudioOutputEvent = {
+      type: "audioOutput",
+      sessionId: this.sessionId,
+      generation: this.generation,
+      revision: ++this.audioRevision,
+      audioOutput,
+      audioMuted,
+    };
+    this.sendControl(event);
+    void this.signal(event).catch((cause) =>
+      console.warn("Remote preview audio-state relay failed.", cause),
+    );
   }
 
   async close(bridge: DesktopPreviewBridge): Promise<void> {
@@ -706,9 +784,14 @@ export class RemotePreviewPeer {
       await this.sendOffer(signal, true);
       if (!this.closed) await this.publishSourceMetadata(signal);
     })();
-    const trackedRestart = restart.finally(() => {
-      if (this.iceRestartPromise === trackedRestart) this.iceRestartPromise = null;
-    });
+    const trackedRestart = restart
+      .catch(async (cause) => {
+        await this.onAudioFailure?.();
+        throw cause;
+      })
+      .finally(() => {
+        if (this.iceRestartPromise === trackedRestart) this.iceRestartPromise = null;
+      });
     this.iceRestartPromise = trackedRestart;
     return trackedRestart;
   }
@@ -729,12 +812,14 @@ export class RemotePreviewPeer {
       const stream = await refreshTabMediaCapture(
         this.runtimeTabId,
         REMOTE_CAPTURE_FRAME_RATE,
-        () => bridge.remote.startCapture(this.runtimeTabId),
+        () =>
+          bridge.remote.startCapture(this.runtimeTabId, {
+            audio: readTabAudioOutput(this.runtimeTabId),
+          }),
       );
-      const track = videoTrack(stream);
-      await this.sender.replaceTrack(track);
-      this.watchTrack(track);
-      this.applySenderPolicySafely();
+      if (this.closed) return;
+      await this.adoptCaptureStream(stream);
+      await this.onCaptureChanged?.();
       await this.publishSourceMetadata(signal);
     })();
     const trackedReplacement = replacement.finally(() => {

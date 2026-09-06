@@ -867,6 +867,9 @@ export function PreviewView({
               colorScheme={remoteViewer?.colorScheme ?? "system"}
               enabled={remoteReady}
               controlling={remoteViewer?.role === "controller"}
+              audioOutput={remoteViewer?.audioOutput ?? "desktop"}
+              audioMuted={remoteViewer?.audioMuted ?? false}
+              onAudioOutput={remoteControls.setAudioOutput}
               onRequestControl={() => remoteControls.requestControl(false)}
               presentation="chrome"
               onPictureInPicture={

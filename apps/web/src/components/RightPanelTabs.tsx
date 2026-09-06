@@ -31,6 +31,8 @@ import {
   useState,
 } from "react";
 
+import { setRemotePreviewAudioOutput } from "~/browser/remotePreviewAudio";
+import { toastManager } from "~/components/ui/toast";
 import { isElectron } from "~/env";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
@@ -170,6 +172,10 @@ const SURFACE_UNAVAILABLE_HINTS = {
 type TabContextMenuAction =
   | "copy-path"
   | "toggle-mute"
+  | "audio-output"
+  | "audio-desktop"
+  | "audio-remote"
+  | "audio-both"
   | "close"
   | "close-others"
   | "close-to-right"
@@ -864,6 +870,26 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           }),
         });
       }
+      if (surface.kind === "preview" && previewBridge && menuOverlay) {
+        const controller = menuOverlay.remoteController;
+        const output = menuOverlay.audioOutput ?? "desktop";
+        const labels = { desktop: "Computer", remote: "Controlling device", both: "Both" };
+        const listenerLabel =
+          controller && (menuOverlay.remoteViewerCount ?? 0) > 1
+            ? `Controlling device: ${controller.label ?? controller.sessionId.slice(0, 8)}`
+            : controller
+              ? "Controlling device"
+              : "Controlling device (take control remotely first)";
+        items.push({
+          id: "audio-output",
+          label: `Audio: ${labels[output]}`,
+          children: [
+            { id: "audio-desktop", label: "Computer" },
+            { id: "audio-remote", label: listenerLabel, disabled: !controller },
+            { id: "audio-both", label: "Both", disabled: !controller },
+          ],
+        });
+      }
       items.push(
         { id: "close", label: "Close" },
         {
@@ -885,6 +911,31 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
       const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
       switch (action) {
+        case "audio-desktop":
+        case "audio-remote":
+        case "audio-both": {
+          const runtimeTabId = menuPreviewTabId
+            ? props.previewRuntimeTabId?.(menuPreviewTabId)
+            : null;
+          if (runtimeTabId) {
+            const output =
+              action === "audio-desktop"
+                ? "desktop"
+                : action === "audio-remote"
+                  ? "remote"
+                  : "both";
+            void setRemotePreviewAudioOutput(runtimeTabId, output).catch((cause) => {
+              toastManager.add({
+                type: "error",
+                title: "Audio output could not change",
+                description: cause instanceof Error ? cause.message : "Try again.",
+              });
+            });
+          }
+          break;
+        }
+        case "audio-output":
+          break;
         case "copy-path":
           if (surface.kind === "file" && surface.attachment === undefined) {
             props.onCopyFilePath(surface.relativePath);

@@ -4477,6 +4477,87 @@ describe("Preview remote streaming", () => {
     ),
   );
 
+  for (const mode of ["desktop", "remote", "both"] as const) {
+    effectIt.effect(`grants frame audio for ${mode} without committing output`, () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const { grants, takeGrant } = yield* setupRecordingRaceTabs(manager);
+          const outputs: string[] = [];
+          yield* manager.subscribeStateChanges((_tabId, state) =>
+            Effect.sync(() => {
+              outputs.push(state.audioOutput);
+            }),
+          );
+          yield* manager.startRemoteCapture("tab_race_a", { audio: mode });
+          takeGrant();
+          expect(grants.at(-1)).toEqual({
+            video: { routingId: 41 },
+            ...(mode === "desktop"
+              ? {}
+              : { audio: { routingId: 41 }, enableLocalEcho: mode === "both" }),
+          });
+          expect(outputs).not.toContain("remote");
+          expect(outputs).not.toContain("both");
+          yield* manager.commitAudioOutput("tab_race_a", mode);
+          if (mode !== "desktop") expect(outputs.at(-1)).toBe(mode);
+          yield* manager.stopRemoteCapture("tab_race_a");
+          if (mode !== "desktop") expect(outputs.at(-1)).toBe("desktop");
+        }),
+      ),
+    );
+  }
+
+  effectIt.effect("re-arms attached remote capture with its committed audio mode", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const { host, grants, takeGrant } = yield* setupRecordingRaceTabs(manager);
+        yield* manager.startRemoteCapture("tab_race_a", { audio: "both" });
+        takeGrant();
+        yield* manager.commitAudioOutput("tab_race_a", "both");
+        const replacement = makeTestPreviewWebContents(
+          async () => ({
+            toJPEG: () => Buffer.from("capture"),
+            getSize: () => ({ width: 1280, height: 720 }),
+          }),
+          43,
+          host,
+        );
+        fromId.mockReturnValue(replacement);
+        yield* manager.registerWebview("tab_race_a", 43);
+        takeGrant();
+        expect(grants.at(-1)).toEqual({
+          video: replacement.mainFrame,
+          audio: replacement.mainFrame,
+          enableLocalEcho: true,
+        });
+        yield* manager.stopRemoteCapture("tab_race_a");
+      }),
+    ),
+  );
+
+  effectIt.effect(
+    "returns output to Computer when remote capture stops but recording remains",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const { takeGrant } = yield* setupRecordingRaceTabs(manager);
+          const outputs: string[] = [];
+          yield* manager.subscribeStateChanges((_tabId, state) =>
+            Effect.sync(() => {
+              outputs.push(state.audioOutput);
+            }),
+          );
+          yield* manager.startRemoteCapture("tab_race_a", { audio: "remote" });
+          takeGrant();
+          yield* manager.commitAudioOutput("tab_race_a", "remote");
+          yield* manager.startRecording("tab_race_a");
+          yield* manager.stopRemoteCapture("tab_race_a");
+          expect(outputs.at(-1)).toBe("desktop");
+          yield* manager.stopRecording("tab_race_a");
+        }),
+      ),
+  );
+
   effectIt.effect("shares one native grant between recording and remote view", () =>
     withManager((manager) =>
       Effect.gen(function* () {

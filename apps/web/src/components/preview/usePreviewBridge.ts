@@ -121,6 +121,7 @@ export function projectDesktopState(state: DesktopPreviewTabState): DesktopPrevi
     zoomFactor: state.zoomFactor,
     pictureInPicture: state.pictureInPicture,
     colorScheme: state.colorScheme,
+    audioOutput: state.audioOutput,
     audioMuted: state.audioMuted,
     audible: state.audible,
     controller: state.controller,

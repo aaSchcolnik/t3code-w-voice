@@ -1,5 +1,9 @@
 import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@t3tools/contracts";
-import type { DesktopPreviewRecordingArtifact, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  RemotePreviewAudioOutput,
+  DesktopPreviewRecordingArtifact,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/unstable/reactivity";
@@ -156,6 +160,8 @@ export interface TabMediaCaptureLease {
 }
 
 interface SharedTabMediaCapture {
+  audioOutput: RemotePreviewAudioOutput;
+  readonly frameRate: number;
   readonly tabId: string;
   readonly capturePromise: Promise<MediaStream>;
   readonly consumerCounts: Map<TabMediaCaptureConsumer, number>;
@@ -267,16 +273,20 @@ const preferredMimeTypes = [
   "video/webm",
 ] as const;
 
-const createMediaRecorder = (stream: MediaStream): MediaRecorder => {
+const createMediaRecorder = (captured: MediaStream): MediaRecorder => {
+  const stream = new MediaStream(captured.getVideoTracks());
   const mimeType = preferredMimeTypes.find((candidate) => MediaRecorder.isTypeSupported(candidate));
   return mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
 };
 
-const captureTabMediaStream = (frameRate: number): Promise<MediaStream> =>
+const captureTabMediaStream = (
+  frameRate: number,
+  audioOutput: RemotePreviewAudioOutput,
+): Promise<MediaStream> =>
   // The desktop main process routes this request to the tab that `startScreencast` armed, so the
   // stream already arrives at that tab's native size and needs no source or dimension constraints.
   navigator.mediaDevices.getDisplayMedia({
-    audio: false,
+    audio: audioOutput !== "desktop",
     video: { frameRate: { max: frameRate } },
   });
 
@@ -299,7 +309,11 @@ interface PendingTabMediaCapture {
 
 const pendingTabMediaCaptures = new Map<string, PendingTabMediaCapture>();
 
-const prepareNewTabMediaCapture = (tabId: string, frameRate: number) => {
+const prepareNewTabMediaCapture = (
+  tabId: string,
+  frameRate: number,
+  audioOutput: RemotePreviewAudioOutput = "desktop",
+) => {
   let acceptStream = true;
   let capturedStream: MediaStream | null = null;
   let resolveCapture!: (stream: MediaStream | PromiseLike<MediaStream>) => void;
@@ -320,7 +334,7 @@ const prepareNewTabMediaCapture = (tabId: string, frameRate: number) => {
       try {
         // Electron invokes this callback through executeJavaScript(..., true), so even automated
         // and delayed queued starts satisfy getDisplayMedia's transient-activation requirement.
-        resolveCapture(captureTabMediaStream(frameRate));
+        resolveCapture(captureTabMediaStream(frameRate, audioOutput));
       } catch (cause) {
         rejectCapture(cause);
       }
@@ -394,6 +408,8 @@ const acquireTabMediaCaptureUnqueued = async (options: {
   if (!shared) {
     pendingCapture = prepareNewTabMediaCapture(tabId, options.frameRate);
     shared = {
+      audioOutput: "desktop",
+      frameRate: options.frameRate,
       tabId,
       capturePromise: pendingCapture.capturePromise,
       consumerCounts: new Map(),
@@ -407,6 +423,7 @@ const acquireTabMediaCaptureUnqueued = async (options: {
   }
 
   const capture = shared;
+  if (capture.replacementPromise) await capture.replacementPromise;
   const previousConsumerCount = capture.consumerCounts.get(consumer) ?? 0;
   capture.consumerCounts.set(consumer, previousConsumerCount + 1);
   capture.stopConsumers.set(consumer, options.stopCapture);
@@ -431,6 +448,7 @@ const acquireTabMediaCaptureUnqueued = async (options: {
       sharedTabMediaCaptures.delete(tabId);
       stopMediaStream(capture.stream);
     }
+    if (consumer === "remote-view" && currentConsumerCount <= 1) stopTabAudioCapture(tabId);
     await stopConsumer?.();
   };
 
@@ -441,7 +459,12 @@ const acquireTabMediaCaptureUnqueued = async (options: {
     }
     const stream = await captureTabMediaStreamWithTimeout(tabId, capture.capturePromise);
     capture.stream ??= stream;
-    return { stream: capture.stream, release };
+    return {
+      get stream() {
+        return capture.stream!;
+      },
+      release,
+    };
   } catch (cause) {
     pendingCapture?.cancel();
     await release().catch(() => undefined);
@@ -492,13 +515,75 @@ export async function refreshTabMediaCapture(
   if (!capture) {
     throw new BrowserRecordingUnavailableError({ tabId });
   }
-  if (hasLiveVideoTrack(capture.stream)) return capture.stream!;
   if (capture.replacementPromise) return capture.replacementPromise;
+  if (hasLiveVideoTrack(capture.stream)) return capture.stream!;
+  return replaceCapture(capture, frameRate, capture.audioOutput, startCapture);
+}
+
+const audioEndedListeners = new Map<string, Set<() => void>>();
+
+export function onTabAudioCaptureEnded(tabId: string, listener: () => void): () => void {
+  const listeners = audioEndedListeners.get(tabId) ?? new Set();
+  audioEndedListeners.set(tabId, listeners);
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) audioEndedListeners.delete(tabId);
+  };
+}
+
+export function readTabMediaCapture(tabId: string): MediaStream | null {
+  return sharedTabMediaCaptures.get(tabId)?.stream ?? null;
+}
+
+export function readTabAudioOutput(tabId: string): RemotePreviewAudioOutput {
+  return sharedTabMediaCaptures.get(tabId)?.audioOutput ?? "desktop";
+}
+
+export function stopTabAudioCapture(tabId: string): void {
+  const capture = sharedTabMediaCaptures.get(tabId);
+  if (!capture) return;
+  capture.audioOutput = "desktop";
+  for (const track of capture.stream?.getAudioTracks() ?? []) track.stop();
+}
+
+export function assertTabAudioOutputCanChange(tabId: string): void {
+  if ((sharedTabMediaCaptures.get(tabId)?.consumerCounts.get("recording") ?? 0) > 0) {
+    throw new Error("Stop the recording before changing audio output.");
+  }
+}
+
+export async function replaceTabMediaCapture(
+  tabId: string,
+  audioOutput: RemotePreviewAudioOutput,
+): Promise<MediaStream> {
+  const capture = sharedTabMediaCaptures.get(tabId);
+  if (!capture || !previewBridge) throw new BrowserRecordingUnavailableError({ tabId });
+  if (capture.replacementPromise) await capture.replacementPromise;
+  assertTabAudioOutputCanChange(tabId);
+  return replaceCapture(
+    capture,
+    capture.frameRate,
+    audioOutput,
+    () => previewBridge!.remote.startCapture(tabId, { audio: audioOutput }),
+    true,
+  );
+}
+
+function replaceCapture(
+  capture: SharedTabMediaCapture,
+  frameRate: number,
+  audioOutput: RemotePreviewAudioOutput,
+  startCapture: () => Promise<void>,
+  changingAudio = false,
+): Promise<MediaStream> {
+  const { tabId } = capture;
   const replacement = queueDisplayMediaGrant(async () => {
     if (sharedTabMediaCaptures.get(tabId) !== capture || capture.leaseCount === 0) {
       throw new BrowserRecordingUnavailableError({ tabId });
     }
-    const pending = prepareNewTabMediaCapture(tabId, frameRate);
+    if (changingAudio) assertTabAudioOutputCanChange(tabId);
+    const pending = prepareNewTabMediaCapture(tabId, frameRate, audioOutput);
     try {
       await startCapture();
       const stream = await captureTabMediaStreamWithTimeout(tabId, pending.capturePromise);
@@ -508,6 +593,17 @@ export async function refreshTabMediaCapture(
       }
       const previous = capture.stream;
       capture.stream = stream;
+      capture.audioOutput = audioOutput;
+      for (const track of stream.getAudioTracks()) {
+        track.addEventListener(
+          "ended",
+          () => {
+            if (capture.stream !== stream || capture.audioOutput === "desktop") return;
+            for (const listener of audioEndedListeners.get(tabId) ?? []) listener();
+          },
+          { once: true },
+        );
+      }
       stopMediaStream(previous);
       return stream;
     } catch (cause) {
@@ -519,7 +615,7 @@ export async function refreshTabMediaCapture(
     if (capture.replacementPromise === trackedReplacement) capture.replacementPromise = null;
   });
   capture.replacementPromise = trackedReplacement;
-  return capture.replacementPromise;
+  return trackedReplacement;
 }
 
 const clearActiveRecording = (recording: ActiveRecording): void => {

@@ -369,8 +369,13 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       },
     },
     remote: {
-      startCapture: (tabId) =>
-        ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_START_CAPTURE_CHANNEL, { tabId }),
+      startCapture: (tabId, options) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_START_CAPTURE_CHANNEL, { tabId, options }),
+      commitAudioOutput: (tabId, audioOutput) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_COMMIT_AUDIO_OUTPUT_CHANNEL, {
+          tabId,
+          audioOutput,
+        }),
       stopCapture: (tabId) =>
         ipcRenderer.invoke(IpcChannels.PREVIEW_REMOTE_STOP_CAPTURE_CHANNEL, { tabId }),
       dispatchInput: (tabId, message) =>

@@ -7,6 +7,14 @@ import {
 } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 import {
   acceptsMotionSequence,
   acceptsViewerInputGeneration,
@@ -312,8 +320,17 @@ const setupPeer = () => {
       close: vi.fn(),
     }),
   );
+  const audioSender = {
+    track: null as MediaStreamTrack | null,
+    replaceTrack: vi.fn(async (track: MediaStreamTrack | null) => {
+      audioSender.track = track;
+    }),
+  };
   const connection = Object.assign(new EventTarget(), {
-    addTransceiver: vi.fn(() => ({ sender, setCodecPreferences: vi.fn() })),
+    addTransceiver: vi.fn((track: MediaStreamTrack | string) => ({
+      sender: typeof track === "string" ? audioSender : sender,
+      setCodecPreferences: vi.fn(),
+    })),
     createDataChannel: vi.fn().mockReturnValueOnce(channels[0]).mockReturnValueOnce(channels[1]),
     createOffer: vi.fn(async () => ({ type: "offer", sdp: "offer" })),
     setLocalDescription: vi.fn(async () => undefined),
@@ -356,6 +373,7 @@ const setupPeer = () => {
   return {
     options: { request, runtimeTabId: "runtime-tab", bridge, signal },
     sender,
+    audioSender,
     connection,
     channels,
     windowMock,
@@ -364,6 +382,69 @@ const setupPeer = () => {
 };
 
 describe("remote preview host lifecycle", () => {
+  it.each(["viewer", "controller"] as const)(
+    "allows audio commands only from the %s role",
+    async (role) => {
+      const { options, channels } = setupPeer();
+      const setAudioOutput = vi.fn(async () => undefined);
+      const peer = await RemotePreviewPeer.create({
+        ...options,
+        request: { ...options.request, role },
+        setAudioOutput,
+      });
+      const channel = channels[0]!;
+      channel.readyState = "open";
+      // Computer remains available through a popup/DevTools and stale viewport metadata.
+      peer.publishHostState("devtools", options.bridge, options.signal);
+      const response = deferred<{ error: string | null }>();
+      channel.send.mockImplementation((data: string) => {
+        const value = JSON.parse(data);
+        if (value.type === "commandResult") response.resolve(value);
+      });
+      channel.dispatchEvent(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            type: "setAudioOutput",
+            requestId: 1,
+            generation: 999,
+            audioOutput: "desktop",
+          }),
+        }),
+      );
+      const result = await response.promise;
+      if (role === "viewer") {
+        expect(result.error).toContain("Take control");
+        expect(setAudioOutput).not.toHaveBeenCalled();
+      } else {
+        expect(result.error).toBeNull();
+        expect(setAudioOutput).toHaveBeenCalledWith("desktop");
+      }
+      await peer.close(options.bridge);
+    },
+  );
+
+  it("negotiates an empty audio sender and keeps it attached when the video is hidden", async () => {
+    const { options, connection, audioSender, channels } = setupPeer();
+    const peer = await RemotePreviewPeer.create(options);
+    expect(connection.addTransceiver).toHaveBeenCalledWith(
+      "audio",
+      expect.objectContaining({ direction: "sendonly", streams: expect.any(Array) }),
+    );
+    const track = { kind: "audio" } as MediaStreamTrack;
+    await peer.setAudioTrack(track);
+    channels[0]!.dispatchEvent(
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "viewerVisibility", visible: false }),
+      }),
+    );
+    expect(audioSender.track).toBe(track);
+    expect(connection.createOffer).toHaveBeenCalledOnce();
+    await peer.setAudioTrack(null);
+    expect(audioSender.track).toBeNull();
+    expect(connection.createOffer).toHaveBeenCalledOnce();
+    await peer.close(options.bridge);
+  });
+
   it("starts remote capture when the hidden host never receives an animation frame", async () => {
     vi.useFakeTimers();
     const { options, windowMock } = setupPeer();

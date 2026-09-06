@@ -61,6 +61,7 @@ vi.mock("./previewBridge", () => ({
   previewBridge: {
     automation: {},
     onPointerEvent: vi.fn(() => () => undefined),
+    onStateChange: vi.fn(() => () => undefined),
     remote: {
       setPresence: vi.fn(async () => undefined),
       onSourceMetadata: vi.fn(() => () => undefined),

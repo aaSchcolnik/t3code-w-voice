@@ -1,7 +1,11 @@
 import { Camera, MoreVertical, PictureInPicture2 } from "lucide-react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
-import type { DesktopPreviewColorScheme, PreviewViewportSetting } from "@t3tools/contracts";
+import type {
+  RemotePreviewAudioOutput,
+  DesktopPreviewColorScheme,
+  PreviewViewportSetting,
+} from "@t3tools/contracts";
 import { useCallback, useEffect, useState, type RefObject } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -12,6 +16,8 @@ import {
   MenuItem,
   MenuGroup,
   MenuGroupLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSeparator,
   MenuSub,
   MenuSubTrigger,
@@ -84,6 +90,9 @@ export function RemotePreviewTools({
   source,
   enabled,
   controlling = enabled,
+  audioOutput = "desktop",
+  audioMuted = false,
+  onAudioOutput,
   onRequestControl,
   presentation = "overlay",
   viewport,
@@ -98,6 +107,9 @@ export function RemotePreviewTools({
   readonly source: { readonly width: number; readonly height: number } | null;
   readonly enabled: boolean;
   readonly controlling?: boolean;
+  readonly audioOutput?: RemotePreviewAudioOutput;
+  readonly audioMuted?: boolean;
+  readonly onAudioOutput?: ((output: RemotePreviewAudioOutput) => Promise<void>) | undefined;
   readonly onRequestControl?: (() => void) | undefined;
   readonly presentation?: "overlay" | "chrome";
   readonly viewport?: PreviewViewportSetting | undefined;
@@ -264,6 +276,38 @@ export function RemotePreviewTools({
               <span>Stream</span>
               <RemoteStreamStats read={viewer.readStats} />
             </MenuItem>
+          </MenuGroup>
+          <MenuSeparator />
+          <MenuGroup>
+            <MenuGroupLabel>Audio</MenuGroupLabel>
+            <MenuRadioGroup value={audioOutput}>
+              {(
+                [
+                  ["desktop", "Computer"],
+                  ["remote", "This device"],
+                  ["both", "Both"],
+                ] as const
+              ).map(([value, label]) => (
+                <MenuRadioItem
+                  key={value}
+                  value={value}
+                  disabled={!controlling || !onAudioOutput}
+                  onClick={() => {
+                    setError(null);
+                    // Invoke directly inside the click, before any promise or state effect.
+                    void onAudioOutput?.(value).catch(report);
+                  }}
+                >
+                  {label}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+            {!controlling ? (
+              <p className="px-2 py-1 text-xs text-muted-foreground">Take control to listen here</p>
+            ) : null}
+            {audioMuted ? (
+              <p className="px-2 py-1 text-xs text-muted-foreground">Tab muted</p>
+            ) : null}
           </MenuGroup>
           {error ? (
             <p role="alert" className="p-2 text-xs text-destructive">

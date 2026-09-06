@@ -304,6 +304,7 @@ const signalGeneration = (event: RemotePreviewHostEvent): RemotePreviewGeneratio
     case "iceRestart":
     case "hostState":
     case "agentPointer":
+    case "audioOutput":
       return event.generation;
   }
 };
@@ -783,6 +784,7 @@ export const make = Effect.gen(function* RemotePreviewSessionBrokerMake() {
             type: "roleChanged",
             sessionId: result.previous.sessionId,
             generation: result.previous.generation,
+            controller: result.controller.sessionId,
             role: "viewer",
           });
         }
@@ -791,6 +793,7 @@ export const make = Effect.gen(function* RemotePreviewSessionBrokerMake() {
             type: "roleChanged",
             sessionId: result.controller.sessionId,
             generation: result.controller.generation,
+            controller: result.controller.sessionId,
             role: "controller",
           });
         }
@@ -833,6 +836,7 @@ export const make = Effect.gen(function* RemotePreviewSessionBrokerMake() {
         type: "roleChanged",
         sessionId,
         generation: released.session.generation,
+        controller: null,
         role: "viewer",
       });
     }

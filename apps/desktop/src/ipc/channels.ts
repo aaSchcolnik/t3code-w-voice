@@ -90,6 +90,8 @@ export const PREVIEW_RECORDING_START_CHANNEL = "desktop:preview-recording-start"
 export const PREVIEW_RECORDING_STOP_CHANNEL = "desktop:preview-recording-stop";
 export const PREVIEW_RECORDING_SAVE_CHANNEL = "desktop:preview-recording-save";
 export const PREVIEW_RECORDING_FRAME_CHANNEL = "desktop:preview-recording-frame";
+export const PREVIEW_REMOTE_COMMIT_AUDIO_OUTPUT_CHANNEL =
+  "desktop:preview-remote-commit-audio-output";
 export const PREVIEW_REMOTE_START_CAPTURE_CHANNEL = "desktop:preview-remote-start-capture";
 export const PREVIEW_REMOTE_STOP_CAPTURE_CHANNEL = "desktop:preview-remote-stop-capture";
 export const PREVIEW_REMOTE_DISPATCH_INPUT_CHANNEL = "desktop:preview-remote-dispatch-input";

@@ -53,6 +53,26 @@ describe("remote preview playback", () => {
     playback.dispose();
   });
 
+  it("unmutes synchronously, retains video on audio denial, and retries audio", async () => {
+    const video = new Video();
+    const playback = watch(video);
+    video.play.mockRejectedValueOnce(new DOMException("Gesture required", "NotAllowedError"));
+    playback.setListening(true);
+    expect(video.muted).toBe(false);
+    await Promise.resolve();
+    expect(playback.onState).toHaveBeenLastCalledWith("audio-blocked");
+    expect(video.muted).toBe(true);
+    video.dispatchEvent(new Event("playing"));
+    expect(playback.onState).toHaveBeenLastCalledWith("audio-blocked");
+    playback.play();
+    expect(video.muted).toBe(false);
+    video.dispatchEvent(new Event("playing"));
+    expect(playback.onState).toHaveBeenLastCalledWith("playing");
+    playback.setListening(false);
+    expect(video.muted).toBe(true);
+    playback.dispose();
+  });
+
   it.each(["replacement", "retry", "dispose"])(
     "ignores stale play rejections after %s",
     async (action) => {

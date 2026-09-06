@@ -24,6 +24,18 @@ import { useContext, useEffect, useEffectEvent, useMemo, useRef } from "react";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
+import {
+  assertTabAudioOutputCanChange,
+  onTabAudioCaptureEnded,
+  readTabMediaCapture,
+  replaceTabMediaCapture,
+  stopTabAudioCapture,
+} from "~/browser/browserRecording";
+import {
+  createRemotePreviewAudioRouter,
+  registerRemotePreviewAudioRouter,
+  type RemotePreviewAudioRouter,
+} from "~/browser/remotePreviewAudio";
 import { RemotePreviewPeer, type RemotePreviewPeerOptions } from "~/browser/remotePreviewPeer";
 import { readThreadPreviewState, reconcilePreviewServerSessions } from "~/previewStateStore";
 import { connectionAtomRuntime } from "~/connection/runtime";
@@ -134,6 +146,35 @@ export function RemotePreviewHost(props: {
   const bridge = previewBridge;
   const registry = useContext(RegistryContext);
   const peersRef = useRef(new Map<RemotePreviewSessionId, HostedPeer>());
+  const audioRoutersRef = useRef(
+    new Map<string, { router: RemotePreviewAudioRouter; dispose: () => void }>(),
+  );
+  const audioRouter = (tabId: string) => {
+    const existing = audioRoutersRef.current.get(tabId);
+    if (existing) return existing.router;
+    if (!bridge) throw new Error("The desktop host is unavailable.");
+    const router = createRemotePreviewAudioRouter({
+      readStream: () => readTabMediaCapture(tabId),
+      replaceCapture: (output) => replaceTabMediaCapture(tabId, output),
+      stopAudio: () => stopTabAudioCapture(tabId),
+      assertCanChange: () => assertTabAudioOutputCanChange(tabId),
+      commit: (output) => bridge.remote.commitAudioOutput(tabId, output),
+    });
+    const unregister = registerRemotePreviewAudioRouter(tabId, router);
+    const unwatch = onTabAudioCaptureEnded(tabId, () => {
+      void router
+        .reset()
+        .catch((cause) => console.warn("Remote preview audio capture ended.", cause));
+    });
+    audioRoutersRef.current.set(tabId, {
+      router,
+      dispose: () => {
+        unregister();
+        unwatch();
+      },
+    });
+    return router;
+  };
   const latestMetadataRef = useRef(new Map<string, RemotePreviewSourceMetadata>());
   const latestHostStateRef = useRef(new Map<string, RemotePreviewHostState>());
   const activeConnectionIdRef = useRef<string | null>(null);
@@ -169,7 +210,18 @@ export function RemotePreviewHost(props: {
     const hosted = peersRef.current.get(sessionId);
     if (!hosted || !bridge) return;
     peersRef.current.delete(sessionId);
+    await audioRouter(hosted.peer.runtimeTabId)
+      .removePeer(sessionId)
+      .catch((cause) => console.warn("Remote preview audio cleanup failed.", cause));
     await hosted.peer.close(bridge);
+    if (
+      !Array.from(peersRef.current.values()).some(
+        ({ peer }) => peer.runtimeTabId === hosted.peer.runtimeTabId,
+      )
+    ) {
+      audioRoutersRef.current.get(hosted.peer.runtimeTabId)?.dispose();
+      audioRoutersRef.current.delete(hosted.peer.runtimeTabId);
+    }
     await publishPresence(hosted.peer.runtimeTabId);
   };
 
@@ -189,6 +241,16 @@ export function RemotePreviewHost(props: {
     }
     const peers = Array.from(peersRef.current.values());
     peersRef.current.clear();
+    const routers = Array.from(audioRoutersRef.current.values());
+    audioRoutersRef.current.clear();
+    for (const entry of routers) entry.dispose();
+    await Promise.all(
+      routers.map(({ router }) =>
+        router
+          .reset()
+          .catch((cause) => console.warn("Remote preview audio cleanup failed.", cause)),
+      ),
+    );
     await Promise.all(
       peers.map(async ({ peer }) => {
         if (!bridge) return;
@@ -246,6 +308,10 @@ export function RemotePreviewHost(props: {
               runtimeTabId,
               bridge,
               signal,
+              setAudioOutput: (output) =>
+                audioRouter(runtimeTabId).setOutput(output, request.sessionId),
+              onCaptureChanged: () => audioRouter(runtimeTabId).adoptStream(),
+              onAudioFailure: () => audioRouter(runtimeTabId).peerFailed(request.sessionId),
               resizeViewport: async (viewport) => {
                 lifetime.throwIfAborted();
                 const result = await resizePreview({
@@ -284,6 +350,9 @@ export function RemotePreviewHost(props: {
           return;
         }
         peersRef.current.set(request.sessionId, { peer, role: request.role });
+        const audio = audioRouter(runtimeTabId);
+        audio.addPeer(peer);
+        if (request.role === "controller") await audio.controllerChanged(request.sessionId);
         const latestMetadata = latestMetadataRef.current.get(runtimeTabId);
         if (latestMetadata) await peer.updateSourceMetadata(latestMetadata, bridge, signal);
         if (lifetime.aborted) return;
@@ -311,9 +380,16 @@ export function RemotePreviewHost(props: {
       }
       case "roleChanged": {
         const hosted = peersRef.current.get(request.sessionId);
-        if (!hosted) return;
+        if (!hosted || !hosted.peer.acceptsRoleChange(request)) return;
         hosted.role = request.role;
-        await hosted.peer.updateRole(request, bridge);
+        const nextController =
+          request.controller !== undefined
+            ? request.controller
+            : request.role === "controller"
+              ? request.sessionId
+              : null;
+        const routing = audioRouter(hosted.peer.runtimeTabId).controllerChanged(nextController);
+        await Promise.all([hosted.peer.updateRole(request, bridge), routing]);
         await publishPresence(hosted.peer.runtimeTabId);
         return;
       }
@@ -356,6 +432,13 @@ export function RemotePreviewHost(props: {
   useEffect(() => {
     if (!bridge) return;
     const lifetime = new AbortController();
+    const removeStateListener = bridge.onStateChange((tabId, state) => {
+      const entry = audioRoutersRef.current.get(tabId);
+      if (entry)
+        void entry.router
+          .updateState(state.audioOutput, state.audioMuted)
+          .catch((cause) => console.warn("Remote preview audio state update failed.", cause));
+    });
     const removeMetadataListener = bridge.remote.onSourceMetadata((event) => {
       latestMetadataRef.current.set(event.tabId, event.metadata);
       for (const { peer } of peersRef.current.values()) {
@@ -423,6 +506,7 @@ export function RemotePreviewHost(props: {
       lifetime.abort();
       unmountConsumer();
       activeConnectionIdRef.current = null;
+      removeStateListener();
       removeMetadataListener();
       removeHostStateListener();
       removePointerListener();

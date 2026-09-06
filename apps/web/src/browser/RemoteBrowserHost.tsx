@@ -1,5 +1,6 @@
 "use client";
 
+import { setRemotePreviewListening } from "./remotePreviewPlayback";
 import { RemotePreviewPlayback } from "./RemotePreviewPlaybackOverlay";
 import { RemotePreviewClipboard, RemotePreviewTools } from "./RemotePreviewTools";
 import {
@@ -13,6 +14,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type {
+  RemotePreviewAudioOutput,
   RemotePreviewControllerIdentity,
   RemotePreviewModifier,
   RemotePreviewPointerButton,
@@ -210,6 +212,7 @@ const isBusyControllerError = (
   (error as { readonly _tag: unknown })._tag === "RemotePreviewControllerBusyError";
 
 interface SurfaceRuntime {
+  audioOutput: RemotePreviewAudioOutput;
   source: { readonly width: number; readonly height: number } | null;
   transform: RemotePreviewPinchTransform;
   touch: typeof INITIAL_TOUCH_STATE;
@@ -285,6 +288,7 @@ function RemotePreviewSurface(props: {
     touch: INITIAL_TOUCH_STATE,
     containerRect: null,
     role: "viewer",
+    audioOutput: "desktop",
     hostState: "streaming",
     pendingMotion: null,
     pendingWheel: null,
@@ -303,6 +307,14 @@ function RemotePreviewSurface(props: {
         });
       },
       events: {
+        onAudioOutput: (audioOutput, audioMuted) => {
+          runtime.audioOutput = audioOutput;
+          setRemotePreviewListening(
+            videoRef.current,
+            runtime.role === "controller" && audioOutput !== "desktop",
+          );
+          patchRemotePreviewViewer(runtimeTabId, { audioOutput, audioMuted });
+        },
         onStatus: (status) => patchRemotePreviewViewer(runtimeTabId, { status }),
         onStream: (stream) => {
           runtime.stream = stream;
@@ -329,6 +341,10 @@ function RemotePreviewSurface(props: {
         onController: (controller, role) => {
           const previousRole = runtime.role;
           runtime.role = role;
+          setRemotePreviewListening(
+            videoRef.current,
+            role === "controller" && runtime.audioOutput !== "desktop",
+          );
           if (previousRole === "controller" && role === "viewer") {
             runtime.touch = INITIAL_TOUCH_STATE;
             if (runtime.momentumHandle !== null) {
@@ -346,6 +362,10 @@ function RemotePreviewSurface(props: {
         },
         onOpened: (_sessionId, role) => {
           runtime.role = role;
+          setRemotePreviewListening(
+            videoRef.current,
+            role === "controller" && runtime.audioOutput !== "desktop",
+          );
           patchRemotePreviewViewer(runtimeTabId, { role, takenOver: false, busyController: null });
         },
         onAgentPointer: (pointer) => {
@@ -355,6 +375,25 @@ function RemotePreviewSurface(props: {
         },
       },
     }),
+  );
+
+  const setAudioOutput = useCallback(
+    async (output: RemotePreviewAudioOutput) => {
+      setRemotePreviewListening(
+        videoRef.current,
+        runtime.role === "controller" && output !== "desktop",
+      );
+      try {
+        await viewer.setAudioOutput(output);
+      } catch (cause) {
+        setRemotePreviewListening(
+          videoRef.current,
+          runtime.role === "controller" && runtime.audioOutput !== "desktop",
+        );
+        throw cause;
+      }
+    },
+    [runtime, viewer],
   );
 
   const openInput = useMemo(
@@ -821,6 +860,7 @@ function RemotePreviewSurface(props: {
         applyTouchResult(cancelTouch(runtime.touch), null);
         viewer.releaseAll();
         releaseControl();
+        setRemotePreviewListening(video, false);
         if (!pip) video?.pause();
         return;
       }
@@ -844,6 +884,7 @@ function RemotePreviewSurface(props: {
   useEffect(() => {
     patchRemotePreviewViewer(runtimeTabId, {
       controls: {
+        setAudioOutput,
         viewer,
         containerRef,
         captureScreenshot: async () => {
@@ -862,7 +903,15 @@ function RemotePreviewSurface(props: {
         readStats: viewer.readStats,
       },
     });
-  }, [applyTransform, releaseControl, requestControl, runtimeTabId, toggleFullscreen, viewer]);
+  }, [
+    applyTransform,
+    releaseControl,
+    requestControl,
+    runtimeTabId,
+    setAudioOutput,
+    toggleFullscreen,
+    viewer,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -899,7 +948,7 @@ function RemotePreviewSurface(props: {
     >
       <div ref={stageRef} className="absolute inset-0 origin-top-left">
         {/* A mirrored browser tab has no caption track and no audio. */}
-        <video ref={videoRef} autoPlay muted playsInline className="size-full object-contain" />
+        <video ref={videoRef} autoPlay playsInline className="size-full object-contain" />
         {cursorContent ? (
           <AgentBrowserCursor
             tabId={runtimeTabId}
@@ -933,6 +982,7 @@ function RemotePreviewSurface(props: {
       />
       <RemotePreviewPlayback
         videoRef={videoRef}
+        listening={entry.role === "controller" && entry.audioOutput !== "desktop"}
         visible={props.visible || entry.nativePictureInPicture}
         connected={entry.status === "streaming" && entry.hostState === "streaming"}
         reconnect={viewer.requestIceRestart}
@@ -958,6 +1008,9 @@ function RemotePreviewSurface(props: {
             source={sourceSize}
             enabled={entry.status === "streaming" && entry.hostState === "streaming"}
             controlling={entry.role === "controller"}
+            audioOutput={entry.audioOutput}
+            audioMuted={entry.audioMuted}
+            onAudioOutput={setAudioOutput}
             onRequestControl={() => requestControl(false)}
             presentation="chrome"
             zoomFactor={entry.zoomFactor}

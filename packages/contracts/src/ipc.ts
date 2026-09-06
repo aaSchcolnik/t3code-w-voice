@@ -99,6 +99,7 @@ import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } fr
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
+  RemotePreviewAudioOutput,
   RemotePreviewControllerIdentity,
   RemotePreviewHostState,
   RemotePreviewInputMessage,
@@ -579,6 +580,7 @@ export interface DesktopPreviewTabState {
    * two tabs on the same site mute independently. Survives navigation and
    * webview swaps, but is dropped when the tab closes.
    */
+  audioOutput: RemotePreviewAudioOutput;
   audioMuted: boolean;
   /**
    * Whether the guest is currently emitting audio. Observed from Chromium, and
@@ -1362,7 +1364,8 @@ export interface DesktopPreviewBridge {
     onFrame: (listener: (frame: DesktopPreviewRecordingFrame) => void) => () => void;
   };
   remote: {
-    startCapture: (tabId: string) => Promise<void>;
+    startCapture: (tabId: string, options?: { audio: RemotePreviewAudioOutput }) => Promise<void>;
+    commitAudioOutput: (tabId: string, audioOutput: RemotePreviewAudioOutput) => Promise<void>;
     stopCapture: (tabId: string) => Promise<void>;
     dispatchInput: (tabId: string, message: RemotePreviewInputMessage) => Promise<void>;
     setPresence: (

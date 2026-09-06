@@ -32,6 +32,7 @@ import type {
   PreviewAutomationSnapshot,
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
+  RemotePreviewAudioOutput,
   RemotePreviewControllerIdentity,
   RemotePreviewHostState,
   RemotePreviewInputMessage,
@@ -107,6 +108,7 @@ export interface PreviewTabState {
   pictureInPicture: boolean;
   colorScheme: DesktopPreviewColorScheme;
   /** User intent to silence this tab. Re-applied to each guest that attaches. */
+  audioOutput: RemotePreviewAudioOutput;
   audioMuted: boolean;
   /** Observed from Chromium. Stays true while a muted tab keeps playing. */
   audible: boolean;
@@ -452,6 +454,7 @@ interface PictureInPictureSession {
 
 /** The tab whose frame the next `getDisplayMedia()` request is allowed to capture. */
 interface PendingRecording {
+  readonly audioOutput: RemotePreviewAudioOutput;
   readonly tabId: string;
   readonly webContents: Electron.WebContents;
   readonly requestingFrameTreeNodeId: number;
@@ -2349,6 +2352,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           zoomFactor: normalizeZoomFactor(defaults?.zoomFactor),
           pictureInPicture: false,
           colorScheme: defaults?.colorScheme ?? "system",
+          audioOutput: "desktop",
           audioMuted: false,
           audible: false,
           controller: "none",
@@ -2440,6 +2444,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       zoomFactor: DEFAULT_ZOOM_FACTOR,
       pictureInPicture: false,
       colorScheme: "system",
+      audioOutput: "desktop",
       audioMuted: false,
       audible: false,
       controller: "none",
@@ -2669,7 +2674,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       session?.consumers.has("remote-view") &&
       session.mediaCaptureWebContentsId !== webContentsId
     ) {
-      yield* startRemoteCapture(tabId).pipe(Effect.ignore);
+      const audioOutput =
+        (yield* SynchronizedRef.get(tabsRef)).get(tabId)?.audioOutput ?? "desktop";
+      yield* startRemoteCapture(tabId, { audio: audioOutput }).pipe(Effect.ignore);
     }
   });
 
@@ -2697,6 +2704,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         // document keeps playing until loadURL actually replaces it, so
         // clearing audibility here would drop the speaker with no transition
         // left to restore it. Chromium reports the change when it happens.
+        audioOutput: current?.audioOutput ?? "desktop",
         audioMuted: current?.audioMuted ?? false,
         audible: current?.audible ?? false,
         controller: current?.controller ?? "none",
@@ -3106,6 +3114,20 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     if (!wc || wc.isDestroyed()) return;
     yield* applyColorScheme(tabId, wc, colorScheme);
     yield* refreshRemoteSourceMetadata(tabId).pipe(Effect.ignore);
+  });
+
+  const commitAudioOutput = Effect.fn("PreviewManager.commitAudioOutput")(function* (
+    tabId: string,
+    audioOutput: RemotePreviewAudioOutput,
+  ) {
+    yield* withTabLifecycleLock(
+      tabId,
+      Effect.gen(function* () {
+        const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+        if (!tab) return yield* new PreviewTabNotFoundError({ tabId });
+        if (tab.audioOutput !== audioOutput) yield* update(tabId, { audioOutput });
+      }),
+    );
   });
 
   const setAudioMuted = Effect.fn("PreviewManager.setAudioMuted")(function* (
@@ -3765,6 +3787,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     tabId: string,
     wc: Electron.WebContents,
     requestingFrameTreeNodeId: number,
+    audioOutput: RemotePreviewAudioOutput = "desktop",
   ) {
     const now = yield* Clock.currentTimeMillis;
     const previous = pendingRecording;
@@ -3781,6 +3804,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       });
     }
     const armed: PendingRecording = {
+      audioOutput,
       tabId,
       webContents: wc,
       requestingFrameTreeNodeId,
@@ -3822,13 +3846,19 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         return;
       }
       pendingRecording = null;
-      callback({ video: armed.webContents.mainFrame });
+      callback({
+        video: armed.webContents.mainFrame,
+        ...(armed.audioOutput !== "desktop"
+          ? { audio: armed.webContents.mainFrame, enableLocalEcho: armed.audioOutput === "both" }
+          : {}),
+      });
     });
   };
 
   const startMediaCapture = Effect.fn("PreviewManager.startMediaCapture")(function* (
     tabId: string,
     consumer: "recording" | "remote-view",
+    options?: { audio: RemotePreviewAudioOutput },
   ) {
     if ((yield* Ref.get(closingTabIdsRef)).has(tabId)) {
       return yield* new PreviewTabNotFoundError({ tabId });
@@ -3840,7 +3870,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         const existingSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
         consumerAlreadyActive = existingSession?.consumers.has(consumer) ?? false;
         const needsMediaGrant = yield* startFrameCapture(tabId, consumer);
-        if (needsMediaGrant !== true) return;
+        if (needsMediaGrant !== true && options === undefined) return;
         const wc = yield* requireWebContents(tabId);
         const requestWebContents = wc.hostWebContents;
         if (requestWebContents === null) {
@@ -3865,7 +3895,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           return yield* new PreviewMainWindowClosedError({ tabId });
         }
         installDisplayMediaRequestHandler(requestWebContents.session);
-        yield* armPendingRecording(tabId, wc, requestWebContents.mainFrame.frameTreeNodeId);
+        yield* armPendingRecording(
+          tabId,
+          wc,
+          requestWebContents.mainFrame.frameTreeNodeId,
+          options?.audio,
+        );
         const captureRequested = yield* attemptPromise(
           {
             operation: `${consumer}.requestCapture`,
@@ -3905,8 +3940,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const startRemoteCapture = Effect.fn("PreviewManager.startRemoteCapture")(function* (
     tabId: string,
+    options?: { audio: RemotePreviewAudioOutput },
   ) {
-    yield* startMediaCapture(tabId, "remote-view");
+    yield* startMediaCapture(tabId, "remote-view", options);
     yield* emitRemoteHostState(tabId, yield* readCurrentRemoteHostState(tabId));
   });
 
@@ -3929,7 +3965,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const stopRemoteCapture = Effect.fn("PreviewManager.stopRemoteCapture")(function* (
     tabId: string,
   ) {
-    yield* withTabLifecycleLock(tabId, stopMediaCaptureConsumer(tabId, "remote-view"));
+    yield* withTabLifecycleLock(
+      tabId,
+      Effect.gen(function* () {
+        yield* stopMediaCaptureConsumer(tabId, "remote-view");
+        const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+        if (tab && tab.audioOutput !== "desktop") yield* update(tabId, { audioOutput: "desktop" });
+      }),
+    );
   });
 
   const saveRecording = Effect.fn("PreviewManager.saveRecording")(function* (
@@ -4797,6 +4840,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     revealArtifact,
     saveRecording,
     setAnnotationTheme,
+    commitAudioOutput,
     setAudioMuted,
     setColorScheme,
     setRemotePresence,
@@ -5184,7 +5228,14 @@ export class PreviewManager extends Context.Service<
     readonly closePictureInPicture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly startRecording: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly stopRecording: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
-    readonly startRemoteCapture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
+    readonly startRemoteCapture: (
+      tabId: string,
+      options?: { audio: RemotePreviewAudioOutput },
+    ) => Effect.Effect<void, PreviewManagerError>;
+    readonly commitAudioOutput: (
+      tabId: string,
+      audioOutput: RemotePreviewAudioOutput,
+    ) => Effect.Effect<void, PreviewManagerError>;
     readonly stopRemoteCapture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly readRemoteSelection: (tabId: string) => Effect.Effect<string, PreviewManagerError>;
     readonly dispatchRemoteInput: (
@@ -5285,6 +5336,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     reapplyZoom: operations.reapplyZoom,
     hardReload: operations.hardReload,
     setColorScheme: operations.setColorScheme,
+    commitAudioOutput: operations.commitAudioOutput,
     setAudioMuted: operations.setAudioMuted,
     openDevTools: operations.openDevTools,
     clearCookies: Effect.fn("PreviewManager.clearCookies")(function* (partitions) {

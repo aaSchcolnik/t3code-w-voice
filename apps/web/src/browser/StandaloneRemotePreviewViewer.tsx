@@ -1,9 +1,11 @@
 "use client";
 
+import { setRemotePreviewListening } from "./remotePreviewPlayback";
 import { RemotePreviewPlayback } from "./RemotePreviewPlaybackOverlay";
 import { RemotePreviewTools, RemotePreviewClipboard } from "./RemotePreviewTools";
 
 import type {
+  RemotePreviewAudioOutput,
   RemotePreviewControllerIdentity,
   RemotePreviewHostState,
   RemotePreviewRole,
@@ -125,6 +127,8 @@ export function StandaloneRemotePreviewViewer(props: {
 
   const [status, setStatus] = useState<RemotePreviewViewerStatus>("connecting");
   const [hostState, setHostState] = useState<RemotePreviewHostState>("streaming");
+  const [audioOutput, setAudioOutputState] = useState<RemotePreviewAudioOutput>("desktop");
+  const [audioMuted, setAudioMuted] = useState(false);
   const [role, setRole] = useState<RemotePreviewRole>("viewer");
   const [controller, setController] = useState<RemotePreviewControllerIdentity | null>(null);
   const [busyController, setBusyController] = useState<RemotePreviewControllerIdentity | null>(
@@ -136,6 +140,7 @@ export function StandaloneRemotePreviewViewer(props: {
 
   const runtimeRef = useRef({
     role: "viewer" as RemotePreviewRole,
+    audioOutput: "desktop" as RemotePreviewAudioOutput,
     hostState: "streaming" as RemotePreviewHostState,
     source: null as { width: number; height: number } | null,
     stream: null as MediaStream | null,
@@ -180,6 +185,15 @@ export function StandaloneRemotePreviewViewer(props: {
       createRemotePreviewViewer({
         sendSignal,
         events: {
+          onAudioOutput: (output, muted) => {
+            runtime.audioOutput = output;
+            setRemotePreviewListening(
+              videoRef.current,
+              runtime.role === "controller" && output !== "desktop",
+            );
+            setAudioOutputState(output);
+            setAudioMuted(muted);
+          },
           onStatus: setStatus,
           onStream: (stream) => {
             runtime.stream = stream;
@@ -198,6 +212,10 @@ export function StandaloneRemotePreviewViewer(props: {
           },
           onController: (nextController, nextRole) => {
             runtime.role = nextRole;
+            setRemotePreviewListening(
+              videoRef.current,
+              nextRole === "controller" && runtime.audioOutput !== "desktop",
+            );
             setRole(nextRole);
             setController(nextController);
             setBusyController(null);
@@ -205,6 +223,10 @@ export function StandaloneRemotePreviewViewer(props: {
           onOpened: (sessionId, nextRole) => {
             runtime.sessionId = sessionId;
             runtime.role = nextRole;
+            setRemotePreviewListening(
+              videoRef.current,
+              nextRole === "controller" && runtime.audioOutput !== "desktop",
+            );
             setRole(nextRole);
           },
           onAgentPointer: (pointer) => {
@@ -218,6 +240,24 @@ export function StandaloneRemotePreviewViewer(props: {
     [bootstrap.tabId, runtime, sendSignal],
   );
   viewerRef.current = viewer;
+  const setAudioOutput = useCallback(
+    async (output: RemotePreviewAudioOutput) => {
+      setRemotePreviewListening(
+        videoRef.current,
+        runtime.role === "controller" && output !== "desktop",
+      );
+      try {
+        await viewer.setAudioOutput(output);
+      } catch (cause) {
+        setRemotePreviewListening(
+          videoRef.current,
+          runtime.role === "controller" && runtime.audioOutput !== "desktop",
+        );
+        throw cause;
+      }
+    },
+    [runtime, viewer],
+  );
 
   useEffect(() => {
     viewer.activate();
@@ -612,6 +652,7 @@ export function StandaloneRemotePreviewViewer(props: {
       if (document.visibilityState === "hidden") {
         if (runtime.role === "controller") releaseControl();
         viewer.releaseAll();
+        setRemotePreviewListening(videoRef.current, false);
         videoRef.current?.pause();
         return;
       }
@@ -639,7 +680,6 @@ export function StandaloneRemotePreviewViewer(props: {
       <video
         ref={videoRef}
         autoPlay
-        muted
         playsInline
         style={{
           position: "absolute",
@@ -675,6 +715,7 @@ export function StandaloneRemotePreviewViewer(props: {
       />
       <RemotePreviewPlayback
         videoRef={videoRef}
+        listening={role === "controller" && audioOutput !== "desktop"}
         visible={true}
         connected={status === "streaming" && hostState === "streaming"}
         reconnect={viewer.requestIceRestart}
@@ -690,6 +731,9 @@ export function StandaloneRemotePreviewViewer(props: {
         source={sourceSize}
         enabled={hostState === "streaming" && status === "streaming"}
         controlling={role === "controller"}
+        audioOutput={audioOutput}
+        audioMuted={audioMuted}
+        onAudioOutput={setAudioOutput}
         onRequestControl={() => requestControl(false)}
         zoomFactor={sourceMetadata?.zoomFactor ?? 1}
         colorScheme={sourceMetadata?.colorScheme ?? "system"}

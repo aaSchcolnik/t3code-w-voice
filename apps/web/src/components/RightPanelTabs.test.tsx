@@ -80,6 +80,7 @@ function overlay(
     zoomFactor: 1,
     pictureInPicture: false,
     colorScheme: "system" as const,
+    audioOutput: "desktop" as const,
     audioMuted: audio?.audioMuted ?? false,
     audible: audio?.audible ?? false,
     controller: "none" as const,

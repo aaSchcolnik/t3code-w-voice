@@ -118,6 +118,7 @@ vi.mock("~/previewStateStore", () => ({
         zoomFactor: 1,
         pictureInPicture: mocks.pictureInPicture,
         colorScheme: "system",
+        audioOutput: "desktop" as const,
         audioMuted: false,
         audible: false,
         controller: "none",

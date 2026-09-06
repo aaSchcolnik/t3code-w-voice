@@ -155,7 +155,31 @@ describe("browser recording", () => {
         throw new Error(`No pending display-media capture for ${tabId}.`);
       }
     });
-    vi.stubGlobal("navigator", { mediaDevices: { getDisplayMedia } });
+    vi.stubGlobal(
+      "MediaStream",
+      class {
+        constructor(readonly tracks: MediaStreamTrack[] = []) {}
+        getTracks() {
+          return this.tracks;
+        }
+        getVideoTracks() {
+          return this.tracks;
+        }
+        getAudioTracks() {
+          return [];
+        }
+      },
+    );
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getDisplayMedia: async (options: unknown) => {
+          const stream = await getDisplayMedia(options);
+          stream.getVideoTracks ??= () => stream.getTracks();
+          stream.getAudioTracks ??= () => [];
+          return stream;
+        },
+      },
+    });
     useBrowserSurfaceStore.setState({ activityByTabId: {}, byTabId: {} });
   });
 
@@ -226,7 +250,9 @@ describe("browser recording", () => {
       audio: false,
       video: { frameRate: { max: 30 } },
     });
-    expect(FakeMediaRecorder.instances[0]?.stream).toBe(stream);
+    expect(FakeMediaRecorder.instances[0]?.stream.getVideoTracks()).toEqual(
+      stream.getVideoTracks(),
+    );
 
     await stopBrowserRecording("recording-tab");
     expect(stopTrack).toHaveBeenCalledOnce();

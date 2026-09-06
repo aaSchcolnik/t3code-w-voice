@@ -138,6 +138,32 @@ const signalFromHost = Effect.fn("RemotePreviewSessionBroker.test.signalFromHost
   });
 });
 
+it.effect("forwards audio state without changing the signaling generation", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* makeBroker();
+      const connectedHost = yield* connectHost(broker, 1);
+      const connection = viewer(1);
+      const opened = yield* openViewer(broker, connection);
+      yield* takeHostRequest(connectedHost.events);
+      const event = {
+        type: "audioOutput" as const,
+        sessionId: opened.opened.sessionId,
+        generation: opened.opened.generation,
+        revision: 1,
+        audioOutput: "remote" as const,
+        audioMuted: false,
+      };
+      yield* signalFromHost(broker, 1, connectedHost.connectionId, event);
+      expect(yield* Queue.take(opened.events)).toEqual(event);
+      yield* broker.requestControl(connection, { sessionId: opened.opened.sessionId });
+      expect(yield* takeHostRequest(connectedHost.events)).toMatchObject({
+        generation: event.generation,
+      });
+    }),
+  ),
+);
+
 it.effect("keeps one controller lease and supports explicit takeover", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -183,11 +209,13 @@ it.effect("keeps one controller lease and supports explicit takeover", () =>
       expect(yield* takeHostRequest(connectedHost.events)).toMatchObject({
         type: "roleChanged",
         sessionId: first.opened.sessionId,
+        controller: second.opened.sessionId,
         role: "viewer",
       });
       expect(yield* takeHostRequest(connectedHost.events)).toMatchObject({
         type: "roleChanged",
         sessionId: second.opened.sessionId,
+        controller: second.opened.sessionId,
         role: "controller",
       });
       expect(yield* Queue.take(first.events)).toMatchObject({
@@ -197,6 +225,13 @@ it.effect("keeps one controller lease and supports explicit takeover", () =>
       expect(yield* Queue.take(second.events)).toMatchObject({
         type: "controllerChanged",
         controller: { sessionId: second.opened.sessionId },
+      });
+      yield* broker.releaseControl(secondConnection, second.opened.sessionId);
+      expect(yield* takeHostRequest(connectedHost.events)).toMatchObject({
+        type: "roleChanged",
+        sessionId: second.opened.sessionId,
+        role: "viewer",
+        controller: null,
       });
     }),
   ),

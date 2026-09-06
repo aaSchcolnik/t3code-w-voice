@@ -238,8 +238,17 @@ export const RemotePreviewDeviceClipboardResult = Schema.Struct({
   error: Schema.NullOr(Schema.String),
 });
 
+export const RemotePreviewAudioOutput = Schema.Literals(["desktop", "remote", "both"]);
+export type RemotePreviewAudioOutput = typeof RemotePreviewAudioOutput.Type;
+
 /** Controller actions carried by the reliable channel, outside guest input. */
 export const RemotePreviewSessionCommand = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("setAudioOutput"),
+    requestId: PositiveInt,
+    generation: RemotePreviewGeneration,
+    audioOutput: RemotePreviewAudioOutput,
+  }),
   Schema.Struct({
     type: Schema.Literal("previewAction"),
     requestId: PositiveInt,
@@ -403,7 +412,18 @@ export const RemotePreviewAgentPointerEvent = Schema.Struct({
 });
 export type RemotePreviewAgentPointerEvent = typeof RemotePreviewAgentPointerEvent.Type;
 
+export const RemotePreviewAudioOutputEvent = Schema.Struct({
+  revision: NonNegativeInt,
+  type: Schema.Literal("audioOutput"),
+  sessionId: RemotePreviewSessionId,
+  generation: RemotePreviewGeneration,
+  audioOutput: RemotePreviewAudioOutput,
+  audioMuted: Schema.Boolean,
+});
+export type RemotePreviewAudioOutputEvent = typeof RemotePreviewAudioOutputEvent.Type;
+
 export const RemotePreviewSessionEvent = Schema.Union([
+  RemotePreviewAudioOutputEvent,
   RemotePreviewOpenedEvent,
   RemotePreviewSourceMetadataEvent,
   RemotePreviewControllerChangedEvent,
@@ -501,6 +521,7 @@ export const RemotePreviewHostSignalRequest = Schema.Struct({
 export type RemotePreviewHostSignalRequest = typeof RemotePreviewHostSignalRequest.Type;
 
 export const RemotePreviewHostRoleChangedRequest = Schema.Struct({
+  controller: Schema.optional(Schema.NullOr(RemotePreviewSessionId)),
   type: Schema.Literal("roleChanged"),
   sessionId: RemotePreviewSessionId,
   generation: RemotePreviewGeneration,
@@ -537,6 +558,7 @@ export const RemotePreviewHostStreamEvent = Schema.Union([
 export type RemotePreviewHostStreamEvent = typeof RemotePreviewHostStreamEvent.Type;
 
 export const RemotePreviewHostEvent = Schema.Union([
+  RemotePreviewAudioOutputEvent,
   RemotePreviewSignal,
   RemotePreviewSourceMetadataEvent,
   RemotePreviewHostStateEvent,

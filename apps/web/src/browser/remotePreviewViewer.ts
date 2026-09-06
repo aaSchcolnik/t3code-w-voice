@@ -1,5 +1,7 @@
 import { REMOTE_PREVIEW_RESULT_MAX_LENGTH } from "./remotePreviewCommands";
 import {
+  RemotePreviewAudioOutputEvent,
+  type RemotePreviewAudioOutput,
   RemotePreviewCommandResult,
   PreviewAnnotationSubmissionResultSchema,
   type PreviewAnnotationSubmissionResult,
@@ -22,12 +24,14 @@ import type {
 
 import type { RemotePreviewControlDraft, RemotePreviewMotionDraft } from "./remotePreviewMessages";
 
+const decodeAudioOutput = Schema.decodeUnknownOption(RemotePreviewAudioOutputEvent);
 const decodeCommandResult = Schema.decodeUnknownOption(RemotePreviewCommandResult);
 const decodeAnnotation = Schema.decodeUnknownSync(
   Schema.NullOr(PreviewAnnotationSubmissionResultSchema),
 );
 
 export interface RemotePreviewViewerEvents {
+  readonly onAudioOutput?: (output: RemotePreviewAudioOutput, muted: boolean) => void;
   readonly onStatus: (status: RemotePreviewViewerStatus) => void;
   readonly onStream: (stream: MediaStream | null) => void;
   readonly onMetadata: (metadata: RemotePreviewSourceMetadata) => void;
@@ -76,6 +80,7 @@ export interface RemotePreviewViewerHandle {
   readonly previewAction: (
     action: Extract<RemotePreviewSessionCommand, { type: "previewAction" }>["action"],
   ) => Promise<void>;
+  readonly setAudioOutput: (audioOutput: RemotePreviewAudioOutput) => Promise<void>;
   readonly setColorScheme: (colorScheme: DesktopPreviewColorScheme) => Promise<void>;
   readonly pickElement: () => Promise<PreviewAnnotationSubmissionResult | null>;
   readonly cancelPickElement: () => Promise<void>;
@@ -109,6 +114,21 @@ export function createRemotePreviewViewer(
   let sessionId: RemotePreviewSessionId | null = null;
   let signalingGeneration: RemotePreviewGeneration = ZERO_GENERATION;
   let sourceGeneration: RemotePreviewGeneration = ZERO_GENERATION;
+  let audioRevision = -1;
+  const acceptAudioOutput = (payload: unknown) => {
+    const decoded = decodeAudioOutput(payload);
+    if (decoded._tag === "None") return;
+    const event = decoded.value;
+    if (
+      event.sessionId !== sessionId ||
+      event.generation < signalingGeneration ||
+      event.revision <= audioRevision
+    )
+      return;
+    audioRevision = event.revision;
+    observeSignalingGeneration(event.generation);
+    events.onAudioOutput?.(event.audioOutput, event.audioMuted);
+  };
   let motionSequence = 0;
   let disposed = false;
   let picking = false;
@@ -212,6 +232,9 @@ export function createRemotePreviewViewer(
           return;
         }
         switch (payload.type) {
+          case "audioOutput":
+            acceptAudioOutput(payload);
+            return;
           case "sourceMetadata": {
             const metadata = payload.metadata as RemotePreviewSourceMetadata | undefined;
             if (!metadata) return;
@@ -267,9 +290,11 @@ export function createRemotePreviewViewer(
         usernameFragment: event.candidate.usernameFragment ?? null,
       });
     };
+    const receivedStream = new MediaStream();
     connection.ontrack = (event) => {
-      const [stream] = event.streams;
-      events.onStream(stream ?? new MediaStream([event.track]));
+      const firstTrack = receivedStream.getTracks().length === 0;
+      if (!receivedStream.getTracks().includes(event.track)) receivedStream.addTrack(event.track);
+      if (firstTrack) events.onStream(receivedStream);
       events.onStatus("streaming");
     };
     connection.ondatachannel = (event) => attachChannel(event.channel);
@@ -336,6 +361,7 @@ export function createRemotePreviewViewer(
           type: "previewAction";
           action: Extract<RemotePreviewSessionCommand, { type: "previewAction" }>["action"];
         }
+      | { type: "setAudioOutput"; audioOutput: RemotePreviewAudioOutput }
       | { type: "setColorScheme"; colorScheme: DesktopPreviewColorScheme }
       | { type: "readSelection" }
       | { type: "resizeViewport"; viewport: PreviewViewportSetting },
@@ -372,6 +398,9 @@ export function createRemotePreviewViewer(
     previewAction: async (action) => {
       await request({ type: "previewAction", action });
     },
+    setAudioOutput: async (audioOutput) => {
+      await request({ type: "setAudioOutput", audioOutput });
+    },
     setColorScheme: async (colorScheme) => {
       await request({ type: "setColorScheme", colorScheme });
     },
@@ -403,10 +432,15 @@ export function createRemotePreviewViewer(
     acceptEvent: (event) => {
       if (disposed) return;
       switch (event.type) {
+        case "audioOutput":
+          acceptAudioOutput(event);
+          return;
         case "opened": {
           sessionId = event.sessionId;
           signalingGeneration = event.generation;
           sourceGeneration = ZERO_GENERATION;
+          audioRevision = -1;
+          events.onAudioOutput?.("desktop", false);
           motionSequence = 0;
           iceServers = event.iceServers.map((credentials) => ({
             urls: [...credentials.urls],

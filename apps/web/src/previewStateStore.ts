@@ -8,6 +8,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
+  type RemotePreviewAudioOutput,
   type DesktopPreviewColorScheme,
   type DesktopPreviewFavicon,
   type PreviewEvent,
@@ -29,6 +30,7 @@ export interface DesktopPreviewOverlay {
   zoomFactor: number;
   pictureInPicture: boolean;
   colorScheme: DesktopPreviewColorScheme;
+  audioOutput: RemotePreviewAudioOutput;
   audioMuted: boolean;
   audible: boolean;
   controller: "human" | "agent" | "none";
@@ -387,6 +389,7 @@ function isPreviewStateEqual(
       previous.pictureInPicture === next.pictureInPicture &&
       previous.colorScheme === next.colorScheme &&
       previous.audioMuted === next.audioMuted &&
+      previous.audioOutput === next.audioOutput &&
       previous.audible === next.audible &&
       previous.controller === next.controller &&
       previous.remoteViewerCount === next.remoteViewerCount &&
