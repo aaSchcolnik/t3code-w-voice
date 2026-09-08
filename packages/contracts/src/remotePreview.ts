@@ -469,11 +469,18 @@ export type RemotePreviewCloseInput = typeof RemotePreviewCloseInput.Type;
  * token for `/remote-preview/viewer/...` — never a bearer, DPoP, WS ticket, or
  * pairing credential.
  */
-export const RemotePreviewIssueViewerUrlInput = Schema.Struct({
-  environmentId: EnvironmentId,
-  threadId: ThreadId,
-  tabId: PreviewTabId,
+export const ComputerUseViewerSource = Schema.Struct({
+  kind: Schema.Literal("computer-use"),
+  sessionId: TrimmedNonEmptyString.check(Schema.isMaxLength(512)),
 });
+export const RemotePreviewIssueViewerUrlInput = Schema.Union([
+  Schema.Struct({ environmentId: EnvironmentId, threadId: ThreadId, tabId: PreviewTabId }),
+  Schema.Struct({
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+    source: ComputerUseViewerSource,
+  }),
+]);
 export type RemotePreviewIssueViewerUrlInput = typeof RemotePreviewIssueViewerUrlInput.Type;
 
 export const RemotePreviewIssueViewerUrlResult = Schema.Struct({
@@ -483,12 +490,24 @@ export const RemotePreviewIssueViewerUrlResult = Schema.Struct({
 export type RemotePreviewIssueViewerUrlResult = typeof RemotePreviewIssueViewerUrlResult.Type;
 
 /** Bootstrap the standalone viewer page injects after a valid path token exchange. */
-export const RemotePreviewViewerBootstrap = Schema.Struct({
+export const BrowserPreviewViewerBootstrap = Schema.Struct({
   environmentId: EnvironmentId,
   threadId: ThreadId,
   tabId: PreviewTabId,
   expiresAt: Schema.Number,
 });
+export type BrowserPreviewViewerBootstrap = typeof BrowserPreviewViewerBootstrap.Type;
+export const ComputerUseViewerBootstrap = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  source: ComputerUseViewerSource,
+  expiresAt: Schema.Number,
+});
+export type ComputerUseViewerBootstrap = typeof ComputerUseViewerBootstrap.Type;
+export const RemotePreviewViewerBootstrap = Schema.Union([
+  BrowserPreviewViewerBootstrap,
+  ComputerUseViewerBootstrap,
+]);
 export type RemotePreviewViewerBootstrap = typeof RemotePreviewViewerBootstrap.Type;
 
 export const RemotePreviewHostCapabilities = Schema.Struct({

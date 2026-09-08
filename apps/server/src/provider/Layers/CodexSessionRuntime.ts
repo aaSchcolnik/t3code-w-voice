@@ -1,3 +1,6 @@
+import * as NodeCrypto from "node:crypto";
+import * as NodeOS from "node:os";
+
 import {
   ApprovalRequestId,
   DEFAULT_MODEL,
@@ -39,9 +42,17 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 import { buildCodexInitializeParams } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import {
+  findUnifiedComputerUseRuntime,
+  startComputerUseObserver,
+} from "../codex/computerUseObserver.ts";
+import { computerUsePreviewRegistry } from "../../preview/computerUsePreviewRegistry.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import type { McpSessionInstructionBuilder } from "../../mcp/delegationPolicy.ts";
+const { randomUUID } = NodeCrypto;
+const { homedir } = NodeOS;
+
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -581,6 +592,7 @@ function buildCodexCollaborationMode(input: {
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly delegationInstructions?: string;
   readonly browserToolsAvailable?: boolean;
+  readonly computerUseToolsAvailable?: boolean;
 }): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
   if (input.interactionMode === undefined) {
     return undefined;
@@ -597,6 +609,7 @@ function buildCodexCollaborationMode(input: {
         { model, reasoningEffort },
         input.delegationInstructions,
         input.browserToolsAvailable ?? true,
+        input.computerUseToolsAvailable ?? false,
       ),
     },
   };
@@ -617,6 +630,7 @@ export function buildTurnStartParams(input: {
   readonly delegationInstructions?: string;
   /** Defaults to true so callers that predate the agent-access gate are unchanged. */
   readonly browserToolsAvailable?: boolean;
+  readonly computerUseToolsAvailable?: boolean;
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
   CodexErrors.CodexAppServerProtocolParseError
@@ -641,6 +655,7 @@ export function buildTurnStartParams(input: {
       ? { delegationInstructions: input.delegationInstructions }
       : {}),
     browserToolsAvailable: input.browserToolsAvailable ?? true,
+    computerUseToolsAvailable: input.computerUseToolsAvailable ?? false,
   });
 
   return decodeCodexTurnStartParamsWithCollaborationMode({
@@ -1247,7 +1262,36 @@ export const makeCodexSessionRuntime = (
       ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
     };
     const extendEnv = options.environment === undefined;
-    const appServerArgs = codexSessionAppServerArgs(options.appServerArgs, options.launchArgs);
+    const observationBindingId = randomUUID();
+    const observer = yield* Effect.tryPromise(async () => {
+      const runtime = await findUnifiedComputerUseRuntime(
+        resolvedHomePath ??
+          expandHomePath(
+            options.environment?.CODEX_HOME ?? process.env.CODEX_HOME ?? `${homedir()}/.codex`,
+          ),
+      );
+      if (!runtime) return undefined;
+      return startComputerUseObserver({
+        runtime,
+        observe: (event) =>
+          computerUsePreviewRegistry.observe({
+            ...event,
+            bindingId: observationBindingId,
+            threadId: options.threadId,
+            providerInstanceId: options.providerInstanceId ?? "codex",
+          }),
+      });
+    }).pipe(Effect.orElseSucceed(() => undefined));
+    yield* Effect.addFinalizer(() =>
+      Effect.promise(async () => {
+        computerUsePreviewRegistry.endBinding(observationBindingId);
+        await observer?.close();
+      }),
+    );
+    const appServerArgs = codexSessionAppServerArgs(
+      [...(options.appServerArgs ?? []), ...(observer?.configArgs ?? [])],
+      options.launchArgs,
+    );
     const spawnCommand = yield* resolveSpawnCommand(options.binaryPath, appServerArgs, {
       env,
       extendEnv,
@@ -1908,6 +1952,13 @@ export const makeCodexSessionRuntime = (
           suppressMemoryConsolidationNotification(notification);
 
         const payload = notification.params;
+        if (notification.method === "turn/completed") {
+          computerUsePreviewRegistry.endTurn(
+            observationBindingId,
+            notification.params.threadId,
+            notification.params.turn.id,
+          );
+        }
         const route = readRouteFields(notification);
         const providerThreadId = readNotificationThreadId(notification);
         const collabReceiverTurns = yield* Ref.get(collabReceiverTurnsRef);
@@ -2495,7 +2546,7 @@ export const makeCodexSessionRuntime = (
       sendTurn: (input) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;
-          if (hasConfiguredMcpServer(options.appServerArgs)) {
+          if (hasConfiguredMcpServer(appServerArgs)) {
             yield* client.request("config/mcpServer/reload", undefined).pipe(
               Effect.catch((cause) =>
                 Effect.logWarning("Failed to refresh Codex MCP tool catalog before turn.", {
@@ -2525,6 +2576,7 @@ export const makeCodexSessionRuntime = (
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
             browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs),
+            computerUseToolsAvailable: observer !== undefined,
           });
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(

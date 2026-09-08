@@ -51,3 +51,7 @@ export * from "./skills.ts";
 export * from "./computerUse.ts";
 export * from "./usage.ts";
 export * from "./rpc.ts";
+
+export * from "./computerUsePreview.ts";
+
+export * from "./computerUseCapture.ts";

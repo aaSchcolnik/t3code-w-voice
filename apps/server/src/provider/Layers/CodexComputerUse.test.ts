@@ -39,6 +39,26 @@ function mcpStatus(options?: { readonly includeServer?: boolean; readonly includ
 }
 
 describe("Codex Computer Use inventory", () => {
+  it("recognizes the unified plugin's loaded REPL without a legacy node_repl config or skill", () => {
+    const status = {
+      data: [
+        {
+          name: "cua_repl",
+          tools: { js: { name: "js", inputSchema: {} } },
+          authStatus: "unsupported",
+          resources: [],
+          resourceTemplates: [],
+        },
+      ],
+    } as CodexSchema.V2ListMcpServerStatusResponse;
+    expect(inspectNodeReplState({ config: configWithNodeRepl(undefined), mcpStatus: status })).toBe(
+      "available",
+    );
+    const script = buildComputerUseDiagnosticScript("", undefined, true);
+    expect(script).toContain('await import("@oai/sky")');
+    expect(script).not.toContain("setupComputerUseRuntime");
+  });
+
   it("keeps each provider instance's effective custom CODEX_HOME and environment isolated", () => {
     const decode = Schema.decodeUnknownSync(CodexSettings);
     const personal = buildComputerUseAppServerInput({

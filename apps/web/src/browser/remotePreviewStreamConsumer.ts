@@ -2,10 +2,7 @@ import type { RemotePreviewViewerStreamEvent } from "@t3tools/contracts";
 import type * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
-type ViewerStreamResult<E> = AsyncResult.AsyncResult<
-  ReadonlyArray<RemotePreviewViewerStreamEvent>,
-  E
->;
+type ViewerStreamResult<E, Event> = AsyncResult.AsyncResult<ReadonlyArray<Event>, E>;
 
 /**
  * Drains a `remotePreview.open` stream into the viewer.
@@ -17,10 +14,13 @@ type ViewerStreamResult<E> = AsyncResult.AsyncResult<
  * events that arrived together are replayed in order instead of collapsing to
  * the newest one.
  */
-export function createRemotePreviewStreamConsumerAtom<E>(options: {
-  readonly streamAtom: Atom.Atom<ViewerStreamResult<E>>;
+export function createRemotePreviewStreamConsumerAtom<
+  E,
+  Event = RemotePreviewViewerStreamEvent,
+>(options: {
+  readonly streamAtom: Atom.Atom<ViewerStreamResult<E, Event>>;
   readonly handlerAtom: Atom.Atom<{
-    readonly accept: (event: RemotePreviewViewerStreamEvent) => void;
+    readonly accept: (event: Event) => void;
     readonly fail: (cause: Cause.Cause<E>) => void;
   }>;
   readonly label: string;
@@ -30,7 +30,7 @@ export function createRemotePreviewStreamConsumerAtom<E>(options: {
     let disposed = false;
     let emissions = 0;
 
-    const consume = (result: ViewerStreamResult<E>) => {
+    const consume = (result: ViewerStreamResult<E, Event>) => {
       if (disposed) return;
       if (AsyncResult.isFailure(result)) {
         get.once(options.handlerAtom).fail(result.cause);

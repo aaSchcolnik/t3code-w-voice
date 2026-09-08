@@ -625,6 +625,26 @@ describe("T3 browser developer instructions", () => {
   });
 });
 
+describe("T3 computer-use developer instructions", () => {
+  it("explains direct-tool discovery only when the unified runtime is attached", () => {
+    const runtime = { model: "gpt-5.6-luna", reasoningEffort: "medium" };
+    for (const mode of ["default", "plan"] as const) {
+      NodeAssert.match(
+        buildCodexDeveloperInstructions(mode, runtime, undefined, false, true),
+        /ALL_TOOLS only lists tools available inside functions.exec/,
+      );
+      NodeAssert.match(
+        buildCodexDeveloperInstructions(mode, runtime, undefined, false, true),
+        /mcp__cua_repl.js/,
+      );
+      NodeAssert.doesNotMatch(
+        buildCodexDeveloperInstructions(mode, runtime, undefined, false, false),
+        /T3 Code computer use/,
+      );
+    }
+  });
+});
+
 describe("hasConfiguredMcpServer", () => {
   it("detects inline Codex MCP configuration arguments", () => {
     NodeAssert.equal(hasConfiguredMcpServer(undefined), false);

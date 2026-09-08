@@ -31,6 +31,7 @@ export const connectStandaloneRemotePreviewRpc = Effect.fn("standaloneRemotePrev
         retryPolicy: Schedule.recurs(0),
       }),
     ).pipe(Layer.provide(Layer.mergeAll(socketLayer, RpcSerialization.layerJson)));
-    return yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolLayer));
+    const protocolContext = yield* Layer.build(protocolLayer);
+    return yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
   },
 );

@@ -1,3 +1,4 @@
+import { nativeCapture } from "../computerUse/nativeCapture.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -563,6 +564,13 @@ export const make = Effect.gen(function* () {
           return isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin });
         }
         if (permission !== "media") return false;
+        if (
+          details.mediaType === "video" &&
+          _webContents?.id === window.webContents.id &&
+          nativeCapture.hasArm(_webContents.id) &&
+          isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin })
+        )
+          return true;
         if (!mediaCheckIncludesAudio(details)) return false;
         if (!isAllowedRendererOrigin({ applicationUrl, requestOrigin: origin })) return false;
         if (environment.platform !== "darwin") return true;
@@ -607,6 +615,22 @@ export const make = Effect.gen(function* () {
                   (details as Electron.MediaAccessPermissionRequest).securityOrigin ?? "",
               }),
           );
+          return;
+        }
+        if (
+          permission === "media" &&
+          details.isMainFrame &&
+          _webContents?.id === window.webContents.id &&
+          (details as Electron.MediaAccessPermissionRequest).mediaTypes?.every(
+            (type) => type === "video",
+          ) &&
+          isAllowedRendererOrigin({
+            applicationUrl,
+            requestOrigin: (details as Electron.MediaAccessPermissionRequest).securityOrigin ?? "",
+          }) &&
+          nativeCapture.consumeArm(_webContents.id)
+        ) {
+          callback(true);
           return;
         }
         if (permission !== "media" || !mediaRequestIncludesAudio(details)) {

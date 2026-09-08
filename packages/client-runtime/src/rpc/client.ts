@@ -61,6 +61,9 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeVoiceModelState
   | typeof WS_METHODS.subscribeSubagentRuns
   | typeof WS_METHODS.subscribeSubagentTranscript
+  | typeof WS_METHODS.computerUsePreviewWatch
+  | typeof WS_METHODS.computerUsePreviewOpen
+  | typeof WS_METHODS.computerUsePreviewHostConnect
   | typeof WS_METHODS.remotePreviewOpen
   | typeof WS_METHODS.remotePreviewHostConnect;
 

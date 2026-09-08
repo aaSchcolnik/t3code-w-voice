@@ -159,6 +159,12 @@ Use the \`request_user_input\` tool only when it is listed in the available tool
 In Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions. If you absolutely must ask a question because the answer cannot be discovered from local context and a reasonable assumption would be risky, ask the user directly with a concise plain-text question. Never write a multiple choice question as a textual assistant message.
 `;
 
+const T3_COMPUTER_USE_INSTRUCTIONS = `## T3 Code computer use
+
+The unified Computer Use runtime is configured through the cua_repl MCP server. For native app tasks, use its js tool and the cua API. It may be exposed as the direct mcp__cua_repl.js tool outside functions.exec. ALL_TOOLS only lists tools available inside functions.exec, so its absence there does not establish that Computer Use is unavailable. Check the directly exposed tools before declaring it unavailable.
+
+Begin with an entry point such as await cua.getApp("System Settings") and follow the returned runtime documentation. Continue through the same runtime so T3 can show the app being operated. Do not substitute shell screenshots, AppleScript, or another automation backend merely because a search of ALL_TOOLS returns no computer-use result. If the direct tool is actually missing or returns an unavailable error, report that limitation. Existing app approval and capture permissions still apply.`;
+
 export interface CodexRuntimeInfo {
   readonly model: string;
   readonly reasoningEffort: string;
@@ -170,11 +176,16 @@ export function buildCodexDeveloperInstructions(
   extraInstructions?: string,
   /** Whether the `t3-code` MCP server is attached to this turn. */
   browserToolsAvailable = true,
+  computerUseToolsAvailable = false,
 ): string {
   const runtimeInfo = buildRuntimeInstructions({ harness: "Codex", ...runtime });
-  const supplementalInstructions = extraInstructions
-    ? `${extraInstructions}\n\n${runtimeInfo}`
-    : runtimeInfo;
+  const supplementalInstructions = [
+    extraInstructions,
+    computerUseToolsAvailable ? T3_COMPUTER_USE_INSTRUCTIONS : undefined,
+    runtimeInfo,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   return interactionMode === "plan"
     ? codexPlanModeDeveloperInstructions(browserToolsAvailable, supplementalInstructions)
     : codexDefaultModeDeveloperInstructions(browserToolsAvailable, supplementalInstructions);

@@ -394,7 +394,7 @@ function PreviewAutomationHost(props: {
                     ?.has(runtimeTabId) ?? false,
               })
             ) {
-              usePreviewMiniPlayerStore.getState().open(threadRef, readyTabId);
+              usePreviewMiniPlayerStore.getState().open(threadRef, readyTabId, { automatic: true });
             }
           }
           browserActivity.release ??= acquireBrowserSurfaceActivity(runtimeTabId);
@@ -523,7 +523,9 @@ function PreviewAutomationHost(props: {
               }
             }
             if (shouldPresentPreview) {
-              usePreviewMiniPlayerStore.getState().open(threadRef, activeTabId);
+              usePreviewMiniPlayerStore
+                .getState()
+                .open(threadRef, activeTabId, { automatic: true });
             }
             if (activeSnapshot && previewAutomationOpenNeedsOverlay(input, activeSnapshot)) {
               await requireReadyTab();

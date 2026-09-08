@@ -1,3 +1,5 @@
+import { useComputerUsePresentation } from "~/computerUse/computerUsePreviewStore";
+import { Switch } from "../ui/switch";
 import { useState } from "react";
 import {
   ProviderInstanceId,
@@ -192,6 +194,7 @@ function ComputerUseSettingsContent(props: {
 
   return (
     <SettingsSection title="Computer Use">
+      <ComputerUsePreviewPreference />
       <SettingsRow
         title={
           <span className="inline-flex items-center gap-2">
@@ -301,6 +304,23 @@ export function ComputerUseSettingsSection(props: {
       key={scopeKey}
       environmentId={environmentId}
       {...(props.cwd ? { cwd: props.cwd } : {})}
+    />
+  );
+}
+
+function ComputerUsePreviewPreference() {
+  const enabled = useComputerUsePresentation((state) => state.autoShow);
+  return (
+    <SettingsRow
+      title="Show computer-use preview automatically"
+      description="Open the active application's video in a floating preview on this device. Capture access is granted separately on the host."
+      control={
+        <Switch
+          checked={enabled}
+          onCheckedChange={(value) => useComputerUsePresentation.getState().setAutoShow(value)}
+          aria-label="Show computer-use preview automatically"
+        />
+      }
     />
   );
 }

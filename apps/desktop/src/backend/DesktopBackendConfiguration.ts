@@ -1,3 +1,4 @@
+import { computerUseCaptureOwnerToken } from "../computerUse/owner.ts";
 import * as NodeOS from "node:os";
 
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
@@ -512,6 +513,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         // a dev Electron host is discovered as generic "Electron", not "T3 Code".
         T3CODE_COMPUTER_USE_HOST_KIND: environment.isPackaged ? "t3-packaged" : "t3-electron-dev",
         T3CODE_COMPUTER_USE_HOST_BUNDLE_ID: environment.appUserModelId,
+        T3CODE_COMPUTER_USE_CAPTURE_OWNER_TOKEN: computerUseCaptureOwnerToken,
       },
       // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
       extendEnv: true,

@@ -1,3 +1,4 @@
+import * as ComputerUseCaptureIpc from "./methods/computerUseCapture.ts";
 import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
@@ -70,6 +71,10 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   const ipc = yield* DesktopIpc.DesktopIpc;
   yield* PreviewIpc.installPreviewEventForwarding();
   yield* TranscriptionIpc.installTranscriptionEventForwarding();
+
+  yield* ipc.handle(ComputerUseCaptureIpc.getCapability);
+  yield* ipc.handle(ComputerUseCaptureIpc.start);
+  yield* ipc.handle(ComputerUseCaptureIpc.stop);
 
   yield* ipc.handle(AppActivationIpc.setReady);
   yield* ipc.handle(AppActivationIpc.complete);

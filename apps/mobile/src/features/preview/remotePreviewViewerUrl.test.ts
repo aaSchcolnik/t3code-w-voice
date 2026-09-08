@@ -1,12 +1,25 @@
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   isRemotePreviewViewerUrlAllowed,
+  nativePreviewViewerInput,
   remotePreviewViewerOriginWhitelist,
   resolveRemotePreviewViewerUrl,
 } from "./remotePreviewViewerUrl";
 
 describe("remotePreviewViewerUrl", () => {
+  it("selects a native session capability without a browser tab", () => {
+    const environmentId = EnvironmentId.make("env");
+    const threadId = ThreadId.make("thread");
+    expect(
+      nativePreviewViewerInput(environmentId, threadId, {
+        kind: "computer-use",
+        sessionId: "native-1",
+      }),
+    ).toEqual({ environmentId, threadId, source: { kind: "computer-use", sessionId: "native-1" } });
+    expect(nativePreviewViewerInput(environmentId, threadId, { kind: "browser" })).toBeNull();
+  });
   it("resolves a signed viewer path against the environment origin", () => {
     expect(
       resolveRemotePreviewViewerUrl(

@@ -99,6 +99,13 @@ describe("isPreviewEditingShortcut", () => {
         ),
       ).toBe(true);
 
+      expect(
+        PreviewManager.isPreviewEditingShortcut(
+          input(platform, "v", { isComposing: true }),
+          platform,
+        ),
+      ).toBe(false);
+
       for (const key of ["k", ",", "w", "j", "q", "+", "=", "-", "0", "r", "F12"]) {
         expect(PreviewManager.isPreviewEditingShortcut(input(platform, key), platform)).toBe(false);
       }

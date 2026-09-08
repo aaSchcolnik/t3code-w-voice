@@ -1,6 +1,8 @@
+import { parseComputerUseViewerSubject } from "./computerUseViewerBinding.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthPreviewControlScope,
+  AuthComputerUseViewScope,
   AuthPreviewViewScope,
   EnvironmentId,
   PreviewTabId,
@@ -99,6 +101,60 @@ describe("RemotePreviewViewerAccess", () => {
       const verified = yield* sessions.verify(redeemed!.sessionToken);
       expect(verified.scopes).toContain(AuthPreviewViewScope);
       expect(verified.method).toBe("browser-session-cookie");
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("native viewer cookies carry only view access bound to the selected session", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const parent = yield* sessions.issue({
+        method: "bearer-access-token",
+        scopes: [AuthComputerUseViewScope, AuthPreviewViewScope, AuthPreviewControlScope],
+        subject: "native-viewer-issuer",
+      });
+      const source = { kind: "computer-use" as const, sessionId: "native-session-1" };
+      const issued = yield* issueRemotePreviewViewerUrl({
+        environmentId,
+        threadId,
+        source,
+        authSessionId: parent.sessionId,
+      });
+      const token = issued.relativeUrl.slice(`${REMOTE_PREVIEW_VIEWER_ROUTE_PREFIX}/`.length);
+      const redeemed = yield* redeemRemotePreviewViewerToken(token, { deviceType: "tablet" });
+      expect(redeemed?.bootstrap).toEqual({
+        environmentId,
+        threadId,
+        source,
+        expiresAt: issued.expiresAt,
+      });
+      const verified = yield* sessions.verify(redeemed!.sessionToken);
+      expect(verified.scopes).toEqual([AuthComputerUseViewScope]);
+      expect(parseComputerUseViewerSubject(verified.subject)).toEqual({
+        sessionId: source.sessionId,
+        threadId,
+        parentAuthSessionId: parent.sessionId,
+      });
+      yield* sessions.revoke(parent.sessionId);
+      expect(yield* redeemRemotePreviewViewerToken(token, { deviceType: "tablet" })).toBeNull();
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("browser preview grants cannot redeem native source capabilities", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const parent = yield* sessions.issue({
+        method: "bearer-access-token",
+        scopes: [AuthPreviewViewScope, AuthPreviewControlScope],
+        subject: "browser-only",
+      });
+      const issued = yield* issueRemotePreviewViewerUrl({
+        environmentId,
+        threadId,
+        source: { kind: "computer-use", sessionId: "native-1" },
+        authSessionId: parent.sessionId,
+      });
+      const token = issued.relativeUrl.slice(`${REMOTE_PREVIEW_VIEWER_ROUTE_PREFIX}/`.length);
+      expect(yield* redeemRemotePreviewViewerToken(token, { deviceType: "tablet" })).toBeNull();
     }).pipe(Effect.provide(testLayer)),
   );
 

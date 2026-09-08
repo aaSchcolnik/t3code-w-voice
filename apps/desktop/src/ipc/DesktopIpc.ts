@@ -18,6 +18,7 @@ export interface DesktopIpcWebContents {
 }
 
 export interface DesktopIpcInvokeEvent {
+  readonly senderFrame?: { readonly frameTreeNodeId: number } | null;
   readonly sender: DesktopIpcWebContents;
 }
 

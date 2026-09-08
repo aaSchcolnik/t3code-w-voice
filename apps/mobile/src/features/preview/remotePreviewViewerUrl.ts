@@ -1,3 +1,18 @@
+import type { EnvironmentId, RemotePreviewIssueViewerUrlInput, ThreadId } from "@t3tools/contracts";
+
+export type ThreadPreviewSelection =
+  | { kind: "browser" }
+  | { kind: "computer-use"; sessionId: string };
+
+/** Native viewing mints a capability for the session without listing or creating browser tabs. */
+export function nativePreviewViewerInput(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  source: ThreadPreviewSelection,
+): RemotePreviewIssueViewerUrlInput | null {
+  return source.kind === "computer-use" ? { environmentId, threadId, source } : null;
+}
+
 /**
  * Build and constrain the signed remote-preview viewer URL for the mobile
  * WebView. The long-lived environment credential never enters this URL.

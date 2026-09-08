@@ -1,5 +1,5 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { PreviewSource, ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 
 export interface PreviewMiniPlayerPosition {
@@ -13,35 +13,81 @@ export interface PreviewMiniPlayerSize {
 }
 
 export interface PreviewMiniPlayerState {
-  readonly tabId: string;
+  readonly tabId: string | null;
+  readonly source?: PreviewSource;
+  readonly pinned?: boolean;
   readonly position: PreviewMiniPlayerPosition | null;
   /** Height always follows the previewed viewport's aspect ratio. */
   readonly width: number | null;
+  readonly size?: PreviewMiniPlayerSize | null;
 }
 
 interface PreviewMiniPlayerStoreState {
   readonly byThreadKey: Record<string, PreviewMiniPlayerState>;
-  readonly open: (ref: ScopedThreadRef, tabId: string) => void;
+  readonly open: (ref: ScopedThreadRef, tabId: string, options?: { automatic?: boolean }) => void;
+  readonly openComputerUse: (
+    ref: ScopedThreadRef,
+    sessionId: string,
+    options?: { automatic?: boolean },
+  ) => void;
   readonly close: (ref: ScopedThreadRef) => void;
-  readonly move: (ref: ScopedThreadRef, tabId: string, position: PreviewMiniPlayerPosition) => void;
-  readonly resize: (ref: ScopedThreadRef, tabId: string, width: number) => void;
+  readonly move: (
+    ref: ScopedThreadRef,
+    tabId: string | PreviewSource,
+    position: PreviewMiniPlayerPosition,
+  ) => void;
+  readonly resize: (
+    ref: ScopedThreadRef,
+    tabId: string | PreviewSource,
+    size: PreviewMiniPlayerSize | number,
+  ) => void;
   readonly removeThread: (ref: ScopedThreadRef) => void;
 }
 
 export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((set) => ({
   byThreadKey: {},
-  open: (ref, tabId) =>
+  open: (ref, tabId, options) =>
     set((state) => {
       const threadKey = scopedThreadKey(ref);
       const current = state.byThreadKey[threadKey];
+      if (options?.automatic && current?.source?.kind === "computer-use" && current.pinned)
+        return state;
       if (current?.tabId === tabId) return state;
       return {
         byThreadKey: {
           ...state.byThreadKey,
           [threadKey]: {
             tabId,
+            source: { kind: "browser", tabId },
             position: current?.position ?? null,
             width: current?.width ?? null,
+          },
+        },
+      };
+    }),
+  openComputerUse: (ref, sessionId, options) =>
+    set((state) => {
+      const threadKey = scopedThreadKey(ref);
+      const current = state.byThreadKey[threadKey];
+      if (current?.source?.kind === "computer-use" && current.source.sessionId === sessionId)
+        return options?.automatic || current.pinned
+          ? state
+          : {
+              byThreadKey: {
+                ...state.byThreadKey,
+                [threadKey]: { ...current, pinned: true },
+              },
+            };
+      return {
+        byThreadKey: {
+          ...state.byThreadKey,
+          [threadKey]: {
+            tabId: null,
+            source: { kind: "computer-use", sessionId },
+            pinned: options?.automatic !== true,
+            position: current?.position ?? null,
+            width: null,
+            size: current?.source?.kind === "computer-use" ? (current.size ?? null) : null,
           },
         },
       };
@@ -57,7 +103,7 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((
     set((state) => {
       const threadKey = scopedThreadKey(ref);
       const current = state.byThreadKey[threadKey];
-      if (!current || current.tabId !== tabId) return state;
+      if (!current || !matchesPreviewSource(current, tabId)) return state;
       if (current.position?.x === position.x && current.position.y === position.y) return state;
       return {
         byThreadKey: {
@@ -66,15 +112,22 @@ export const usePreviewMiniPlayerStore = create<PreviewMiniPlayerStoreState>()((
         },
       };
     }),
-  resize: (ref, tabId, width) =>
+  resize: (ref, tabId, size) =>
     set((state) => {
       const threadKey = scopedThreadKey(ref);
       const current = state.byThreadKey[threadKey];
-      if (!current || current.tabId !== tabId || current.width === width) return state;
+      if (!current || !matchesPreviewSource(current, tabId)) return state;
+      if (
+        typeof size === "number"
+          ? current.width === size
+          : current.size?.width === size.width && current.size.height === size.height
+      )
+        return state;
       return {
         byThreadKey: {
           ...state.byThreadKey,
-          [threadKey]: { ...current, width },
+          [threadKey]:
+            typeof size === "number" ? { ...current, width: size } : { ...current, size },
         },
       };
     }),
@@ -93,4 +146,13 @@ export function selectThreadPreviewMiniPlayer(
 ): PreviewMiniPlayerState | null {
   if (!ref) return null;
   return byThreadKey[scopedThreadKey(ref)] ?? null;
+}
+
+function matchesPreviewSource(
+  current: PreviewMiniPlayerState,
+  source: string | PreviewSource,
+): boolean {
+  if (typeof source === "string") return current.tabId === source;
+  if (source.kind === "browser") return current.tabId === source.tabId;
+  return current.source?.kind === "computer-use" && current.source.sessionId === source.sessionId;
 }

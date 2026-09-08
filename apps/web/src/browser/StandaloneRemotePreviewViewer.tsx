@@ -12,7 +12,7 @@ import type {
   RemotePreviewSessionId,
   RemotePreviewSignal,
   RemotePreviewSourceMetadata,
-  RemotePreviewViewerBootstrap,
+  BrowserPreviewViewerBootstrap,
 } from "@t3tools/contracts";
 import { WS_METHODS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -117,7 +117,7 @@ const chromeButtonStyle: React.CSSProperties = {
  * bearer, DPoP, or pairing credential reaches page JavaScript.
  */
 export function StandaloneRemotePreviewViewer(props: {
-  readonly bootstrap: RemotePreviewViewerBootstrap;
+  readonly bootstrap: BrowserPreviewViewerBootstrap;
 }) {
   const { bootstrap } = props;
   const videoRef = useRef<HTMLVideoElement | null>(null);

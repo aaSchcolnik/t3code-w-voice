@@ -80,6 +80,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth administrative operations", (it) =
 
       expect(issued.method).toBe("bearer-access-token");
       expect(issued.scopes).toEqual([
+        "computer-use:view",
         "orchestration:read",
         "orchestration:operate",
         "terminal:operate",
@@ -95,6 +96,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth administrative operations", (it) =
       expect(issued.client.label).toBe("deploy-bot");
       expect(verified.sessionId).toBe(issued.sessionId);
       expect(verified.scopes).toEqual([
+        "computer-use:view",
         "orchestration:read",
         "orchestration:operate",
         "terminal:operate",

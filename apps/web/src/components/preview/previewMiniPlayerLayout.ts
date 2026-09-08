@@ -180,3 +180,53 @@ export function resizePreviewMiniPlayer(input: {
   );
   return { ...position, ...size };
 }
+
+export const PREVIEW_MINI_PLAYER_DEFAULT_SIZE = { width: 320, height: 200 } as const;
+export function clampPreviewMiniPlayerSize(
+  size: PreviewMiniPlayerSize,
+  container: PreviewMiniPlayerSize,
+  bottomInset = 0,
+  minimum: PreviewMiniPlayerSize = PREVIEW_MINI_PLAYER_MIN_SIZE,
+): PreviewMiniPlayerSize {
+  const availableWidth = Math.max(1, container.width - PREVIEW_MINI_PLAYER_EDGE_GAP * 2);
+  const availableHeight = Math.max(
+    1,
+    container.height - Math.max(0, bottomInset) - PREVIEW_MINI_PLAYER_EDGE_GAP * 2,
+  );
+  return {
+    width: Math.round(Math.min(Math.max(minimum.width, size.width), availableWidth)),
+    height: Math.round(Math.min(Math.max(minimum.height, size.height), availableHeight)),
+  };
+}
+
+/** Fit the recorded content without stretching it or reserving landscape space for a portrait. */
+export function fitPreviewMiniPlayerToContent(
+  content: PreviewMiniPlayerSize,
+  container: PreviewMiniPlayerSize,
+  bottomInset = 0,
+  headerHeight = 0,
+): PreviewMiniPlayerSize {
+  if (
+    !Number.isFinite(content.width) ||
+    !Number.isFinite(content.height) ||
+    content.width <= 0 ||
+    content.height <= 0
+  ) {
+    return clampPreviewMiniPlayerSize(PREVIEW_MINI_PLAYER_DEFAULT_SIZE, container, bottomInset);
+  }
+  const availableWidth = Math.max(1, container.width - PREVIEW_MINI_PLAYER_EDGE_GAP * 2);
+  const availableHeight = Math.max(
+    1,
+    container.height - Math.max(0, bottomInset) - PREVIEW_MINI_PLAYER_EDGE_GAP * 2,
+  );
+  const chromeHeight = Math.min(Math.max(0, headerHeight), availableHeight - 1);
+  const scale = Math.min(
+    Math.min(320, availableWidth) / content.width,
+    Math.max(1, Math.min(320, availableHeight) - chromeHeight) / content.height,
+    1,
+  );
+  return {
+    width: Math.max(1, Math.round(content.width * scale)),
+    height: Math.max(1, Math.round(content.height * scale + chromeHeight)),
+  };
+}

@@ -1,3 +1,4 @@
+import type { ComputerUseCaptureBridge } from "./computerUseCapture.ts";
 import type {
   VcsCreateRefInput,
   VcsCreateRefResult,
@@ -1325,6 +1326,7 @@ export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
 export interface DesktopBridge {
+  computerUseCapture: ComputerUseCaptureBridge;
   getAppBranding: () => DesktopAppBranding | null;
   /** The desktop client's OS platform, read from Electron's preload process. */
   getClientPlatform?: () => string;

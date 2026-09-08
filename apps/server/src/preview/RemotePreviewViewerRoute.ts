@@ -26,13 +26,24 @@ function injectBootstrap(html: string, bootstrapJson: string): string {
   return `${bootstrapScript}${html}`;
 }
 
-function developmentViewerHtml(): string {
+// This page bypasses Vite's HTML transform, but its TSX imports still need the dev preamble.
+function developmentViewerHtml(reactRefresh: boolean): string {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Remote preview</title>
+    ${
+      reactRefresh
+        ? `<script type="module">
+      import { injectIntoGlobalHook } from "/@react-refresh";
+      injectIntoGlobalHook(window);
+      window.$RefreshReg$ = () => {};
+      window.$RefreshSig$ = () => (type) => type;
+    </script>`
+        : ""
+    }
   </head>
   <body>
     <div id="root"></div>
@@ -99,7 +110,7 @@ export const remotePreviewViewerRouteLayer = HttpRouter.add(
       html = yield* fileSystem.readFileString(htmlPath).pipe(Effect.orElseSucceed(() => null));
     }
     if (html === null) {
-      html = developmentViewerHtml();
+      html = developmentViewerHtml(config.devUrl !== undefined);
     }
 
     const response = HttpServerResponse.text(injectBootstrap(html, bootstrapJson), {

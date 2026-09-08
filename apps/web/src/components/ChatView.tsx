@@ -188,6 +188,10 @@ import { BrowserSettingsReadError } from "../browser/openFileInPreview";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { usePreviewSession } from "./preview/usePreviewSession";
+import {
+  ThreadComputerUsePreview,
+  ComputerUsePreviewPanel,
+} from "~/computerUse/ThreadComputerUsePreview";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
@@ -1977,7 +1981,11 @@ export default function ChatView(props: ChatViewProps) {
   }, [activePreviewState.sessions, activePreviewState.serverEpoch, activeThreadRef]);
 
   useEffect(() => {
-    if (!activeThreadRef || !activePreviewMiniPlayer || activePreviewState.serverEpoch === null)
+    if (
+      !activeThreadRef ||
+      !activePreviewMiniPlayer?.tabId ||
+      activePreviewState.serverEpoch === null
+    )
       return;
     const miniTabStillExists = Boolean(activePreviewState.sessions[activePreviewMiniPlayer.tabId]);
     if (!miniTabStillExists) {
@@ -8199,6 +8207,11 @@ export default function ChatView(props: ChatViewProps) {
           }}
         />
       </Suspense>
+    ) : renderedRightPanelSurface?.kind === "computer-use" ? (
+      <ComputerUsePreviewPanel
+        threadRef={activeThreadRef}
+        sessionId={renderedRightPanelSurface.resourceId}
+      />
     ) : renderedRightPanelSurface?.kind === "terminal" ? (
       <PersistentThreadTerminalPanel
         visible={rightPanelOpen}
@@ -8737,7 +8750,14 @@ export default function ChatView(props: ChatViewProps) {
               </div>
             </div>
 
-            {activeThreadRef && activePreviewMiniPlayer && previewMiniPlayerVisible ? (
+            {activeThreadRef ? (
+              <ThreadComputerUsePreview
+                key={activeThreadKey}
+                threadRef={activeThreadRef}
+                bottomInset={isDraftHeroState ? 0 : composerOverlayHeight}
+              />
+            ) : null}
+            {activeThreadRef && activePreviewMiniPlayer?.tabId && previewMiniPlayerVisible ? (
               <ThreadPreviewMiniPlayer
                 key={`${activeThreadKey}:${activePreviewMiniPlayer.tabId}`}
                 threadRef={activeThreadRef}

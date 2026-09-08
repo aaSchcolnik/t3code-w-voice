@@ -3,6 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   clampPreviewMiniPlayerPosition,
+  clampPreviewMiniPlayerSize,
+  fitPreviewMiniPlayerToContent,
   PREVIEW_MINI_PLAYER_EDGE_GAP,
   resizePreviewMiniPlayer,
   resolvePreviewMiniPlayerFrame,
@@ -182,5 +184,90 @@ describe("clampPreviewMiniPlayerPosition", () => {
         160,
       ),
     ).toEqual({ x: 500, y: 288 });
+  });
+});
+
+describe("fitPreviewMiniPlayerToContent", () => {
+  const container = { width: 1000, height: 700 };
+
+  it("uses the recorded aspect ratio for landscape, square, and portrait windows", () => {
+    expect(fitPreviewMiniPlayerToContent({ width: 1920, height: 1080 }, container, 0, 32)).toEqual({
+      width: 320,
+      height: 212,
+    });
+    expect(fitPreviewMiniPlayerToContent({ width: 900, height: 900 }, container, 0, 32)).toEqual({
+      width: 288,
+      height: 320,
+    });
+    expect(fitPreviewMiniPlayerToContent({ width: 900, height: 1600 }, container, 0, 32)).toEqual({
+      width: 162,
+      height: 320,
+    });
+  });
+
+  it("shrinks both dimensions above a growing composer without changing the aspect ratio", () => {
+    const size = fitPreviewMiniPlayerToContent({ width: 900, height: 1600 }, container, 500, 32);
+    expect(size).toEqual({ width: 81, height: 176 });
+    expect(size.width / (size.height - 32)).toBe(900 / 1600);
+  });
+
+  it("fits a narrow chat area and does not upscale small sources", () => {
+    expect(
+      fitPreviewMiniPlayerToContent(
+        { width: 1920, height: 1080 },
+        { width: 200, height: 700 },
+        0,
+        32,
+      ),
+    ).toEqual({ width: 176, height: 131 });
+    expect(fitPreviewMiniPlayerToContent({ width: 120, height: 80 }, container, 0, 32)).toEqual({
+      width: 120,
+      height: 112,
+    });
+  });
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "waits for valid video metadata: %s",
+    (width) => {
+      expect(fitPreviewMiniPlayerToContent({ width, height: 100 }, container, 0, 32)).toEqual({
+        width: 320,
+        height: 200,
+      });
+    },
+  );
+
+  it("keeps dimensions positive when no room remains above the composer", () => {
+    expect(
+      fitPreviewMiniPlayerToContent(
+        { width: 900, height: 1600 },
+        { width: 20, height: 20 },
+        100,
+        32,
+      ),
+    ).toEqual({ width: 1, height: 1 });
+  });
+});
+
+describe("clampPreviewMiniPlayerSize", () => {
+  it("allows resizing within the available chat viewport", () => {
+    expect(
+      clampPreviewMiniPlayerSize({ width: 520, height: 360 }, { width: 1_000, height: 700 }, 120),
+    ).toEqual({ width: 520, height: 360 });
+  });
+
+  it("bounds oversized players above the composer", () => {
+    expect(
+      clampPreviewMiniPlayerSize(
+        { width: 2_000, height: 2_000 },
+        { width: 1_000, height: 700 },
+        120,
+      ),
+    ).toEqual({ width: 976, height: 556 });
+  });
+
+  it("lets a tiny container win over the preferred minimum", () => {
+    expect(
+      clampPreviewMiniPlayerSize({ width: 360, height: 239 }, { width: 250, height: 180 }, 20),
+    ).toEqual({ width: 226, height: 136 });
   });
 });

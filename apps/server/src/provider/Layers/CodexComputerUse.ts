@@ -73,6 +73,7 @@ const decodeDiagnosticPayload = Schema.decodeUnknownOption(DiagnosticPayload, {
 interface ComputerUseInventory {
   readonly facts: ComputerUseReadinessFacts;
   readonly wrapperPath: string | undefined;
+  readonly unifiedRuntime: boolean;
 }
 
 export function buildComputerUseAppServerInput(input: {
@@ -108,6 +109,10 @@ export function inspectNodeReplState(input: {
   readonly mcpStatus: CodexSchema.V2ListMcpServerStatusResponse;
 }): ComputerUseNodeReplState {
   const servers = asRecord(input.config.config["mcp_servers"]);
+  const unified = input.mcpStatus.data.find((server) => server.name === "cua_repl");
+  if (unified && asRecord(servers?.cua_repl)?.enabled !== false) {
+    return unified.tools[NODE_REPL_TOOL_NAME] ? "available" : "tool-missing";
+  }
   const nodeReplConfig = servers?.[NODE_REPL_SERVER_NAME];
   if (nodeReplConfig === undefined) return "missing";
   if (asRecord(nodeReplConfig)?.["enabled"] === false) return "disabled";
@@ -297,11 +302,13 @@ export function resolveComputerUseHostContext(
 export function buildComputerUseDiagnosticScript(
   wrapperPath: string,
   hostContext: ComputerUseHostContext = { kind: "unknown", bundleId: undefined },
+  unifiedRuntime = false,
 ): string {
   const wrapperUrl = NodeURL.pathToFileURL(wrapperPath).href;
   return `await (async () => {
   const metadata = { runtimeInitialized: false, appDiscoverySucceeded: false, discoveredAppCount: 0, targetAppFound: false, targetKind: "not-found", accessibilityAvailable: false, accessibilityTextLength: 0, screenshotAvailable: false };
   let failureCategory = null;
+  let sky;
   const classify = (error, fallback) => {
     const message = String(error?.message ?? error ?? "").toLowerCase();
     if (message.includes("accessibility") && (message.includes("permission") || message.includes("denied"))) return "accessibility-permission-denied";
@@ -310,16 +317,21 @@ export function buildComputerUseDiagnosticScript(
     return fallback;
   };
   try {
-    const { setupComputerUseRuntime } = await import(${JSON.stringify(wrapperUrl)});
+    ${
+      unifiedRuntime
+        ? 'sky = (await import("@oai/sky")).sky;'
+        : `const { setupComputerUseRuntime } = await import(${JSON.stringify(wrapperUrl)});
     await setupComputerUseRuntime({ globals: globalThis });
-    metadata.runtimeInitialized = Boolean(globalThis.sky);
+    sky = globalThis.sky;`
+    }
+    metadata.runtimeInitialized = Boolean(sky);
   } catch (error) {
     failureCategory = classify(error, "runtime-initialization-failed");
   }
   let apps = [];
   if (!failureCategory) {
     try {
-      apps = await globalThis.sky.list_apps();
+      apps = await sky.list_apps();
       metadata.appDiscoverySucceeded = Array.isArray(apps);
       metadata.discoveredAppCount = Array.isArray(apps) ? apps.length : 0;
     } catch (error) {
@@ -343,7 +355,7 @@ export function buildComputerUseDiagnosticScript(
     let unverifiable = null;
     for (const candidate of candidates) {
       try {
-        const candidateState = await globalThis.sky.get_app_state({ app: idOf(candidate.app) || nameOf(candidate.app), disableDiff: true });
+        const candidateState = await sky.get_app_state({ app: idOf(candidate.app) || nameOf(candidate.app), disableDiff: true });
         const text = typeof candidateState?.text === "string" ? candidateState.text : "";
         if (needsWindowVerification(candidate.app) && !text.includes("T3 Code (Dev)") && !text.includes("t3code-dev://")) {
           // Empty text means Accessibility could not read the window, so the
@@ -400,6 +412,9 @@ const inspectInventory = Effect.fn("CodexComputerUse.inspectInventory")(function
     ],
     { concurrency: "unbounded" },
   );
+  const unifiedRuntime = mcpStatus.data.some(
+    (server) => server.name === "cua_repl" && Boolean(server.tools[NODE_REPL_TOOL_NAME]),
+  );
   const skill = findComputerUseSkill(skills, input.cwd);
   const pluginRoot = skill ? pluginRootFromSkillPath(skill.path) : undefined;
   const wrapperPath = pluginRoot
@@ -426,17 +441,19 @@ const inspectInventory = Effect.fn("CodexComputerUse.inspectInventory")(function
       platformSupported: input.platformSupported,
       providerEnabled: input.providerEnabled,
       providerAvailable: true,
-      skill: skillState(skill),
+      skill: unifiedRuntime ? "available" : skillState(skill),
       nodeRepl: inspectNodeReplState({ config, mcpStatus }),
       hostApp: hostInstalled ? "available" : "missing",
-      pluginRuntime:
-        skill === undefined
+      pluginRuntime: unifiedRuntime
+        ? "available"
+        : skill === undefined
           ? "unknown"
           : wrapperInstalled && serviceInstalled
             ? "available"
             : "missing",
     },
     wrapperPath: wrapperInstalled ? wrapperPath : undefined,
+    unifiedRuntime,
   };
 });
 
@@ -530,15 +547,23 @@ export const makeCodexComputerUseCapability = Effect.fn("makeCodexComputerUseCap
               if (preconditionFailure) {
                 return makeFailureResult(input.providerInstanceId, preconditionFailure);
               }
-              if (!inventory.wrapperPath) {
+              if (!inventory.wrapperPath && !inventory.unifiedRuntime) {
                 return makeFailureResult(input.providerInstanceId, "plugin-runtime-missing");
               }
+              const diagnosticThread = yield* client.request("thread/start", {
+                cwd,
+                ephemeral: true,
+              });
               const response = yield* client.request("mcpServer/tool/call", {
-                server: NODE_REPL_SERVER_NAME,
+                server: inventory.unifiedRuntime ? "cua_repl" : NODE_REPL_SERVER_NAME,
                 tool: NODE_REPL_TOOL_NAME,
-                threadId: `computer-use-diagnostic-${input.providerInstanceId}`,
+                threadId: diagnosticThread.thread.id,
                 arguments: {
-                  code: buildComputerUseDiagnosticScript(inventory.wrapperPath, hostContext),
+                  code: buildComputerUseDiagnosticScript(
+                    inventory.wrapperPath ?? "",
+                    hostContext,
+                    inventory.unifiedRuntime,
+                  ),
                 },
               });
               const diagnostic = parseComputerUseDiagnosticResponse(response);

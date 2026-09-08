@@ -1,5 +1,8 @@
+import { makeComputerUseViewerSubject } from "./computerUseViewerBinding.ts";
 import {
   AuthPreviewControlScope,
+  AuthComputerUseViewScope,
+  ComputerUseViewerSource,
   AuthPreviewViewScope,
   AuthSessionId,
   EnvironmentId,
@@ -38,17 +41,19 @@ const SIGNING_SECRET_NAME = "remote-preview-viewer-signing-key";
 /** Short-lived: long enough to open the WebView and connect, not a standing credential. */
 export const REMOTE_PREVIEW_VIEWER_TOKEN_TTL_MS = 15 * 60 * 1_000;
 
-const ViewerClaimsSchema = Schema.Struct({
-  version: Schema.Literal(1),
+const commonClaims = {
   kind: Schema.Literal("remote-preview-viewer"),
   purpose: Schema.Literal(REMOTE_PREVIEW_VIEWER_PURPOSE),
   route: Schema.Literal(REMOTE_PREVIEW_VIEWER_ROUTE_PREFIX),
   authSessionId: AuthSessionId,
   environmentId: EnvironmentId,
   threadId: ThreadId,
-  tabId: PreviewTabId,
   expiresAt: Schema.Number,
-});
+};
+const ViewerClaimsSchema = Schema.Union([
+  Schema.Struct({ ...commonClaims, version: Schema.Literal(1), tabId: PreviewTabId }),
+  Schema.Struct({ ...commonClaims, version: Schema.Literal(2), source: ComputerUseViewerSource }),
+]);
 type ViewerClaims = typeof ViewerClaimsSchema.Type;
 
 const ViewerClaimsJson = Schema.fromJsonString(ViewerClaimsSchema);
@@ -89,12 +94,7 @@ function viewerScopesFromParent(
  * issuer session, environment/thread/tab, expiry, and viewer route purpose.
  */
 export const issueRemotePreviewViewerUrl = Effect.fn("RemotePreviewViewerAccess.issueUrl")(
-  function* (input: {
-    readonly environmentId: EnvironmentId;
-    readonly threadId: ThreadId;
-    readonly tabId: PreviewTabId;
-    readonly authSessionId: AuthSessionId;
-  }) {
+  function* (input: RemotePreviewIssueViewerUrlInput & { readonly authSessionId: AuthSessionId }) {
     const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
     const expectedEnvironmentId = yield* serverEnvironment.getEnvironmentId;
     if (input.environmentId !== expectedEnvironmentId) {
@@ -106,14 +106,15 @@ export const issueRemotePreviewViewerUrl = Effect.fn("RemotePreviewViewerAccess.
 
     const expiresAt = (yield* Clock.currentTimeMillis) + REMOTE_PREVIEW_VIEWER_TOKEN_TTL_MS;
     const claims: ViewerClaims = {
-      version: 1,
+      ...("source" in input
+        ? { version: 2 as const, source: input.source }
+        : { version: 1 as const, tabId: input.tabId }),
       kind: "remote-preview-viewer",
       purpose: REMOTE_PREVIEW_VIEWER_PURPOSE,
       route: REMOTE_PREVIEW_VIEWER_ROUTE_PREFIX,
       authSessionId: input.authSessionId,
       environmentId: input.environmentId,
       threadId: input.threadId,
-      tabId: input.tabId,
       expiresAt,
     };
 
@@ -175,15 +176,24 @@ export const redeemRemotePreviewViewerToken = Effect.fn("RemotePreviewViewerAcce
     if (Option.isNone(parentRow) || parentRow.value.revokedAt !== null) return null;
     const parent = parentRow.value;
     if (parent.expiresAt.epochMilliseconds <= (yield* Clock.currentTimeMillis)) return null;
-    if (!parent.scopes.includes(AuthPreviewViewScope)) return null;
+    const native = "source" in claims;
+    if (!parent.scopes.includes(native ? AuthComputerUseViewScope : AuthPreviewViewScope))
+      return null;
 
     const remainingMs = Math.max(1_000, claims.expiresAt - (yield* Clock.currentTimeMillis));
     const sessions = yield* SessionStore.SessionStore;
     const issued = yield* sessions
       .issue({
         method: "browser-session-cookie",
-        subject: parent.subject,
-        scopes: viewerScopesFromParent(parent.scopes),
+        subject:
+          "source" in claims
+            ? makeComputerUseViewerSubject({
+                sessionId: claims.source.sessionId,
+                threadId: claims.threadId,
+                parentAuthSessionId: claims.authSessionId,
+              })
+            : parent.subject,
+        scopes: native ? [AuthComputerUseViewScope] : viewerScopesFromParent(parent.scopes),
         ttl: Duration.millis(remainingMs),
         client: {
           ...client,
@@ -202,7 +212,7 @@ export const redeemRemotePreviewViewerToken = Effect.fn("RemotePreviewViewerAcce
       decodeViewerBootstrap({
         environmentId: claims.environmentId,
         threadId: claims.threadId,
-        tabId: claims.tabId,
+        ...("source" in claims ? { source: claims.source } : { tabId: claims.tabId }),
         expiresAt: claims.expiresAt,
       }),
     );
@@ -223,8 +233,6 @@ export const issueRemotePreviewViewerUrlFromInput = (
   authSessionId: AuthSessionId,
 ) =>
   issueRemotePreviewViewerUrl({
-    environmentId: input.environmentId,
-    threadId: input.threadId,
-    tabId: input.tabId,
+    ...input,
     authSessionId,
   });

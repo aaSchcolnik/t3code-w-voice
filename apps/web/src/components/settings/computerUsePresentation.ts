@@ -28,7 +28,8 @@ export function deriveComputerUseQueryState(input: {
 const READINESS: Record<ComputerUseProviderStatus["readiness"], ComputerUsePresentation> = {
   unsupported: {
     label: "Unsupported",
-    summary: "Provider-native Computer Use currently requires macOS.",
+    summary:
+      "This app-access diagnostic requires macOS. Linux desktop preview uses separate screen-sharing consent on the host.",
     badgeVariant: "secondary",
   },
   "provider-disabled": {

@@ -1,37 +1,19 @@
 import "./index.css";
-import type {
-  EnvironmentId,
-  PreviewTabId,
-  RemotePreviewViewerBootstrap,
-  ThreadId,
-} from "@t3tools/contracts";
+import { RemotePreviewViewerBootstrap } from "@t3tools/contracts";
 import { Schema } from "effect";
 import React from "react";
 import ReactDOM from "react-dom/client";
+
+import { StandaloneComputerUseViewer } from "./browser/StandaloneComputerUseViewer";
 
 import { StandaloneRemotePreviewViewer } from "./browser/StandaloneRemotePreviewViewer";
 
 const BOOTSTRAP_GLOBAL = "__T3_REMOTE_PREVIEW_VIEWER__";
 
-const decodeBootstrap = Schema.decodeUnknownOption(
-  Schema.Struct({
-    environmentId: Schema.String,
-    threadId: Schema.String,
-    tabId: Schema.String,
-    expiresAt: Schema.Number,
-  }),
-);
-
+const decodeBootstrap = Schema.decodeUnknownOption(RemotePreviewViewerBootstrap);
 function readBootstrap(): RemotePreviewViewerBootstrap | null {
-  const raw = (window as unknown as Record<string, unknown>)[BOOTSTRAP_GLOBAL];
-  const decoded = decodeBootstrap(raw);
-  if (decoded._tag === "None") return null;
-  return {
-    environmentId: decoded.value.environmentId as EnvironmentId,
-    threadId: decoded.value.threadId as ThreadId,
-    tabId: decoded.value.tabId as PreviewTabId,
-    expiresAt: decoded.value.expiresAt,
-  };
+  const decoded = decodeBootstrap((window as unknown as Record<string, unknown>)[BOOTSTRAP_GLOBAL]);
+  return decoded._tag === "Some" ? decoded.value : null;
 }
 
 const bootstrap = readBootstrap();
@@ -39,7 +21,11 @@ const bootstrap = readBootstrap();
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     {bootstrap ? (
-      <StandaloneRemotePreviewViewer bootstrap={bootstrap} />
+      "source" in bootstrap ? (
+        <StandaloneComputerUseViewer bootstrap={bootstrap} />
+      ) : (
+        <StandaloneRemotePreviewViewer bootstrap={bootstrap} />
+      )
     ) : (
       <div
         style={{

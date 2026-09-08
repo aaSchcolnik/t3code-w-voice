@@ -1,3 +1,6 @@
+import { AuthComputerUseViewScope } from "@t3tools/contracts";
+import { isComputerUseViewerSubject } from "./preview/computerUseViewerBinding.ts";
+import { ComputerUsePreviewBroker } from "./preview/ComputerUsePreviewBroker.ts";
 import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
@@ -529,12 +532,16 @@ const makeWsRpcLayer = (
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   remotePreviewSessionBroker: RemotePreviewSessionBroker.RemotePreviewSessionBroker["Service"],
+  computerUsePreviewBroker: ComputerUsePreviewBroker["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const crypto = yield* Crypto.Crypto;
       const remotePreviewConnectionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+      yield* Effect.addFinalizer(() =>
+        computerUsePreviewBroker.disconnectConnection(remotePreviewConnectionId),
+      );
       const remotePreviewCaller: RemotePreviewSessionBroker.RemotePreviewViewerConnection = {
         authSessionId: currentSessionId,
         connectionId: remotePreviewConnectionId,
@@ -544,6 +551,7 @@ const makeWsRpcLayer = (
           : { connectionMethod: clientConnectionMethod }),
         ...(currentSession.expiresAt === undefined ? {} : { expiresAt: currentSession.expiresAt }),
       };
+      const computerUsePreviewCaller = { ...remotePreviewCaller, subject: currentSession.subject };
       yield* Effect.addFinalizer(() =>
         remotePreviewSessionBroker.disconnectConnection(remotePreviewConnectionId),
       );
@@ -728,10 +736,11 @@ const makeWsRpcLayer = (
         method: string,
         effect: Effect.Effect<A, E, R>,
         traceAttributes?: Readonly<Record<string, unknown>>,
+        requiredScope?: AuthEnvironmentScope,
       ) =>
         instrumentRpcEffect(
           method,
-          authorizeEffect(requiredScopeForRpcMethod(method), effect),
+          authorizeEffect(requiredScope ?? requiredScopeForRpcMethod(method), effect),
           traceAttributes,
         );
       const observeRpcStream = <A, E, R>(
@@ -3266,6 +3275,36 @@ const makeWsRpcLayer = (
               .pipe(Effect.andThen(remotePreviewSessionBroker.focusHost(input))),
             { "rpc.aggregate": "preview-automation" },
           ),
+        [WS_METHODS.computerUsePreviewWatch]: (input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.computerUsePreviewWatch,
+            computerUsePreviewBroker.watch(computerUsePreviewCaller, input),
+            { "rpc.aggregate": "computer-use-preview" },
+          ),
+        [WS_METHODS.computerUsePreviewOpen]: (input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.computerUsePreviewOpen,
+            computerUsePreviewBroker.open(computerUsePreviewCaller, input),
+            { "rpc.aggregate": "computer-use-preview" },
+          ),
+        [WS_METHODS.computerUsePreviewSignal]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.computerUsePreviewSignal,
+            computerUsePreviewBroker.signal(computerUsePreviewCaller, input),
+            { "rpc.aggregate": "computer-use-preview" },
+          ),
+        [WS_METHODS.computerUsePreviewHostConnect]: (input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.computerUsePreviewHostConnect,
+            computerUsePreviewBroker.connectHost(computerUsePreviewCaller, input),
+            { "rpc.aggregate": "computer-use-preview" },
+          ),
+        [WS_METHODS.computerUsePreviewHostSignal]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.computerUsePreviewHostSignal,
+            computerUsePreviewBroker.hostSignal(computerUsePreviewCaller, input),
+            { "rpc.aggregate": "computer-use-preview" },
+          ),
         [WS_METHODS.remotePreviewOpen]: (input) =>
           observeRpcStreamEffect(
             WS_METHODS.remotePreviewOpen,
@@ -3299,8 +3338,13 @@ const makeWsRpcLayer = (
         [WS_METHODS.remotePreviewIssueViewerUrl]: (input) =>
           observeRpcEffect(
             WS_METHODS.remotePreviewIssueViewerUrl,
-            issueRemotePreviewViewerUrlFromInput(input, currentSessionId),
+            Effect.gen(function* () {
+              if (isComputerUseViewerSubject(currentSession.subject))
+                return yield* authorizationError(AuthComputerUseViewScope);
+              return yield* issueRemotePreviewViewerUrlFromInput(input, currentSessionId);
+            }),
             { "rpc.aggregate": "remote-preview" },
+            "source" in input ? AuthComputerUseViewScope : undefined,
           ),
         [WS_METHODS.remotePreviewHostConnect]: (input) =>
           observeRpcStreamEffect(
@@ -3539,6 +3583,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const remotePreviewSessionBroker = yield* RemotePreviewSessionBroker.RemotePreviewSessionBroker;
+    const computerUsePreviewBroker = yield* ComputerUsePreviewBroker;
     const baseServerSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const config = yield* ServerConfig.ServerConfig;
     const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
@@ -3601,6 +3646,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               clientAnalyticsProps,
               previewAutomationBroker,
               remotePreviewSessionBroker,
+              computerUsePreviewBroker,
             ).pipe(
               Layer.provide(ProjectKnowledgeStore.layer),
               Layer.provide(SkillImportServiceModule.layer),

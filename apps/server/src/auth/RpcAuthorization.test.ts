@@ -1,4 +1,6 @@
 import {
+  AuthComputerUseViewScope,
+  AuthStandardClientScopes,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewControlScope,
@@ -13,6 +15,15 @@ import { describe, expect, it } from "@effect/vitest";
 import { RPC_REQUIRED_SCOPES, requiredScopeForRpcMethod } from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it("keeps native capture permission separate from ordinary browser grants", () => {
+    for (const method of [
+      WS_METHODS.computerUsePreviewWatch,
+      WS_METHODS.computerUsePreviewOpen,
+      WS_METHODS.computerUsePreviewSignal,
+    ])
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthComputerUseViewScope);
+    expect([...AuthStandardClientScopes]).not.toContain(AuthComputerUseViewScope);
+  });
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
   });

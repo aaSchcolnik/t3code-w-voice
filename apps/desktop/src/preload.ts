@@ -32,6 +32,7 @@ function isSnapShotEvent(value: unknown): value is DesktopSnapShotEvent {
     (id === undefined || typeof id === "string")
   );
 }
+import * as CaptureChannels from "./computerUse/channels.ts";
 
 exposeClerkBridge({ passkeys: true });
 
@@ -87,6 +88,11 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
 }
 
 contextBridge.exposeInMainWorld("desktopBridge", {
+  computerUseCapture: {
+    getCapability: () => ipcRenderer.invoke(CaptureChannels.CAPTURE_CAPABILITY),
+    start: (input) => ipcRenderer.invoke(CaptureChannels.CAPTURE_START, input),
+    stop: (captureId) => ipcRenderer.invoke(CaptureChannels.CAPTURE_STOP, captureId),
+  },
   getAppBranding: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_APP_BRANDING_CHANNEL);
     if (typeof result !== "object" || result === null) {

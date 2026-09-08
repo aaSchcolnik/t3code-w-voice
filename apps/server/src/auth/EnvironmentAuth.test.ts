@@ -274,6 +274,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
       );
 
       expect(verified.scopes).toEqual([
+        "computer-use:view",
         "orchestration:read",
         "orchestration:operate",
         "terminal:operate",

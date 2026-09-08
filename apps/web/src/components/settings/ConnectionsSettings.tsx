@@ -18,6 +18,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewViewScope,
+  AuthComputerUseViewScope,
   AuthPreviewControlScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
@@ -207,6 +208,12 @@ const PAIRING_SCOPE_OPTIONS: ReadonlyArray<{
     scope: AuthPreviewViewScope,
     title: "View browser previews",
     description: "Watch browser tabs streamed from the desktop app.",
+  },
+  {
+    scope: AuthComputerUseViewScope,
+    title: "View computer-use previews",
+    description:
+      "Watch native apps used by agents after the host allows preview sharing. Viewing only, without remote input.",
   },
   {
     scope: AuthPreviewControlScope,

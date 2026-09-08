@@ -1,3 +1,4 @@
+import * as ComputerUse from "./computerUsePreview.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
@@ -407,6 +408,11 @@ export const WS_METHODS = {
   previewAutomationConnect: "previewAutomation.connect",
   previewAutomationRespond: "previewAutomation.respond",
   previewAutomationFocusHost: "previewAutomation.focusHost",
+  computerUsePreviewWatch: "computerUsePreview.watch",
+  computerUsePreviewOpen: "computerUsePreview.open",
+  computerUsePreviewSignal: "computerUsePreview.signal",
+  computerUsePreviewHostConnect: "computerUsePreview.hostConnect",
+  computerUsePreviewHostSignal: "computerUsePreview.hostSignal",
   remotePreviewOpen: "remotePreview.open",
   remotePreviewSignal: "remotePreview.signal",
   remotePreviewRequestControl: "remotePreview.requestControl",
@@ -1352,6 +1358,32 @@ const WsPreviewAutomationFocusHostRpc = Rpc.make(WS_METHODS.previewAutomationFoc
   error: EnvironmentAuthorizationError,
 });
 
+const WsComputerUsePreviewWatchRpc = Rpc.make(WS_METHODS.computerUsePreviewWatch, {
+  payload: ComputerUse.ComputerUseWatchInput,
+  error: Schema.Union([ComputerUse.ComputerUsePreviewError, EnvironmentAuthorizationError]),
+  success: ComputerUse.ComputerUseSessionEvent,
+  stream: true,
+});
+const WsComputerUsePreviewOpenRpc = Rpc.make(WS_METHODS.computerUsePreviewOpen, {
+  payload: ComputerUse.ComputerUseOpenInput,
+  error: Schema.Union([ComputerUse.ComputerUsePreviewError, EnvironmentAuthorizationError]),
+  success: ComputerUse.ComputerUseViewerEvent,
+  stream: true,
+});
+const WsComputerUsePreviewSignalRpc = Rpc.make(WS_METHODS.computerUsePreviewSignal, {
+  payload: ComputerUse.ComputerUseSignal,
+  error: Schema.Union([ComputerUse.ComputerUsePreviewError, EnvironmentAuthorizationError]),
+});
+const WsComputerUsePreviewHostConnectRpc = Rpc.make(WS_METHODS.computerUsePreviewHostConnect, {
+  payload: ComputerUse.ComputerUseHostConnectInput,
+  error: Schema.Union([ComputerUse.ComputerUsePreviewError, EnvironmentAuthorizationError]),
+  success: ComputerUse.ComputerUseHostEvent,
+  stream: true,
+});
+const WsComputerUsePreviewHostSignalRpc = Rpc.make(WS_METHODS.computerUsePreviewHostSignal, {
+  payload: ComputerUse.ComputerUseHostSignalInput,
+  error: Schema.Union([ComputerUse.ComputerUsePreviewError, EnvironmentAuthorizationError]),
+});
 const WsRemotePreviewOpenRpc = Rpc.make(WS_METHODS.remotePreviewOpen, {
   payload: RemotePreviewOpenInput,
   success: RemotePreviewViewerStreamEvent,
@@ -1780,6 +1812,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsPreviewAutomationConnectRpc,
   WsPreviewAutomationRespondRpc,
   WsPreviewAutomationFocusHostRpc,
+  WsComputerUsePreviewWatchRpc,
+  WsComputerUsePreviewOpenRpc,
+  WsComputerUsePreviewSignalRpc,
+  WsComputerUsePreviewHostConnectRpc,
+  WsComputerUsePreviewHostSignalRpc,
   WsRemotePreviewOpenRpc,
   WsRemotePreviewSignalRpc,
   WsRemotePreviewRequestControlRpc,

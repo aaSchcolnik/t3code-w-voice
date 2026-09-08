@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import { RemotePreviewDeviceClipboardRequest } from "@t3tools/contracts";
 import * as Clipboard from "expo-clipboard";
 import * as Schema from "effect/Schema";
@@ -18,6 +19,8 @@ import {
   isRemotePreviewViewerUrlAllowed,
   remotePreviewViewerOriginWhitelist,
   resolveRemotePreviewViewerUrl,
+  nativePreviewViewerInput,
+  type ThreadPreviewSelection,
 } from "./remotePreviewViewerUrl";
 
 const decodeClipboardRequest = Schema.decodeUnknownOption(RemotePreviewDeviceClipboardRequest);
@@ -26,11 +29,80 @@ const decodeClipboardRequest = Schema.decodeUnknownOption(RemotePreviewDeviceCli
  * Singleton WebView remote-preview surface for tablet layouts. Issues a signed
  * short-lived viewer URL over authenticated RPC, then loads only that origin.
  */
-export function ThreadBrowserInspector(props: {
+type ThreadBrowserInspectorProps = {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
+  readonly initialSource?: ThreadPreviewSelection;
+};
+export function ThreadBrowserInspector(props: ThreadBrowserInspectorProps) {
+  const sourceKey =
+    props.initialSource?.kind === "computer-use" ? props.initialSource.sessionId : "browser";
+  return (
+    <ThreadPreviewSourcePicker
+      key={`${props.environmentId}:${props.threadId}:${sourceKey}`}
+      {...props}
+    />
+  );
+}
+function ThreadPreviewSourcePicker(props: ThreadBrowserInspectorProps) {
+  const [source, setSource] = useState<ThreadPreviewSelection>(
+    props.initialSource ?? { kind: "browser" },
+  );
+  const watched = useAtomValue(
+    remotePreviewEnvironment.watchComputerUse({
+      environmentId: props.environmentId,
+      input: { threadId: props.threadId },
+    }),
+  );
+  const sessions = AsyncResult.isSuccess(watched) ? (watched.value.at(-1)?.sessions ?? []) : [];
+  return (
+    <View className="flex-1 bg-background">
+      {sessions.length > 0 || source.kind === "computer-use" ? (
+        <View className="flex-row flex-wrap gap-2 border-b border-border p-2">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: source.kind === "browser" }}
+            onPress={() => setSource({ kind: "browser" })}
+            className="rounded-lg border border-border px-3 py-2"
+          >
+            <Text className="text-xs text-foreground">Browser</Text>
+          </Pressable>
+          {sessions.map((session) => (
+            <Pressable
+              key={session.sessionId}
+              accessibilityRole="button"
+              accessibilityState={{
+                selected: source.kind === "computer-use" && source.sessionId === session.sessionId,
+              }}
+              onPress={() => setSource({ kind: "computer-use", sessionId: session.sessionId })}
+              className="rounded-lg border border-border px-3 py-2"
+            >
+              <Text className="text-xs text-foreground">
+                {session.target?.kind === "app"
+                  ? (session.target.appName ?? session.target.appId)
+                  : "Computer use"}
+                {session.state === "ended" ? " · Ended" : ""}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      <ThreadPreviewViewer
+        key={`${props.environmentId}:${props.threadId}:${source.kind === "computer-use" ? source.sessionId : "browser"}`}
+        environmentId={props.environmentId}
+        threadId={props.threadId}
+        source={source}
+      />
+    </View>
+  );
+}
+
+function ThreadPreviewViewer(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly source: ThreadPreviewSelection;
 }) {
-  const { environmentId, threadId } = props;
+  const { environmentId, threadId, source } = props;
   const webviewRef = useRef<WebView>(null);
   const prepared = usePreparedConnection(environmentId);
   const httpBaseUrl = Option.getOrNull(prepared)?.httpBaseUrl ?? null;
@@ -61,30 +133,36 @@ export function ThreadBrowserInspector(props: {
     setLoadError(null);
     setViewerUrl(null);
 
-    const listed = await listPreview({ environmentId, input: { threadId } });
-    let tabId: PreviewTabId | null = null;
-    if (AsyncResult.isSuccess(listed) && listed.value.sessions.length > 0) {
-      tabId = listed.value.sessions[0]?.tabId ?? null;
+    const nativeInput = nativePreviewViewerInput(environmentId, threadId, source);
+    let issued;
+    if (nativeInput) {
+      issued = await issueViewerUrl({ environmentId, input: nativeInput });
     } else {
-      const opened = await openPreview({ environmentId, input: { threadId } });
-      if (AsyncResult.isSuccess(opened)) {
-        tabId = opened.value.tabId;
+      const listed = await listPreview({ environmentId, input: { threadId } });
+      let tabId: PreviewTabId | null = null;
+      if (AsyncResult.isSuccess(listed) && listed.value.sessions.length > 0) {
+        tabId = listed.value.sessions[0]?.tabId ?? null;
       } else {
-        setLoadError("Could not open a preview tab on the desktop host.");
+        const opened = await openPreview({ environmentId, input: { threadId } });
+        if (AsyncResult.isSuccess(opened)) {
+          tabId = opened.value.tabId;
+        } else {
+          setLoadError("Could not open a preview tab on the desktop host.");
+          setBooting(false);
+          return;
+        }
+      }
+      if (!tabId) {
+        setLoadError("No preview tab is available.");
         setBooting(false);
         return;
       }
-    }
-    if (!tabId) {
-      setLoadError("No preview tab is available.");
-      setBooting(false);
-      return;
-    }
 
-    const issued = await issueViewerUrl({
-      environmentId,
-      input: { environmentId, threadId, tabId },
-    });
+      issued = await issueViewerUrl({
+        environmentId,
+        input: { environmentId, threadId, tabId },
+      });
+    }
     if (!AsyncResult.isSuccess(issued)) {
       setLoadError("Could not mint a signed viewer URL.");
       setBooting(false);
@@ -100,7 +178,7 @@ export function ThreadBrowserInspector(props: {
 
     setViewerUrl(absolute);
     setBooting(false);
-  }, [environmentId, httpBaseUrl, issueViewerUrl, listPreview, openPreview, threadId]);
+  }, [environmentId, httpBaseUrl, issueViewerUrl, listPreview, openPreview, threadId, source]);
 
   useEffect(() => {
     void boot();
@@ -114,7 +192,7 @@ export function ThreadBrowserInspector(props: {
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-background px-6">
         <Text className="text-center text-base font-t3-bold text-foreground">
-          Browser unavailable
+          Preview unavailable
         </Text>
         <Text className="text-center text-sm text-foreground-muted">
           {loadError ?? "The remote preview viewer could not be prepared."}
@@ -136,7 +214,8 @@ export function ThreadBrowserInspector(props: {
         ref={webviewRef}
         onShouldStartLoadWithRequest={(request) => request.url === viewerUrl}
         onMessage={(event) => {
-          if (!httpBaseUrl || event.nativeEvent.url !== viewerUrl) return;
+          if (source.kind === "computer-use" || !httpBaseUrl || event.nativeEvent.url !== viewerUrl)
+            return;
           let raw: unknown;
           try {
             raw = JSON.parse(event.nativeEvent.data);

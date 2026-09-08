@@ -95,6 +95,33 @@ Collapsed activity groups are summarized by source, such as `Used Chrome integra
 showing the underlying tool name. Website favicons and native app icons keep their original colors;
 integrations that provide separate light and dark logos use the logo for the current appearance.
 
+## Watch computer use
+
+With the unified Computer Use plugin enabled, T3 Code can show the application a Codex thread is
+using. On the host, allow the separate computer-use preview prompt and grant T3 Code Screen
+Recording access when macOS requests it. App-operation approval and preview sharing are separate.
+
+The floating preview follows successful app operations during a turn. Close it without stopping the
+agent, reopen it with **Computer use preview**, or expand it into the side panel. Settings → MCP
+controls automatic opening on the current device. Each thread keeps its own preview selection.
+
+To watch from another device, create a pairing link in Settings → Connections with
+**Computer-use preview** selected, then pair that device with the same environment. Existing
+browser-preview permission alone does not permit native viewing. Remote playback is video only. A remote viewer can keep watching when
+the host's floating preview is closed. Use **Reconnect preview** after a connection interruption, or
+**Resume preview** if the browser blocks playback.
+
+macOS captures the selected application's window. Linux requires the unified Computer Use runtime
+and consent to share a selected display; it does not follow individual app windows. On
+Omarchy/Hyprland, run T3 Code in the graphical session with PipeWire, WirePlumber, and
+xdg-desktop-portal-hyprland running, then select a display in the system screen-sharing picker.
+Canceling the picker leaves sharing off. The **Test Computer Use** app-access diagnostic checks
+macOS only and does not verify the Linux preview path.
+
+The floating preview fits the recorded window's proportions. Drag its corner to keep a custom size;
+close and reopen it to return to automatic sizing. Omarchy/Hyprland capture and physical iPad
+playback have not yet been verified. Preview sharing does not unlock the host or prevent it from sleeping.
+
 ## Approve access to other apps
 
 When a Codex tool needs access to an app such as Safari, T3 Code shows the app name and asks for

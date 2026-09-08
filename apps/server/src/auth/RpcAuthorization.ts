@@ -1,5 +1,6 @@
 import {
   AuthAccessReadScope,
+  AuthComputerUseViewScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthPreviewControlScope,
@@ -186,6 +187,11 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.previewAutomationConnect]: AuthOrchestrationOperateScope,
   [WS_METHODS.previewAutomationRespond]: AuthOrchestrationOperateScope,
   [WS_METHODS.previewAutomationFocusHost]: AuthOrchestrationOperateScope,
+  [WS_METHODS.computerUsePreviewWatch]: AuthComputerUseViewScope,
+  [WS_METHODS.computerUsePreviewOpen]: AuthComputerUseViewScope,
+  [WS_METHODS.computerUsePreviewSignal]: AuthComputerUseViewScope,
+  [WS_METHODS.computerUsePreviewHostConnect]: AuthOrchestrationOperateScope,
+  [WS_METHODS.computerUsePreviewHostSignal]: AuthOrchestrationOperateScope,
   [WS_METHODS.remotePreviewOpen]: AuthPreviewViewScope,
   [WS_METHODS.remotePreviewSignal]: AuthPreviewViewScope,
   [WS_METHODS.remotePreviewRequestControl]: AuthPreviewControlScope,

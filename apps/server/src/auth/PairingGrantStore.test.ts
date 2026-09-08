@@ -150,6 +150,7 @@ it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
 
       expect(first.method).toBe("desktop-bootstrap");
       expect(first.scopes).toEqual([
+        "computer-use:view",
         "orchestration:read",
         "orchestration:operate",
         "terminal:operate",
