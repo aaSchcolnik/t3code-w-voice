@@ -77,6 +77,7 @@ export default defineConfig({
       sourcemap: true,
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
+      dts: false,
       entry: ["src/preload.ts"],
       deps: {
         // Sandboxed Electron preloads cannot reliably resolve package imports
