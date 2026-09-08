@@ -729,7 +729,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         const threadId = ThreadId.make("thread-fork-turn-context");
         const now = "2026-09-08T00:00:00.000Z";
         const systemEvent = { kind: "subagents.settled" as const, runs: [] };
-        const encodeFixtureJson = Schema.encodeEffect(Schema.UnknownFromJsonString);
+        const encodeFixtureJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
         yield* sql`
         INSERT INTO projection_thread_messages (
           message_id, thread_id, role, text, system_event_json, is_streaming, created_at, updated_at
