@@ -576,6 +576,7 @@ export const isPreviewEditingShortcut = (
   input: Electron.Input,
   platform: NodeJS.Platform,
 ): boolean => {
+  if (input.isComposing) return false;
   const isMac = platform === "darwin";
   if (isMac ? !input.meta || input.control : !input.control || input.meta) return false;
 

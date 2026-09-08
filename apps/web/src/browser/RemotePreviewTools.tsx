@@ -28,7 +28,11 @@ import { RemoteStreamStats } from "~/components/preview/PreviewMoreMenu";
 
 import { BrowserDeviceToolbar } from "./BrowserDeviceToolbar";
 import type { RemotePreviewViewerHandle } from "./remotePreviewViewer";
-import { copyRemoteSelection, pasteDeviceClipboard } from "./remotePreviewClipboard";
+import {
+  copyRemoteSelection,
+  listenForRemotePreviewClipboard,
+  pasteDeviceClipboard,
+} from "./remotePreviewClipboard";
 
 export function RemotePreviewClipboard({
   viewer,
@@ -42,43 +46,15 @@ export function RemotePreviewClipboard({
   const copy = useCallback(() => {
     void copyRemoteSelection(viewer.readSelection).catch(() => undefined);
   }, [viewer]);
-  const paste = useCallback(() => {
-    void pasteDeviceClipboard((text) => viewer.sendControl({ type: "insertText", text })).catch(
-      () => undefined,
-    );
-  }, [viewer]);
   useEffect(() => {
     const root = containerRef.current;
     if (!root) return;
-    const isRemoteInput = (target: EventTarget | null) =>
-      target instanceof HTMLElement && target.dataset.remoteInput !== undefined;
-    const onPaste = (event: ClipboardEvent) => {
-      if (!enabled || !isRemoteInput(event.target)) return;
-      const text = event.clipboardData?.getData("text/plain");
-      if (text === undefined) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (text) viewer.sendControl({ type: "insertText", text });
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (!enabled || !isRemoteInput(event.target) || !(event.metaKey || event.ctrlKey)) return;
-      if (!["c", "v"].includes(event.key.toLowerCase())) return;
-      event.stopPropagation();
-      event.preventDefault();
-      if (event.type === "keydown" && !event.repeat) {
-        if (event.key.toLowerCase() === "c") copy();
-        else paste();
-      }
-    };
-    root.addEventListener("paste", onPaste, true);
-    root.addEventListener("keydown", onKey, true);
-    root.addEventListener("keyup", onKey, true);
-    return () => {
-      root.removeEventListener("paste", onPaste, true);
-      root.removeEventListener("keydown", onKey, true);
-      root.removeEventListener("keyup", onKey, true);
-    };
-  }, [containerRef, copy, enabled, paste, viewer]);
+    return listenForRemotePreviewClipboard(root, {
+      canSendInput: () => enabled,
+      copy,
+      paste: (text) => viewer.sendControl({ type: "insertText", text }),
+    });
+  }, [containerRef, copy, enabled, viewer]);
 
   return null;
 }

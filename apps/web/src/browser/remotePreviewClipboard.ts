@@ -36,6 +36,52 @@ function nativeClipboard(action: "read" | "write", text?: string): Promise<strin
 
 const decodeClipboardResult = Schema.decodeUnknownOption(RemotePreviewDeviceClipboardResult);
 
+/** Forward device paste events without requiring a separate clipboard read permission. */
+export function listenForRemotePreviewClipboard(
+  root: HTMLElement,
+  options: {
+    readonly canSendInput: () => boolean;
+    readonly paste: (text: string) => void;
+    readonly copy: () => void;
+  },
+): () => void {
+  const isRemoteInput = (target: EventTarget | null) =>
+    target instanceof HTMLElement && target.dataset.remoteInput !== undefined;
+  const onPaste = (event: ClipboardEvent) => {
+    if (!options.canSendInput() || !isRemoteInput(event.target)) return;
+    const text = event.clipboardData?.getData("text/plain");
+    if (text === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (text) options.paste(text);
+  };
+  const onKey = (event: KeyboardEvent) => {
+    if (!options.canSendInput() || !isRemoteInput(event.target)) return;
+    const key = event.key.toLowerCase();
+    const paste =
+      ((event.metaKey || event.ctrlKey) && !event.altKey && key === "v") ||
+      (event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && key === "insert");
+    if (paste) {
+      // Let the device emit paste, including on HTTP and in iOS WebViews.
+      // Keep the chord out of the guest, which has a different clipboard.
+      event.stopPropagation();
+      return;
+    }
+    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || key !== "c") return;
+    event.stopPropagation();
+    event.preventDefault();
+    if (event.type === "keydown" && !event.repeat) options.copy();
+  };
+  root.addEventListener("paste", onPaste, { capture: true });
+  root.addEventListener("keydown", onKey, { capture: true });
+  root.addEventListener("keyup", onKey, { capture: true });
+  return () => {
+    root.removeEventListener("paste", onPaste, { capture: true });
+    root.removeEventListener("keydown", onKey, { capture: true });
+    root.removeEventListener("keyup", onKey, { capture: true });
+  };
+}
+
 /** Begin the write during the gesture; Safari accepts a promised clipboard item. */
 export async function copyRemoteSelection(read: () => Promise<string>): Promise<void> {
   if (nativeBridge()) {

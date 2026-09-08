@@ -1,7 +1,112 @@
 import { afterEach, expect, it, vi } from "vite-plus/test";
-import { copyRemoteSelection, pasteDeviceClipboard } from "./remotePreviewClipboard";
+import {
+  copyRemoteSelection,
+  listenForRemotePreviewClipboard,
+  pasteDeviceClipboard,
+} from "./remotePreviewClipboard";
 
 afterEach(() => vi.unstubAllGlobals());
+
+class RemoteInput extends EventTarget {
+  dataset: Record<string, string> = { remoteInput: "" };
+}
+
+function clipboardRig() {
+  vi.stubGlobal("HTMLElement", RemoteInput);
+  vi.stubGlobal("navigator", {});
+  const root = new RemoteInput();
+  const copy = vi.fn();
+  const paste = vi.fn();
+  let enabled = true;
+  const remove = listenForRemotePreviewClipboard(root as unknown as HTMLElement, {
+    canSendInput: () => enabled,
+    copy,
+    paste,
+  });
+  const pasteEvent = (text = "from the iPad") =>
+    Object.assign(new Event("paste", { cancelable: true }), {
+      clipboardData: { getData: (type: string) => (type === "text/plain" ? text : "") },
+    });
+  return {
+    root,
+    copy,
+    paste,
+    pasteEvent,
+    remove,
+    disable: () => {
+      enabled = false;
+    },
+  };
+}
+
+it.each([
+  { key: "v", metaKey: true },
+  { key: "v", ctrlKey: true },
+  { key: "V", ctrlKey: true, shiftKey: true },
+  { key: "Insert", shiftKey: true },
+])("allows native paste for $key without async clipboard access", (chord) => {
+  const rig = clipboardRig();
+  for (const type of ["keydown", "keyup"]) {
+    const key = Object.assign(new Event(type, { cancelable: true }), chord);
+    const stopPropagation = vi.spyOn(key, "stopPropagation");
+    rig.root.dispatchEvent(key);
+    expect(key.defaultPrevented).toBe(false);
+    expect(stopPropagation).toHaveBeenCalledOnce();
+  }
+  expect(rig.paste).not.toHaveBeenCalled();
+  const event = rig.pasteEvent("clipboard without navigator.clipboard");
+  rig.root.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+  expect(rig.paste).toHaveBeenCalledExactlyOnceWith("clipboard without navigator.clipboard");
+  rig.remove();
+});
+
+it("handles an iPad native Paste action without a key event and detaches on cleanup", () => {
+  const rig = clipboardRig();
+  const event = rig.pasteEvent();
+  rig.root.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true);
+  expect(rig.paste).toHaveBeenCalledExactlyOnceWith("from the iPad");
+  rig.remove();
+  const afterCleanup = rig.pasteEvent();
+  rig.root.dispatchEvent(afterCleanup);
+  expect(afterCleanup.defaultPrevented).toBe(false);
+  expect(rig.paste).toHaveBeenCalledOnce();
+});
+
+it("leaves viewer chrome and non-controlling viewers alone", () => {
+  const rig = clipboardRig();
+  delete rig.root.dataset.remoteInput;
+  const chromePaste = rig.pasteEvent();
+  rig.root.dispatchEvent(chromePaste);
+  expect(chromePaste.defaultPrevented).toBe(false);
+  rig.root.dataset.remoteInput = "";
+  rig.disable();
+  const spectatorPaste = rig.pasteEvent();
+  rig.root.dispatchEvent(spectatorPaste);
+  expect(spectatorPaste.defaultPrevented).toBe(false);
+  expect(rig.paste).not.toHaveBeenCalled();
+  rig.remove();
+});
+
+it("keeps copy shortcuts on the device and ignores key repeats", () => {
+  const rig = clipboardRig();
+  for (const [type, repeat] of [
+    ["keydown", false],
+    ["keydown", true],
+    ["keyup", false],
+  ] as const) {
+    const event = Object.assign(new Event(type, { cancelable: true }), {
+      key: "c",
+      metaKey: true,
+      repeat,
+    });
+    rig.root.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+  }
+  expect(rig.copy).toHaveBeenCalledOnce();
+  rig.remove();
+});
 
 it("starts the Safari clipboard write before the remote selection arrives", async () => {
   vi.stubGlobal("window", {});
