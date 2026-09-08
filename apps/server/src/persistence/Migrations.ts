@@ -136,6 +136,8 @@ const migrationEntries = [
   [54, "ProjectionProjectIcon", Migration0054],
   [55, "ProjectionThreadBranchPullRequest", Migration0055],
   [56, "ProjectionThreadsActiveOrderKey", Migration0056],
+  // Early fork installs used 47 for the terminal index, so replay the idempotent auth repair.
+  [57, "RepairAuthSessionClientConnection", Migration0047],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
