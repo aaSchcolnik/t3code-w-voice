@@ -1,5 +1,692 @@
 # effect
 
+## 4.0.0-rc.112
+
+### Minor Changes
+
+- [#7390](https://github.com/Effect-TS/effect/pull/7390) [`a5f78d3`](https://github.com/Effect-TS/effect/commit/a5f78d3fcbaa792d49e80d103ab438e0b50812fd) Thanks @tim-smart! - Make RPC serialization schema-aware.
+  
+  Add `codecFor` to RPC serialization and client/server protocols so RPC and cluster
+  network payloads use the transport's schema codec. Framing, cluster storage, and
+  existing built-in wire formats remain unchanged.
+
+### Patch Changes
+
+- [#7411](https://github.com/Effect-TS/effect/pull/7411) [`20cb4f2`](https://github.com/Effect-TS/effect/commit/20cb4f260e45d37fa417c292c57be015314efe16) Thanks @altendky! - Add `RcMap.getOption` and `LayerMap.contextEffectOption` for atomically retaining
+  entries only when they are already cached.
+
+- [#7437](https://github.com/Effect-TS/effect/pull/7437) [`44675cb`](https://github.com/Effect-TS/effect/commit/44675cbce3dabfb85c68a3703b5de525768336fb) Thanks @wmaurer! - Add an optional `description` to `AiError.AuthenticationError`, rendered after the kind-based suggestion, and pass the provider's own error text through it on HTTP 401 and 403, so authentication failures report what actually went wrong instead of only a category.
+
+- [#7393](https://github.com/Effect-TS/effect/pull/7393) [`b6bf5e1`](https://github.com/Effect-TS/effect/commit/b6bf5e14492643076454131148f97cde24ad5306) Thanks @wmaurer! - Fix `Prompt.autoComplete` swallowing `j` and `k` while typing a filter query.
+
+- [#7401](https://github.com/Effect-TS/effect/pull/7401) [`0b9f780`](https://github.com/Effect-TS/effect/commit/0b9f780ff28b71042241791a9e8bcb5b631be2bd) Thanks @gjermundgaraba! - Retry transient EventLog remote write failures so pending local entries are synchronized after recovery.
+
+- [#7384](https://github.com/Effect-TS/effect/pull/7384) [`150e92c`](https://github.com/Effect-TS/effect/commit/150e92c4169c245e701da02575eef0b69c3ecd64) Thanks @tim-smart! - Improve synchronous Schema decode and encode performance by preserving completed parser exits and using a direct loop for common struct parsers.
+
+- [#7386](https://github.com/Effect-TS/effect/pull/7386) [`6740db2`](https://github.com/Effect-TS/effect/commit/6740db247ed20cb85da43c9f48ade8fecfd8c1ae) Thanks @tim-smart! - Add `Schema.TaggedUnion.matchOrElse` for partial case matching with a typed fallback.
+
+- [#7389](https://github.com/Effect-TS/effect/pull/7389) [`d57bba1`](https://github.com/Effect-TS/effect/commit/d57bba1486fa60971b6e0bf7459a329cfd5acdc4) Thanks @tim-smart! - Improve `SchemaError` construction performance by skipping stack frame capture.
+
+- [#7402](https://github.com/Effect-TS/effect/pull/7402) [`be75d5e`](https://github.com/Effect-TS/effect/commit/be75d5ea6e516c25e3affec25806d31c2b203bc4) Thanks @tim-smart! - Improve Pool acquisition and release performance. Pool now tracks usage
+  incrementally, stores available items in an intrusive FIFO, and skips work for
+  fixed and empty pools. This changes the public `Pool.State` and `Pool.PoolItem`
+  interfaces.
+
+- [#7402](https://github.com/Effect-TS/effect/pull/7402) [`be75d5e`](https://github.com/Effect-TS/effect/commit/be75d5ea6e516c25e3affec25806d31c2b203bc4) Thanks @tim-smart! - Add `Pool.use`, which borrows an item while an effect runs and returns it on any
+  exit. Unlike `Effect.scoped(Pool.get(pool))`, it does not require a `Scope`.
+
+- [#7402](https://github.com/Effect-TS/effect/pull/7402) [`be75d5e`](https://github.com/Effect-TS/effect/commit/be75d5ea6e516c25e3affec25806d31c2b203bc4) Thanks @tim-smart! - Reduce scoped resource acquisition allocations by storing the first Scope
+  finalizer inline and allocating a Map only when a second is added. This changes
+  the public `Scope.State.Open` interface.
+
+- [#7424](https://github.com/Effect-TS/effect/pull/7424) [`02a5146`](https://github.com/Effect-TS/effect/commit/02a5146d6933c7f6052553550bce5658225e4100) Thanks @tim-smart! - Skip remote event journal write callbacks when there are no uncommitted entries and return an `Option` indicating
+  whether the callback ran.
+
+- [#7312](https://github.com/Effect-TS/effect/pull/7312) [`15272a6`](https://github.com/Effect-TS/effect/commit/15272a66adf02501e7747761e2a3c41bff67bb46) Thanks @godu! - Fix shell completion for choice values containing quotes, spaces, word-break characters, Unicode, and shell metacharacters.
+  
+  Bash now quotes candidates for readline, keeps choice values intact when reconstructing words, and supports Bash 3.2 without associative arrays. Fish and Zsh escape choices across both parsing rounds, and Fish hides value-taking flags after use without suppressing their value completions.
+
+- [#7395](https://github.com/Effect-TS/effect/pull/7395) [`436f10d`](https://github.com/Effect-TS/effect/commit/436f10d1efccec308426532ff3f88df9a96434f3) Thanks @wmaurer! - Fix `Prompt.file` swallowing `j` and `k` while typing a filter query.
+
+- [#7406](https://github.com/Effect-TS/effect/pull/7406) [`058fb15`](https://github.com/Effect-TS/effect/commit/058fb15647fa01ad771277bd368783fcf5f262e8) Thanks @gcanti! - Preserve finite string and unique symbol key unions in the return types of `Array.groupBy` and `Iterable.groupBy`.
+  
+  Previously, grouping widened finite keys to `string` or `symbol`, which lost known-key autocomplete and allowed access to keys that the selector could never produce. The new `Record.ReadonlyRecord.GroupByResult` keeps finite keys and marks their properties optional because any group may be absent at runtime, while open `string` and `symbol` selectors retain their existing record index signatures.
+
+- [#7415](https://github.com/Effect-TS/effect/pull/7415) [`4d89bb8`](https://github.com/Effect-TS/effect/commit/4d89bb8ffb4cf567a1d11072246b6161ce638712) Thanks @gcanti! - Reject unsupported JSON Schema references instead of resolving them by their final path segment, closes [#7409](https://github.com/Effect-TS/effect/issues/7409).
+
+- [#7420](https://github.com/Effect-TS/effect/pull/7420) [`480fb15`](https://github.com/Effect-TS/effect/commit/480fb156590785cf98f67bdec4fc282a608e2d87) Thanks @gcanti! - Make JSON Schema dialect conversions preserve custom keywords, translate conditionals, contains, dependencies, identifiers, and tuples where representable, relocate local references after structural changes, and throw instead of silently changing unsupported constraints.
+
+- [#7417](https://github.com/Effect-TS/effect/pull/7417) [`f77ec19`](https://github.com/Effect-TS/effect/commit/f77ec19cff1cbbeeae928e3bd0ece00a7d22bab8) Thanks @Makisuo! - Defer built-in OpenAPI response generation until the documentation route is first requested, retrying after generation defects.
+
+- [#7388](https://github.com/Effect-TS/effect/pull/7388) [`925b82a`](https://github.com/Effect-TS/effect/commit/925b82a81f59a4d459b488621030f24ba99d6a27) Thanks @ebramanti! - Fix MCP initialize rejected over the protocol version header
+  
+  `McpServer.layerHttp` validated the `MCP-Protocol-Version` header on every POST, including
+  the `initialize` request. That header reports the version negotiated by an earlier
+  `initialize`, so on a fresh connection a client can only send its own default. Whenever
+  that default was not among the server's registered protocols the `initialize` returned
+  `400` and never reached version negotiation, even when the body offered a version the
+  server supports.
+  
+  The header check now applies only to requests after initialization, where the
+  specification requires it. An `initialize` negotiates from the version offered in its
+  body, through the protocol registry, and reports the selected version in the response.
+
+- [#7403](https://github.com/Effect-TS/effect/pull/7403) [`7455246`](https://github.com/Effect-TS/effect/commit/7455246f352385f5cbbdd8299555265ee289490e) Thanks @hsyntax! - Add support for explicit cache breakpoints on the OpenAI responses API for GPT-5.6-or-later.
+
+- [#7442](https://github.com/Effect-TS/effect/pull/7442) [`118124d`](https://github.com/Effect-TS/effect/commit/118124d913d0a02ac5c1f7799a39bd90031769d9) Thanks @tim-smart! - Redact password prompt values from CLI wizard command output.
+
+- [#7366](https://github.com/Effect-TS/effect/pull/7366) [`0dd7825`](https://github.com/Effect-TS/effect/commit/0dd7825e4da4d3a00fa9bd410a1d55f3d4874d07) Thanks @tim-smart! - Add `SchemaBinary`, a compact schema-derived codec with streaming, optional fingerprints and dictionaries, and RPC support.
+
+- [#7404](https://github.com/Effect-TS/effect/pull/7404) [`b722eca`](https://github.com/Effect-TS/effect/commit/b722eca6d283a88970ad0efba0b4e921915eca78) Thanks @gcanti! - Add a public `StandardSchema` module containing the vendored Standard Schema V1 specification and remove the direct dependency on `@standard-schema/spec`.
+
+- [#7436](https://github.com/Effect-TS/effect/pull/7436) [`811d579`](https://github.com/Effect-TS/effect/commit/811d579c432856a9e3fc05b517fd8e924cbf991a) Thanks @gcanti! - Fix JSON Schema imports:
+  
+  - Type-specific keywords no longer imply a type. For example, `minLength` validates strings without rejecting
+    non-string values.
+  - Constraints next to `const`, `enum`, and `$ref` are now applied instead of being ignored.
+  - Disjoint and linear union intersections are imported without a Cartesian expansion. Other overlapping union
+    intersections fail with an explicit error.
+  - References to definitions without unions no longer make otherwise linear intersections fail.
+  - Imported `oneOf` schemas remain `oneOf` when exported again.
+  - `minItems` is preserved when `prefixItems` does not fully enforce it.
+
+- [#7382](https://github.com/Effect-TS/effect/pull/7382) [`043b587`](https://github.com/Effect-TS/effect/commit/043b587e6e93f6624bf974bcd7ed976eaa17f0e1) Thanks @tim-smart! - Replace per-prompt prefix options with a context-based theme for CLI prompt symbols and colors.
+
+- [#7373](https://github.com/Effect-TS/effect/pull/7373) [`8583727`](https://github.com/Effect-TS/effect/commit/85837274fa929a921985464585513a68c261e365) Thanks @ChubbyDuck! - Drop unreachable concurrency guard in iteratorEagerImpl
+
+- [#7429](https://github.com/Effect-TS/effect/pull/7429) [`d9d2cfc`](https://github.com/Effect-TS/effect/commit/d9d2cfcb732754001b7323cf8afaccc48539bb74) Thanks @gcanti! - Reject unsupported JSON Schema validation keywords and object or array `const` / `enum` values during import instead of
+  silently weakening validation.
+
+- [#7428](https://github.com/Effect-TS/effect/pull/7428) [`5c4b7a0`](https://github.com/Effect-TS/effect/commit/5c4b7a0b17931cd1538c6595a54b21ffe9c1e906) Thanks @ebramanti! - Return workflow execution IDs from generated RPC and HTTP discard endpoints.
+
+## 4.0.0-rc.111
+
+### Patch Changes
+
+- [#7311](https://github.com/Effect-TS/effect/pull/7311) [`0ce3b00`](https://github.com/Effect-TS/effect/commit/0ce3b007531563ce33f94c6a057492d379cfd9e8) Thanks @fubhy! - Reject graph shortest-path calculations that overflow or underflow the finite number range.
+
+- [#7352](https://github.com/Effect-TS/effect/pull/7352) [`d846331`](https://github.com/Effect-TS/effect/commit/d84633171b4333e87a05f8d74c02c95d83d1b50d) Thanks @nikhilsnayak! - Preserve the `Context.mapUnsafe` accessor when code is compiled with loose object spread transforms.
+
+- [#7300](https://github.com/Effect-TS/effect/pull/7300) [`f93616f`](https://github.com/Effect-TS/effect/commit/f93616f31f42345af844b8396fb19259556ae236) Thanks @fubhy! - Fix graph index exhaustion, A* path consistency, snapshot validation, Mermaid line endings, and topological initials.
+
+- [#7336](https://github.com/Effect-TS/effect/pull/7336) [`16bf1ef`](https://github.com/Effect-TS/effect/commit/16bf1efdf41ba1d000b8588a8cc052a394856ba4) Thanks @gcanti! - Compact JSON Schema check constraints when they can be safely merged without keyword collisions.
+
+- [#7360](https://github.com/Effect-TS/effect/pull/7360) [`d568968`](https://github.com/Effect-TS/effect/commit/d5689682e963f43157571cd71d4b422247ae09b9) Thanks @gcanti! - Add configurable schema representation reference policies and propagate them through JSON Schema and OpenAPI generation. By default, only schemas with resolved identifiers become references. Closes [#7357](https://github.com/Effect-TS/effect/issues/7357).
+
+- [#7304](https://github.com/Effect-TS/effect/pull/7304) [`bc06292`](https://github.com/Effect-TS/effect/commit/bc062920ac47f956786d12c6d0bacb9468fa66e2) Thanks @fubhy! - Add graph snapshots, low-link connectivity analysis, bipartite matching, maximum flow, and minimum cut APIs.
+
+- [#7364](https://github.com/Effect-TS/effect/pull/7364) [`e03ea90`](https://github.com/Effect-TS/effect/commit/e03ea907720b58d19d99929695df159c42fff101) Thanks @kitlangton! - Fix `Deferred` completion skipping waiters when an earlier waiter dies during resume. Completing a `Deferred` with an interrupt cause kills a suspended waiter synchronously inside its resume; the dying waiter's `await` cleanup spliced the shared `resumes` array mid-iteration, so the next waiter was never resumed and hung forever. Completion now clears `resumes` before resuming waiters.
+
+- [#7347](https://github.com/Effect-TS/effect/pull/7347) [`9b10fc8`](https://github.com/Effect-TS/effect/commit/9b10fc85dde7866fb60e8142a93a6ed6a184537c) Thanks @tim-smart! - Shut down the internal effects queue when ordered concurrent channel mapping closes.
+
+- [#7335](https://github.com/Effect-TS/effect/pull/7335) [`770c6d0`](https://github.com/Effect-TS/effect/commit/770c6d0f0ddcab7dbdde9fe701aded08deaee3fd) Thanks @tim-smart! - Fix `Effect.fn` binding the final transform as the generator body when using the `{ self }` overload.
+
+- [#7344](https://github.com/Effect-TS/effect/pull/7344) [`7425bcb`](https://github.com/Effect-TS/effect/commit/7425bcb7f74bdccc1941883bc7f9472fbe6ae8b4) Thanks @tim-smart! - Ensure fiber observer cancellation during exit does not skip remaining observers.
+
+- [#7301](https://github.com/Effect-TS/effect/pull/7301) [`563815a`](https://github.com/Effect-TS/effect/commit/563815a250e10a02e2a719c7d9b159478b0da933) Thanks @fubhy! - Preserve depth-first traversal order with finite radii and validate A* heuristics for trivial paths.
+
+- [#7350](https://github.com/Effect-TS/effect/pull/7350) [`1e83ca1`](https://github.com/Effect-TS/effect/commit/1e83ca110d5cb74641bae148a08e7eb6b3c2e2ed) Thanks @tim-smart! - Align in-memory workflow interrupt finalization with the cluster workflow engine.
+
+- [#7316](https://github.com/Effect-TS/effect/pull/7316) [`550a41a`](https://github.com/Effect-TS/effect/commit/550a41a2547ce0dd5f085f1637a6f8a5794acba7) Thanks @tim-smart! - Update dependencies across the Effect workspace.
+
+- [#7306](https://github.com/Effect-TS/effect/pull/7306) [`45d79c7`](https://github.com/Effect-TS/effect/commit/45d79c7cbd9c56c643361c6e6d1689f1aa62ae32) Thanks @fubhy! - Add bulk node and edge removal operations, and disallow graph mutations from callbacks that traverse or transform the same graph.
+
+- [#7317](https://github.com/Effect-TS/effect/pull/7317) [`aac8584`](https://github.com/Effect-TS/effect/commit/aac8584fd997f3ce3341aeb077b816219832de58) Thanks @tim-smart! - Fix `Match.value` terminal combinators failing to typecheck when the input
+  contains a generic type parameter.
+  
+  The fifth type argument of `Matcher` for value matchers is now `ValueFlavor`,
+  and `ValueMatcher` has a seventh flavor argument; update hand-written
+  annotations accordingly.
+
+- [#7361](https://github.com/Effect-TS/effect/pull/7361) [`7f87022`](https://github.com/Effect-TS/effect/commit/7f870225bb10a7ee7cb54b4835cb3bf64c0cacd8) Thanks @tim-smart! - Merge effect and finalizer failures during cleanup, preserving other failures alongside `Cause.Done`.
+
+- [#7326](https://github.com/Effect-TS/effect/pull/7326) [`425457c`](https://github.com/Effect-TS/effect/commit/425457c1e9eec7c176df130f7ec6ad3d616c086e) Thanks @tim-smart! - Emit mixed struct and record schema types as intersections, preventing optional
+  properties in open OpenAPI objects from conflicting with their index signature.
+
+- [#7324](https://github.com/Effect-TS/effect/pull/7324) [`008c423`](https://github.com/Effect-TS/effect/commit/008c423e413fe311085c4bfc07c19b9c70529dfa) Thanks @tim-smart! - Allow path-level common parameters in OpenAPI generator input types.
+
+- [#7359](https://github.com/Effect-TS/effect/pull/7359) [`4f6ae04`](https://github.com/Effect-TS/effect/commit/4f6ae041a2886c27e941c5d9e4916aa2a32e0a1c) Thanks @gcanti! - Add dual standalone functions for reading and updating values through optics, closes [#7299](https://github.com/Effect-TS/effect/issues/7299).
+
+- [#7250](https://github.com/Effect-TS/effect/pull/7250) [`b6b63e1`](https://github.com/Effect-TS/effect/commit/b6b63e151595b5599ad2d65069ab6d298cfd7be7) Thanks @xianjianlf2! - Preserve `JSON.rawJSON` values when cloning cached OpenAPI specs.
+
+- [#7351](https://github.com/Effect-TS/effect/pull/7351) [`92922ee`](https://github.com/Effect-TS/effect/commit/92922ee7de0a2d932121e37677f3e75ea38482f1) Thanks @tim-smart! - Preserve unsafe in-memory workflow interrupts across replay.
+
+- [#7328](https://github.com/Effect-TS/effect/pull/7328) [`859c02f`](https://github.com/Effect-TS/effect/commit/859c02fe9020b0f28f713aa85910a0cc2d002560) Thanks @fubhy! - Keep graph caches consistent during bulk removals and validate graph kinds at runtime.
+
+- [#7358](https://github.com/Effect-TS/effect/pull/7358) [`ffc8235`](https://github.com/Effect-TS/effect/commit/ffc823537a0925171cf41d0841643a0b26895a4c) Thanks @tim-smart! - Bound framed RPC server HTTP response streams to 16 items by default, with a configurable buffer size or an unbounded opt-out.
+
+- [#6324](https://github.com/Effect-TS/effect/pull/6324) [`a29eb70`](https://github.com/Effect-TS/effect/commit/a29eb702ffe3fc58bd28c4d7857298cd65d73668) Thanks @tim-smart! - Add scoped Redis pub/sub subscriptions that expose received messages through an Effect queue.
+
+- [#7354](https://github.com/Effect-TS/effect/pull/7354) [`0be2303`](https://github.com/Effect-TS/effect/commit/0be2303dd39f9f2f7d8f96a28e25c938cd914e1a) Thanks @tim-smart! - Add support for server-originated RPC requests and notifications. Buffered
+  JSON-RPC HTTP drops notifications until streaming responses are available.
+
+- [#7349](https://github.com/Effect-TS/effect/pull/7349) [`b44636f`](https://github.com/Effect-TS/effect/commit/b44636ff7233763fad060bc0f9de10512454a29b) Thanks @gcanti! - When canonical JSON derivation adds a transformation for a schema without a direct JSON representation, keep source checks and annotations on the source side. This prevents duplicate check execution and ensures generated JSON Schema documents describe only the encoded target, closes [#7192](https://github.com/Effect-TS/effect/issues/7192).
+
+- [#7337](https://github.com/Effect-TS/effect/pull/7337) [`b19ccc7`](https://github.com/Effect-TS/effect/commit/b19ccc7325469a5dea091349bda4ae2ec00ec865) Thanks @gcanti! - Add `Schema.JsonObject` for readonly string-keyed records containing JSON-compatible values. This provides a canonical,
+  reusable schema instead of requiring callers to repeatedly compose `Schema.Record(Schema.String, Schema.Json)`.
+
+- [#7330](https://github.com/Effect-TS/effect/pull/7330) [`ff98f0b`](https://github.com/Effect-TS/effect/commit/ff98f0b0e2beb331209e37e42095d8d6e8e0b6c2) Thanks @gcanti! - Preserve JSON Schema object keyword scopes when importing `allOf` intersections, including closed empty objects and required-only keys. Emit intersecting index signatures without weakening their constraints, and reject object scope intersections that cannot be represented faithfully.
+
+- [#7363](https://github.com/Effect-TS/effect/pull/7363) [`a47cbf1`](https://github.com/Effect-TS/effect/commit/a47cbf1feafd10e305c9753fa02a5f5f977d2c37) Thanks @tim-smart! - Add `Match.fn` for reusable matchers that select a value from multiple arguments.
+
+- [#7362](https://github.com/Effect-TS/effect/pull/7362) [`39b55f8`](https://github.com/Effect-TS/effect/commit/39b55f850aecbecf2e3b0c5f3ae2d1a77e6da949) Thanks @tim-smart! - Preserve encoded AI tool call parameters when automatic tool call resolution is disabled, and update
+  `Toolkit.handle` to accept the encoded parameter type it decodes at runtime.
+
+- [#7305](https://github.com/Effect-TS/effect/pull/7305) [`c6c49c9`](https://github.com/Effect-TS/effect/commit/c6c49c96990d009341341a53ed26beb140c267a9) Thanks @fubhy! - Fix mutable graph cache consistency and guard weighted pathfinding against inconsistent snapshots and numeric overflow.
+
+- [#7342](https://github.com/Effect-TS/effect/pull/7342) [`bf23ba7`](https://github.com/Effect-TS/effect/commit/bf23ba7033a4b426caf379bdcf84c58bb64d7010) Thanks @misterclayt0n! - Forward every worker-runner client disconnect to the RPC server, not just the first one.
+
+## 4.0.0-rc.110
+
+### Patch Changes
+
+- [#7234](https://github.com/Effect-TS/effect/pull/7234) [`6eebd0a`](https://github.com/Effect-TS/effect/commit/6eebd0a618308a91f95947bae6e0fb206ae3939d) Thanks @lloydrichards! - MCP servers can now use the 2025-11-25 protocol, including sampling with tools and both form- and URL-based elicitation.
+  
+  Enable it by adding `McpProtocol.v2025_11_25` to the server's `protocols` option.
+
+- [#7234](https://github.com/Effect-TS/effect/pull/7234) [`6eebd0a`](https://github.com/Effect-TS/effect/commit/6eebd0a618308a91f95947bae6e0fb206ae3939d) Thanks @lloydrichards! - MCP servers can now provide icons for server information, resources, resource templates, prompts, and tools using `McpSchema.Icon`.
+  
+  Each icon can specify its source URI, MIME type, supported sizes, and light or dark theme.
+
+- [#7291](https://github.com/Effect-TS/effect/pull/7291) [`d10ceb0`](https://github.com/Effect-TS/effect/commit/d10ceb06d56108c11100868f591d2b42ddff5e9f) Thanks @fubhy! - Include traversed edge indexes in graph shortest-path results.
+
+- [#7291](https://github.com/Effect-TS/effect/pull/7291) [`d10ceb0`](https://github.com/Effect-TS/effect/commit/d10ceb06d56108c11100868f591d2b42ddff5e9f) Thanks @fubhy! - Add deterministic, index-preserving `Graph.minimumSpanningForest`.
+
+- [#7291](https://github.com/Effect-TS/effect/pull/7291) [`d10ceb0`](https://github.com/Effect-TS/effect/commit/d10ceb06d56108c11100868f591d2b42ddff5e9f) Thanks @fubhy! - Add index-preserving transitive reduction for directed acyclic graphs.
+
+- [#7261](https://github.com/Effect-TS/effect/pull/7261) [`189b003`](https://github.com/Effect-TS/effect/commit/189b003a2367fa44dd4b8544aa62979f0345d179) Thanks @fubhy! - Add `Graph.Snapshot` and `Graph.fromSnapshot` for constructing immutable graphs with explicit node and edge indexes, and simplify `Graph.Edge` to a type-only structural interface.
+
+- [#7261](https://github.com/Effect-TS/effect/pull/7261) [`189b003`](https://github.com/Effect-TS/effect/commit/189b003a2367fa44dd4b8544aa62979f0345d179) Thanks @fubhy! - Add `Schema.Graph` for schema-based encoding and decoding of immutable directed and undirected graphs.
+
+- [#7267](https://github.com/Effect-TS/effect/pull/7267) [`0a127b8`](https://github.com/Effect-TS/effect/commit/0a127b8847fb213d46621a5018c069019414c00d) Thanks @tim-smart! - Allow customizing the prefix displayed by CLI prompts.
+
+- [#7272](https://github.com/Effect-TS/effect/pull/7272) [`e491deb`](https://github.com/Effect-TS/effect/commit/e491deb1cd1717bc442aaee96e5d7b4001710cc9) Thanks @fubhy! - Preserve scoped Graph mutation callback errors when the callback manually finalizes its mutable handle.
+
+- [#7266](https://github.com/Effect-TS/effect/pull/7266) [`f99c508`](https://github.com/Effect-TS/effect/commit/f99c508a09e9fccddb09edd16fa3393891c55d48) Thanks @tim-smart! - Fix SQL persisted queue delivery on SQLite builds without `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`.
+
+- [#7199](https://github.com/Effect-TS/effect/pull/7199) [`7e3f07c`](https://github.com/Effect-TS/effect/commit/7e3f07cf3e4b6a907840aface36ae5ee67ca8979) Thanks @rekram1-node! - Fix Zsh completions for CLI commands with both positional arguments and subcommands.
+
+- [#7274](https://github.com/Effect-TS/effect/pull/7274) [`a894fe1`](https://github.com/Effect-TS/effect/commit/a894fe1df8974077293d9c1b924a7f80fc7fe7f1) Thanks @fubhy! - Ignore removed allocator history when comparing and hashing immutable Graph values with the same active indexed structure.
+
+- [#7291](https://github.com/Effect-TS/effect/pull/7291) [`d10ceb0`](https://github.com/Effect-TS/effect/commit/d10ceb06d56108c11100868f591d2b42ddff5e9f) Thanks @fubhy! - Add `Graph.findCycle` with exact node and edge witnesses.
+
+- [#7294](https://github.com/Effect-TS/effect/pull/7294) [`7e9923b`](https://github.com/Effect-TS/effect/commit/7e9923b1a0adf1f842216b298d7542bed980c9a5) Thanks @tim-smart! - Add custom reviver support to HTTP JSON parsing APIs.
+
+- [#7200](https://github.com/Effect-TS/effect/pull/7200) [`f064121`](https://github.com/Effect-TS/effect/commit/f0641210f960563f813ac6f728804e5447c03341) Thanks @mikearnaldi! - Support narrowing schedule input and output types with type guard predicates passed to `Schedule.while`.
+
+- [#7291](https://github.com/Effect-TS/effect/pull/7291) [`d10ceb0`](https://github.com/Effect-TS/effect/commit/d10ceb06d56108c11100868f591d2b42ddff5e9f) Thanks @fubhy! - Add index-preserving `Graph.inducedSubgraph`.
+
+- [#7244](https://github.com/Effect-TS/effect/pull/7244) [`b660bf0`](https://github.com/Effect-TS/effect/commit/b660bf01d9c427552296cd9e0195e21504f45e1f) Thanks @AnnaSuSu! - Normalize unbounded PubSub replay capacities to positive integers.
+
+- [#7293](https://github.com/Effect-TS/effect/pull/7293) [`f4fbe9c`](https://github.com/Effect-TS/effect/commit/f4fbe9ca0209cdfaaaff54fc3805221be80f1ffa) Thanks @tim-smart! - Support standalone Effect.forEach data-last usage
+
+- [#7291](https://github.com/Effect-TS/effect/pull/7291) [`d10ceb0`](https://github.com/Effect-TS/effect/commit/d10ceb06d56108c11100868f591d2b42ddff5e9f) Thanks @fubhy! - Add bounded lazy enumeration of simple paths and all tied shortest paths.
+
+- [#7259](https://github.com/Effect-TS/effect/pull/7259) [`e811353`](https://github.com/Effect-TS/effect/commit/e811353e3b79ba392af1d9fb8d7f93fd729dabf9) Thanks @fubhy! - Prevent graph edge reads from exposing internal edge records and reject non-finite A* heuristic values.
+
+- [#7251](https://github.com/Effect-TS/effect/pull/7251) [`9761c3c`](https://github.com/Effect-TS/effect/commit/9761c3c4787b3815346c1b650d8984efec8f1051) Thanks @tim-smart! - Add `Encoding.randomHex`, a lightweight non-cryptographic generator that coerces lengths to unsigned 32-bit multiples of 8.
+
+- [#7296](https://github.com/Effect-TS/effect/pull/7296) [`baa99fc`](https://github.com/Effect-TS/effect/commit/baa99fc176efed4986c19c78726d1dbe7bd17765) Thanks @tim-smart! - Make unstable CLI boolean flags required when omitted, allowing optional, default, config, and prompt fallbacks to handle absence consistently.
+
+- [#7246](https://github.com/Effect-TS/effect/pull/7246) [`7fd79b2`](https://github.com/Effect-TS/effect/commit/7fd79b2cc95973f85b3db43b0cf3c5cb7d2f69c4) Thanks @tim-smart! - Add `Effect.head` for retrieving the first element of an iterable produced by an effect.
+
+- [#7273](https://github.com/Effect-TS/effect/pull/7273) [`a82ffc0`](https://github.com/Effect-TS/effect/commit/a82ffc03df0fb34e02f16773b96bfa3e0208e427) Thanks @fubhy! - Validate Graph traversal radii, isolate traversal start configuration, and prioritize the first supplied DFS root.
+
+- [#7291](https://github.com/Effect-TS/effect/pull/7291) [`d10ceb0`](https://github.com/Effect-TS/effect/commit/d10ceb06d56108c11100868f591d2b42ddff5e9f) Thanks @fubhy! - Throw `GraphError` when a negative cycle affects a Bellman-Ford target, reserving `Option.none()` for unreachable paths.
+
+- [#7248](https://github.com/Effect-TS/effect/pull/7248) [`4026e2d`](https://github.com/Effect-TS/effect/commit/4026e2dde3b098e70ffb3f1fcddd200176acdefd) Thanks @tim-smart! - Improve tracing performance in span creation and HTTP middleware.
+
+- [#7276](https://github.com/Effect-TS/effect/pull/7276) [`397bf1e`](https://github.com/Effect-TS/effect/commit/397bf1ebd95c0d6d58dc53e4f33c8ad3f34746f6) Thanks @fubhy! - Deduplicate directed neighbor-node queries while preserving first edge occurrence order.
+
+- [#7291](https://github.com/Effect-TS/effect/pull/7291) [`d10ceb0`](https://github.com/Effect-TS/effect/commit/d10ceb06d56108c11100868f591d2b42ddff5e9f) Thanks @fubhy! - Add incident-edge, edges-between, and directed and undirected degree queries to `Graph`.
+
+- [#7291](https://github.com/Effect-TS/effect/pull/7291) [`d10ceb0`](https://github.com/Effect-TS/effect/commit/d10ceb06d56108c11100868f591d2b42ddff5e9f) Thanks @fubhy! - Add unweighted reachability, explicit weak and strong connectivity predicates, weak components, and tree detection to `Graph`.
+
+## 4.0.0-rc.109
+
+### Patch Changes
+
+- [#7219](https://github.com/Effect-TS/effect/pull/7219) [`a0743f2`](https://github.com/Effect-TS/effect/commit/a0743f2b9f20fb5d150f35510e68819f01630bac) Thanks @tim-smart! - Add SQL, HttpApi testing, and CLI schema examples to the published AI documentation.
+
+- [#7241](https://github.com/Effect-TS/effect/pull/7241) [`17892e7`](https://github.com/Effect-TS/effect/commit/17892e75a8d584f79127805506c42b19320990a7) Thanks @tim-smart! - Use Context mapUnsafe in less call sites
+
+- [#7240](https://github.com/Effect-TS/effect/pull/7240) [`4d8a230`](https://github.com/Effect-TS/effect/commit/4d8a2306dfff8fd5406ab75d0c8d22e5300d1faa) Thanks @tim-smart! - Fix `Effect.fromOption` data-first inference for inline `Option` expressions.
+
+- [#7216](https://github.com/Effect-TS/effect/pull/7216) [`f21f9c9`](https://github.com/Effect-TS/effect/commit/f21f9c9f73dc59db922bda411b6d5245dae37cdb) Thanks @tim-smart! - Add a `HttpStatus` module to `effect/unstable/http` that centralizes the mapping from HTTP status literal names to numeric codes and exports `HttpStatus.fromLiteral`. `HttpApiSchema.status` now consumes the new module.
+
+- [#6829](https://github.com/Effect-TS/effect/pull/6829) [`18270dd`](https://github.com/Effect-TS/effect/commit/18270ddeaf4ad28723ca8a40aff04a5d4707b575) Thanks @lloydrichards! - MCP servers now support the 2024-11-05 and 2025-03-26 RPC revisions through version-specific protocol adapters.
+
+- [#7218](https://github.com/Effect-TS/effect/pull/7218) [`26db404`](https://github.com/Effect-TS/effect/commit/26db404a3284cfdbf4a3f351ccd05afc0de743b8) Thanks @tim-smart! - Run SQL `PersistedQueue` table creation through versioned migrations so future schema changes can be applied safely.
+
+- [#7210](https://github.com/Effect-TS/effect/pull/7210) [`2670398`](https://github.com/Effect-TS/effect/commit/26703982612e12954360382e4b1d177002699d1c) Thanks @tim-smart! - Preserve nanosecond precision when adjusting `TestClock` with large durations.
+
+- [#7205](https://github.com/Effect-TS/effect/pull/7205) [`3702bed`](https://github.com/Effect-TS/effect/commit/3702bedd8f6bcb3f603b87c640c521878d824eb3) Thanks @tim-smart! - Remove the `kubernetes-types` dependency by vendoring the Kubernetes Pod declarations used by the cluster helpers and exporting them from `effect/unstable/cluster/K8sTypes`.
+
+- [#7236](https://github.com/Effect-TS/effect/pull/7236) [`ccae60e`](https://github.com/Effect-TS/effect/commit/ccae60e5edb2bef553f4af52afb509dfd443cd03) Thanks @roninjin10! - Propagate a failed `BEGIN` or `SAVEPOINT` from `SqlClient.withTransaction` as a typed `SqlError`.
+  
+  `makeWithTransaction` wrapped the `begin` step together with the transaction body, so a
+  failed `BEGIN` took the rollback branch. No transaction was active at that point, the
+  `ROLLBACK` failed, and its `Effect.orDie` wrapper replaced the original typed error with a
+  defect (`cannot rollback - no transaction is active`). Callers could no longer classify the
+  failure as retryable. The path became reachable when the sqlite client started using
+  `BEGIN IMMEDIATE`, which acquires a write lock and can fail with `SQLITE_BUSY`.
+  
+  Commit and rollback now run only after `begin` or `savepoint` succeeds. A failed `begin` or
+  `savepoint` fails with its original `SqlError`, leaves the wrapped effect unexecuted, and
+  still closes the acquired connection scope.
+
+- [#7206](https://github.com/Effect-TS/effect/pull/7206) [`6ff5396`](https://github.com/Effect-TS/effect/commit/6ff53968138bbd7d4728ce8014e35eae8d6ca5d0) Thanks @tim-smart! - Bound cluster runner entity residency and storage reads.
+  
+  `ShardingConfig` gains two knobs:
+  
+  - `maxResidentEntities` (default `10_000`): the maximum number of entities
+    that can be resident on a runner at the same time. At the cap, the storage
+    read loop stops admitting messages for new entity addresses (they stay in
+    storage until a slot frees up) and volatile sends to new addresses fail with
+    `MailboxFull`. Persisted sends still succeed. `"unbounded"` restores the
+    previous behaviour and can only be set programmatically.
+  - `unprocessedMessageBatchSize` (default `1024`): the maximum number of
+    unprocessed messages read from storage in a single poll.
+  
+  `MessageStorage.unprocessedMessages` accepts an optional
+  `{ limit, addresses }` argument, and only claims the messages it actually
+  returns. The memory implementation now applies the same ten-minute claim
+  window as SQL, so bounded reads advance past in-flight requests; resetting an
+  address or shard makes its claimed messages immediately eligible again.
+  
+  The encoded driver contract replaces `Encoded.resetAddress` with the batched
+  `Encoded.resetAddresses` operation. `SqlMessageStorage.makeEncoded` constructs
+  the SQL encoded driver directly for custom storage composition.
+  
+  `ClusterWorkflowEngine` entities (workflows and the durable clock) now use a
+  fixed ten-second idle time, so completed and suspended executions release their
+  entity slots quickly. Their state is durable, so an evicted execution is
+  rebuilt from storage when its next message arrives.
+
+## 4.0.0-rc.108
+
+### Patch Changes
+
+- [#6546](https://github.com/Effect-TS/effect/pull/6546) [`dfb173e`](https://github.com/Effect-TS/effect/commit/dfb173efffd20c4feded4efe409018dd55acdca8) Thanks @xianjianlf2! - Handle BigInt values safely and consistently across JSON diagnostics and logger formats.
+
+- [#7174](https://github.com/Effect-TS/effect/pull/7174) [`005e090`](https://github.com/Effect-TS/effect/commit/005e0902cace9f8960a4f43573665a3a9b53b6fa) Thanks @tim-smart! - Fix `Queue.await` failing with `Cause.Done` when registered before the queue ends.
+
+- [#7180](https://github.com/Effect-TS/effect/pull/7180) [`c82c532`](https://github.com/Effect-TS/effect/commit/c82c53228dc1c50cc99654ce6de7766b4de09e75) Thanks @gcanti! - Prioritize redacted representations in formatters and normalize text logger levels to uppercase.
+
+- [#7193](https://github.com/Effect-TS/effect/pull/7193) [`22b579f`](https://github.com/Effect-TS/effect/commit/22b579f6c582e6e2d951784791fea6f1802517ed) Thanks @kitlangton! - Fix `Deferred.await` dying with a `TypeError` when a waiter is interrupted after the `Deferred` has been completed.
+
+- [#7179](https://github.com/Effect-TS/effect/pull/7179) [`3e19539`](https://github.com/Effect-TS/effect/commit/3e19539205082b1006d84553045d1b03db9cc8a1) Thanks @tim-smart! - Fix `DurableDeferred.raceAll` so a completed deferred can wake an active workflow without changing success-biased race semantics
+
+- [#7189](https://github.com/Effect-TS/effect/pull/7189) [`08a3c74`](https://github.com/Effect-TS/effect/commit/08a3c74133206fc1cc728e0aa96d02e672fd80bd) Thanks @gcanti! - Fix `HttpApi` query decoding for array parameters with a single value.
+
+- [#6550](https://github.com/Effect-TS/effect/pull/6550) [`eb0bae0`](https://github.com/Effect-TS/effect/commit/eb0bae08d543d58754c9bb7a57e67c1e2bb3f55a) Thanks @xianjianlf2! - Return fresh OpenAPI specs from cached `OpenApi.fromApi` calls.
+
+- [#7188](https://github.com/Effect-TS/effect/pull/7188) [`97b544d`](https://github.com/Effect-TS/effect/commit/97b544d8b636587647b90691d669305c0eb4fc66) Thanks @gcanti! - Mark the internal `~sentinels` Schema annotation as `@internal` so release declaration stripping removes it together with `SchemaAST.Sentinel`. This keeps the published declarations self-consistent for consumers that type-check dependencies with `skipLibCheck: false`.
+
+- [#7158](https://github.com/Effect-TS/effect/pull/7158) [`4f6d131`](https://github.com/Effect-TS/effect/commit/4f6d131e85d74ab0ec0300e52e503a5f943fc576) Thanks @k3dom! - Improve Union candidate selection: a nested union member is dispatched by the sentinels common to all its members, and candidates whose sentinel the input contradicts are excluded.
+
+- [#7178](https://github.com/Effect-TS/effect/pull/7178) [`fad4b7c`](https://github.com/Effect-TS/effect/commit/fad4b7c5138b3f38c2427436da2e0685c1ca4e9b) Thanks @tim-smart! - Use Promise microtasks for synchronous Scheduler dispatch.
+
+- [#7181](https://github.com/Effect-TS/effect/pull/7181) [`accf447`](https://github.com/Effect-TS/effect/commit/accf4474513064e2a21d14b1937503261b4f34dc) Thanks @gcanti! - Move `SchemaError` into the `Schema` module and remove the standalone `SchemaError` module.
+
+- [#7195](https://github.com/Effect-TS/effect/pull/7195) [`31b27e4`](https://github.com/Effect-TS/effect/commit/31b27e49903c351588435f666c953aaac28f6120) Thanks @tim-smart! - Ensure discarded non-persisted cluster messages complete without waiting for the entity reply.
+
+- [#7191](https://github.com/Effect-TS/effect/pull/7191) [`8458951`](https://github.com/Effect-TS/effect/commit/84589518c3966c63d7f3679a5296d380eb1ba887) Thanks @Digifox03! - Fix `HttpRouter.Middleware.layer` to provide request error services for errors declared in `handles`, and expose global
+  middleware errors from `HttpRouter.toHttpEffect`.
+
+## 4.0.0-beta.107
+
+### Patch Changes
+
+- [#7156](https://github.com/Effect-TS/effect/pull/7156) [`596f3f9`](https://github.com/Effect-TS/effect/commit/596f3f92d7fe355811b815cb212332b082268ce8) Thanks @tim-smart! - Terminate active multipart file streams when a parser limit is exceeded or the body ends unexpectedly, so file parts fail instead of hanging.
+
+- [#7153](https://github.com/Effect-TS/effect/pull/7153) [`9611ed4`](https://github.com/Effect-TS/effect/commit/9611ed42d11300546b339ab13492a0f7bdb1ebfb) Thanks @rajanpanth! - Fix `Duration`'s `Hash.symbol` implementation to hash a canonical nanoseconds form instead of the raw internal `Millis`/`Nanos` representation. Two durations that `Duration.equals`/`Equal.equals` consider equal (e.g. `Duration.seconds(5)` and `Duration.nanos(5_000_000_000n)`) previously hashed differently, violating the Hash/Equal contract and silently breaking `HashSet`/`HashMap` lookups keyed by `Duration`.
+
+- [#7166](https://github.com/Effect-TS/effect/pull/7166) [`8b91605`](https://github.com/Effect-TS/effect/commit/8b9160548556e4b0ec7ee2f2707716776be49018) Thanks @CDVolvik! - Import migrations through a file URL in `Migrator.fromFileSystem`, so absolute Windows paths are accepted by the ESM loader.
+  
+  Previously the directory and file name were passed to `import` as a plain path. On Windows that produced a specifier such as `D:\migrations\1_init.ts`, which the ESM loader rejects with `Only URLs with a scheme in: file, data, and node are supported`.
+  
+  `fromFileSystem` now resolves the specifier through the `Path` service, so its type widens from `Loader<FileSystem>` to `Loader<FileSystem | Path>`. Callers that already provide an aggregate platform layer such as `NodeServices.layer` are unaffected; callers that provide `FileSystem` on its own now also need a `Path` layer, and on Windows it must be a platform-aware one rather than the POSIX `Path.layer`.
+
+- [#7157](https://github.com/Effect-TS/effect/pull/7157) [`d901928`](https://github.com/Effect-TS/effect/commit/d901928efa44f573ed1247f53fdb203a8e4fcede) Thanks @tim-smart! - Add `Channel.mkUint8Array` and reuse it from `Stream` and multipart file collection. This also fixes quadratic buffering in `File.contentEffect`, improving collection of a 16 MiB chunked upload by approximately 90x.
+
+- [#7149](https://github.com/Effect-TS/effect/pull/7149) [`b32bdef`](https://github.com/Effect-TS/effect/commit/b32bdef0d119a1ad1463dc01a46763ffee1f9bd9) Thanks @gcanti! - Require explicit handling for regular expression pattern constraints translated from JSON Schema documents, with modes to apply trusted patterns or ignore their constraints.
+
+## 4.0.0-beta.106
+
+### Patch Changes
+
+- [#7110](https://github.com/Effect-TS/effect/pull/7110) [`2695168`](https://github.com/Effect-TS/effect/commit/269516851b24916d72771f8a554b88722e3732e7) Thanks @fubhy! - Ensure concurrent first `RcRef` borrowers share the same resource generation.
+
+- [#7114](https://github.com/Effect-TS/effect/pull/7114) [`6310a8c`](https://github.com/Effect-TS/effect/commit/6310a8c68c74dcf1d23948ec9243ac5f407a1651) Thanks @fubhy! - Report buffered worker send failures as `WorkerError` values.
+
+- [#7117](https://github.com/Effect-TS/effect/pull/7117) [`c2071b1`](https://github.com/Effect-TS/effect/commit/c2071b1647e2326568c1d0689274ef62b8a7183f) Thanks @fubhy! - Make `TxQueue.shutdown` safe to call after a queue has already been interrupted.
+
+- [#7119](https://github.com/Effect-TS/effect/pull/7119) [`7aff81a`](https://github.com/Effect-TS/effect/commit/7aff81a9cefe681483ef8abf717d786fd10e7e8d) Thanks @fubhy! - Prevent SQL resolvers from invoking non-empty batch callbacks when every request fails encoding.
+
+- [#7105](https://github.com/Effect-TS/effect/pull/7105) [`a1d4057`](https://github.com/Effect-TS/effect/commit/a1d4057711935a544ef441bc2d0ac3565dfa9266) Thanks @tim-smart! - Add `ConfigProvider.fromEnvRecord` for building a provider from an explicit environment record.
+
+- [#7111](https://github.com/Effect-TS/effect/pull/7111) [`abf77b0`](https://github.com/Effect-TS/effect/commit/abf77b04009dcb4d67a258f9d8ada778e9f4ffae) Thanks @fubhy! - Preserve input fiber error types in `Fiber.joinAll`.
+
+- [#7134](https://github.com/Effect-TS/effect/pull/7134) [`6c60375`](https://github.com/Effect-TS/effect/commit/6c60375e68683a32d54554150cc493e16550a06d) Thanks @marbemac! - Fix cluster shutdown hangs by failing abandoned non-discard requests and stream chunk acknowledgements with `EntityNotAssignedToRunner`, including persisted requests sent after runner unregistration. This adds `EntityNotAssignedToRunner` to the typed error channel of entity clients and request-only `EntityProxy` RPC/HTTP endpoints; discard endpoints remain unchanged.
+
+- [#7107](https://github.com/Effect-TS/effect/pull/7107) [`22f4897`](https://github.com/Effect-TS/effect/commit/22f4897bbae24783d4516f6bef353f1db4ec6d03) Thanks @fubhy! - Preserve FormData bodies when converting client requests through HttpServerRequest.
+
+- [#7120](https://github.com/Effect-TS/effect/pull/7120) [`615d1d5`](https://github.com/Effect-TS/effect/commit/615d1d5d0256ec8160f2e08d0dcf5dc83acb7bf1) Thanks @fubhy! - Fix `SqlResolver.findById` failing to complete duplicate requests when id encoding fails, which surfaced as a `RequestResolver did not complete request` defect instead of the underlying `SchemaError`.
+
+- [#7131](https://github.com/Effect-TS/effect/pull/7131) [`3a86757`](https://github.com/Effect-TS/effect/commit/3a867573ddeed5888dabdeb3225a9ebbf00491e7) Thanks @fubhy! - Ignore MCP cancellation notifications for unknown request identifiers.
+
+- [#7104](https://github.com/Effect-TS/effect/pull/7104) [`f4a9762`](https://github.com/Effect-TS/effect/commit/f4a9762bb9dfad59c215f2e099dcc829d74f4ed1) Thanks @gcanti! - Add `Function.memoizeIdempotent` and use it to avoid reprocessing canonical Schema ASTs, including optional and mutable property modifiers. Cache Config schema cursor AST compilation.
+
+- [#7144](https://github.com/Effect-TS/effect/pull/7144) [`0bcf6ed`](https://github.com/Effect-TS/effect/commit/0bcf6ed57c22e8a36964726b15464101d90f5997) Thanks @fubhy! - Stop multipart parsing after part count, part size, or field size limits are exceeded.
+
+- [#7121](https://github.com/Effect-TS/effect/pull/7121) [`ba9cb63`](https://github.com/Effect-TS/effect/commit/ba9cb63b87d45ce2df872dd8ef0905da147cc675) Thanks @fubhy! - Prevent execution-plan event observer defects from changing attempt outcomes or leaving attempt events unpaired.
+
+- [#7147](https://github.com/Effect-TS/effect/pull/7147) [`42c810d`](https://github.com/Effect-TS/effect/commit/42c810dd372275b822dd99c7d7e774e153f0a752) Thanks @tim-smart! - Release worker pool entries when an RPC worker's receive loop fails.
+
+- [#7148](https://github.com/Effect-TS/effect/pull/7148) [`1416ccd`](https://github.com/Effect-TS/effect/commit/1416ccd474bc9da8979f51b72b5e53fb3ac56edf) Thanks @gcanti! - Consolidate schema arbitrary derivation into `Schema.toArbitrary`, which now returns a `Schema.Arbitrary` factory that accepts the fast-check module. Remove `Schema.toArbitraryLazy` and arbitrary derivation reports.
+
+- [#7109](https://github.com/Effect-TS/effect/pull/7109) [`08d0d39`](https://github.com/Effect-TS/effect/commit/08d0d39a225deccb9db213ab5fcf55edb9f9ba5d) Thanks @fubhy! - Fix `RcRef` leaking resources acquired before a failed acquisition.
+
+- [#7146](https://github.com/Effect-TS/effect/pull/7146) [`548908a`](https://github.com/Effect-TS/effect/commit/548908a71d9337cb7defe7fc93b2fba8f6a04b6f) Thanks @gcanti! - Improve Schema representation identity, anonymous-reference eligibility, and JSON Schema alias finalization.
+
+- [#6862](https://github.com/Effect-TS/effect/pull/6862) [`4b3460d`](https://github.com/Effect-TS/effect/commit/4b3460daa434ec465a95a50704fe1103a9275999) Thanks @fubhy! - Ensure `ScopedRef.set` releases a replacement when the previous value's finalizer defects.
+
+- [#7060](https://github.com/Effect-TS/effect/pull/7060) [`d170596`](https://github.com/Effect-TS/effect/commit/d17059615cca37ca2776654078fe0501ac5202e6) Thanks @fubhy! - Preserve `maxItems` semantics when importing JSON Schema `prefixItems`.
+
+- [#7116](https://github.com/Effect-TS/effect/pull/7116) [`aea89d0`](https://github.com/Effect-TS/effect/commit/aea89d0c42ee0ac707a4962cd348fd3158cb469b) Thanks @fubhy! - Keep span end times at zero when tracer timing is disabled.
+
+- [#7124](https://github.com/Effect-TS/effect/pull/7124) [`deed5fb`](https://github.com/Effect-TS/effect/commit/deed5fbdc91cf8bf8c5fce7dfa5d6527ac944726) Thanks @fubhy! - Use a distinct AES-GCM initialization vector for each encrypted event log entry. `EventLogEncryption.encrypt` now returns each IV with its ciphertext, and encrypted event log clients and servers must be upgraded together because the `WriteEntries` wire shape changed.
+
+## 4.0.0-beta.105
+
+### Patch Changes
+
+- [#7087](https://github.com/Effect-TS/effect/pull/7087) [`0418564`](https://github.com/Effect-TS/effect/commit/04185644dabb8e4169f1ef6cbbc0b36c4db2f7f4) Thanks @tim-smart! - Recognize tagged Config and RPC errors across duplicated `effect` package copies.
+
+- [#6827](https://github.com/Effect-TS/effect/pull/6827) [`d334a85`](https://github.com/Effect-TS/effect/commit/d334a8593aafcd60753995a9449b654c67bfdcc1) Thanks @jaipaljadeja! - Add bounded 429 retries and custom response header names to `HttpClient.withRateLimiter`.
+
+- [#7084](https://github.com/Effect-TS/effect/pull/7084) [`f0be855`](https://github.com/Effect-TS/effect/commit/f0be8554da6ee00293a6b23869ac46a0b0d97dc8) Thanks @tim-smart! - Stop capturing definition-location stack frames in `Context.Service`.
+
+- [#7090](https://github.com/Effect-TS/effect/pull/7090) [`b206fa5`](https://github.com/Effect-TS/effect/commit/b206fa5d7655c1634c9993410a9203f6616a5ca2) Thanks @tim-smart! - Expose `stdinIsTerminal` and `stdoutIsTerminal` effects through the `Stdio` service.
+
+- [#7093](https://github.com/Effect-TS/effect/pull/7093) [`b938c8a`](https://github.com/Effect-TS/effect/commit/b938c8ad2823bd88493187922f7d9090eff037b6) Thanks @gcanti! - Add the opt-in `reportInput` parse option for retaining rejected inputs in enumerable fields on value-bearing schema issues and including them in default formatted messages. Value-bearing issue constructors accept the rejected input and parse options directly, and `Schema.Annotations.Issue` now supports `expected` for default messages.
+  
+  Schema issues no longer format implicitly through `Issue#toString`. Use `SchemaIssue.makeFormatterDefault()` when a human-readable message is needed. The throwing and Promise-based adapters in `SchemaParser` now use the generic message `"Schema validation failed"` and expose the structured `SchemaIssue.Issue` as the error `cause`; consumers that previously read the formatted error message should inspect and explicitly format that cause instead.
+  
+  `Schema.makeEffect` now returns `SchemaIssue.Issue` failures instead of wrapping them in `SchemaError`, and `Schema.withConstructorDefault` accepts an `Effect` that fails with `SchemaIssue.Issue`. Fallible `Optic` operations return structured `SchemaIssue.Issue` failures, while schema failures from `Schema.toIso` and `Schema.toDifferJsonPatch` use the generic error message and preserve the issue in `cause` instead of formatting it internally.
+
+- [#7097](https://github.com/Effect-TS/effect/pull/7097) [`8525f05`](https://github.com/Effect-TS/effect/commit/8525f05d1e14ea12298e9e1a0df497bfaac2ce9a) Thanks @tim-smart! - Add `Cron.format` for converting a `Cron` instance to a cron expression, with an option to include the seconds field.
+
+## 4.0.0-beta.104
+
+### Minor Changes
+
+- [#7076](https://github.com/Effect-TS/effect/pull/7076) [`0f721d4`](https://github.com/Effect-TS/effect/commit/0f721d406df8703ea92ca28777b3f09599e2056d) Thanks @tim-smart! - Return the new file offset as a `Size` from `File.seek`.
+
+### Patch Changes
+
+- [#6934](https://github.com/Effect-TS/effect/pull/6934) [`1001bcc`](https://github.com/Effect-TS/effect/commit/1001bccb9e874918d59dbb36860f1c5d4499ac20) Thanks @tim-smart! - httpapi: add typed response headers across handlers, generated clients (including `HttpApiTest`), streaming responses, and OpenAPI with `HttpApiSchema.WithHeaders`. Add `HttpApiSchema.encodeToWithHeaders` for folding response headers into domain types such as error classes. Explicit `content-type` and `content-length` values applied with `HttpServerResponse.setHeader` or `setHeaders` now override body-derived values.
+
+- [#7044](https://github.com/Effect-TS/effect/pull/7044) [`993ba60`](https://github.com/Effect-TS/effect/commit/993ba60ee6c7ca6eb84522040f8b0d268b6ba7d4) Thanks @fubhy! - Commit SQL event journal entries only after their write callback succeeds.
+
+- [#6957](https://github.com/Effect-TS/effect/pull/6957) [`67faacd`](https://github.com/Effect-TS/effect/commit/67faacd4679242559bee31717c05a5b10b990322) Thanks @fubhy! - Select Bash completions for the active positional argument.
+
+- [#6941](https://github.com/Effect-TS/effect/pull/6941) [`b78acdf`](https://github.com/Effect-TS/effect/commit/b78acdf422568f10ae8684fd3f10d52b065f0b56) Thanks @fubhy! - Generate even and odd safe integers in Crypto random APIs.
+
+- [#6965](https://github.com/Effect-TS/effect/pull/6965) [`fbb9ce5`](https://github.com/Effect-TS/effect/commit/fbb9ce5e625d1a7d6b7005bda42cbb6cd31476c5) Thanks @fubhy! - Correct the runtime tag spelling for `CliError.UnknownSubcommand`.
+
+- [#6963](https://github.com/Effect-TS/effect/pull/6963) [`722ea48`](https://github.com/Effect-TS/effect/commit/722ea484c9d01364c9242d929c0a564f7831a57c) Thanks @fubhy! - Exclude disabled choices from multi-select prompt selection and submission.
+
+- [#7001](https://github.com/Effect-TS/effect/pull/7001) [`3058fd5`](https://github.com/Effect-TS/effect/commit/3058fd594f5a683034212d71d957017fcc084006) Thanks @fubhy! - Keep ordered SQL resolver results aligned when batched request encoding fails.
+
+- [#6937](https://github.com/Effect-TS/effect/pull/6937) [`62d0575`](https://github.com/Effect-TS/effect/commit/62d057566c241405c23ecf0bf4156186bd2be924) Thanks @fubhy! - Fix the encoded output type of `TestSchema.Encoding.encodeUnknownEffect`.
+
+- [#7014](https://github.com/Effect-TS/effect/pull/7014) [`99dd6b5`](https://github.com/Effect-TS/effect/commit/99dd6b580434f97c5b40adc919f429e4abc3dfe7) Thanks @tim-smart! - Add lightweight INI, YAML, and TOML parsers under `effect/unstable/encoding` and remove their runtime dependencies.
+
+- [#7053](https://github.com/Effect-TS/effect/pull/7053) [`7963ce1`](https://github.com/Effect-TS/effect/commit/7963ce1cd95f037fbefea67a29ead49cce4d16cb) Thanks @fubhy! - Fix arbitrary generation for tuples with multiple optional elements.
+
+- [#7047](https://github.com/Effect-TS/effect/pull/7047) [`af14e75`](https://github.com/Effect-TS/effect/commit/af14e752edd65e2b652e960411afafc88975a8d8) Thanks @fubhy! - Fix `Tuple.pick` return types to preserve the requested index order and duplicate indices.
+
+- [#7066](https://github.com/Effect-TS/effect/pull/7066) [`24e22d2`](https://github.com/Effect-TS/effect/commit/24e22d23a73a2e93ebf6d8edd2246a4a406942c8) Thanks @fubhy! - Close `ResourceMap` acquisition scopes when a lookup fails.
+
+- [#7036](https://github.com/Effect-TS/effect/pull/7036) [`647d14e`](https://github.com/Effect-TS/effect/commit/647d14e572c8004fa92fba256e00552b42bf34b7) Thanks @fubhy! - Fix scoped reentrant lock finalizers releasing under the wrong fiber owner.
+
+- [#6983](https://github.com/Effect-TS/effect/pull/6983) [`1434eec`](https://github.com/Effect-TS/effect/commit/1434eecbd368e00839c24b3950f0b7a69218669a) Thanks @fubhy! - Apply byte range and chunk size options to default Web file responses.
+
+- [#7071](https://github.com/Effect-TS/effect/pull/7071) [`a5278b1`](https://github.com/Effect-TS/effect/commit/a5278b18242011d1b2b08304c7c128151f9a4370) Thanks @fubhy! - Fix MCP sampling metadata optionality and validate it as an object.
+
+- [#6946](https://github.com/Effect-TS/effect/pull/6946) [`6af04a5`](https://github.com/Effect-TS/effect/commit/6af04a50bd019238f6acdb9cbda40439a3c09210) Thanks @fubhy! - Defer memoized Layer state installation until Effect execution.
+
+- [#6943](https://github.com/Effect-TS/effect/pull/6943) [`cb6c837`](https://github.com/Effect-TS/effect/commit/cb6c8376b2f322d4e7cbfc0973fc3b4f2951ee6e) Thanks @fubhy! - Reject zero execution attempts in `ExecutionPlan` steps.
+
+- [#7026](https://github.com/Effect-TS/effect/pull/7026) [`d44cead`](https://github.com/Effect-TS/effect/commit/d44cead7e0e0ce61f0d980906e494f49a07e7899) Thanks @tim-smart! - Add execution-plan lifecycle events via an optional `onEvent` handler on `Effect.withExecutionPlan` and `Stream.withExecutionPlan`.
+  
+  The handler receives an `ExecutionPlan.Event`, a tagged union of `AttemptStart`, `AttemptSuccess`, and `AttemptFailure`, allowing attempt outcomes to be observed from outside the effect for logging and metrics:
+  
+  ```ts
+  import { Effect } from "effect"
+  
+  Effect.withExecutionPlan(program, plan, {
+    onEvent: (event) => Effect.log("execution plan event", event)
+  })
+  ```
+  
+  Every `AttemptStart` is followed by exactly one terminal event. `AttemptFailure` carries the full failure `Cause`, so defects and interruption are reported as well as expected errors, and terminal events run like finalizers so they are emitted even when the attempt is interrupted. Event numbering matches `ExecutionPlan.CurrentMetadata`: `attempt` is cumulative across steps, while `stepAttempt` is 1-based within the current step.
+
+- [#7077](https://github.com/Effect-TS/effect/pull/7077) [`88c7632`](https://github.com/Effect-TS/effect/commit/88c7632c2b59a49fcc40d250865bd8d0dccf31b0) Thanks @tim-smart! - Rename `Schedule.andThen` and `Schedule.andThenResult` to `Schedule.concat` and `Schedule.concatResult`.
+
+- [#6975](https://github.com/Effect-TS/effect/pull/6975) [`abcbb2a`](https://github.com/Effect-TS/effect/commit/abcbb2abe16f1b6c587c15007df14371e1e70e93) Thanks @fubhy! - Encode SSE events with empty data as dispatchable events.
+
+- [#7037](https://github.com/Effect-TS/effect/pull/7037) [`8f63cce`](https://github.com/Effect-TS/effect/commit/8f63cce636700fde26b140b82e350ef916989d86) Thanks @fubhy! - Preserve OTLP metric delta checkpoints when an export fails.
+
+- [#7057](https://github.com/Effect-TS/effect/pull/7057) [`d56dfcf`](https://github.com/Effect-TS/effect/commit/d56dfcf54c2b9c53c3d098ce4b0ffcc84496c5f7) Thanks @fubhy! - Fix the error type exposed by the curried `Sink.catch` overload.
+
+- [#6947](https://github.com/Effect-TS/effect/pull/6947) [`a98cda9`](https://github.com/Effect-TS/effect/commit/a98cda9422e1352f22e81696f759f326ffcfb667) Thanks @fubhy! - Check symbol-keyed properties in Match object patterns.
+
+- [#6956](https://github.com/Effect-TS/effect/pull/6956) [`6704bb8`](https://github.com/Effect-TS/effect/commit/6704bb84c320547f83cf50e8586ffc4c5e4c3cc5) Thanks @fubhy! - Emit valid CSI sequences from the unstable CLI `cursorTo` helper.
+
+- [#7008](https://github.com/Effect-TS/effect/pull/7008) [`6143de2`](https://github.com/Effect-TS/effect/commit/6143de21ee22038b45a8d4eba86f5aade6238eba) Thanks @tim-smart! - Prevent Bash completions from treating flag values as subcommands.
+
+- [#7032](https://github.com/Effect-TS/effect/pull/7032) [`936b135`](https://github.com/Effect-TS/effect/commit/936b1358396eb0a1a7c8e0878ba63297e2106812) Thanks @marbemac! - Fix a `@effect/cluster` shutdown deadlock on single-runner topologies (e.g. single-node deployments and `TestRunner`), where `Sharding.sendOutgoing` retried `EntityNotAssignedToRunner` forever during teardown.
+
+- [#6940](https://github.com/Effect-TS/effect/pull/6940) [`1bbae84`](https://github.com/Effect-TS/effect/commit/1bbae84f88b577a26d04ceb2e76d3143d09c4a20) Thanks @fubhy! - Omit services removed by `Context.addOrOmit` from the returned context type.
+
+- [#7065](https://github.com/Effect-TS/effect/pull/7065) [`d795ee7`](https://github.com/Effect-TS/effect/commit/d795ee771701ea62bd187ef7c0307d9737f68c1a) Thanks @tim-smart! - Fix DevTools span requests to preserve their state when queued for sending.
+
+- [#7016](https://github.com/Effect-TS/effect/pull/7016) [`0a82d88`](https://github.com/Effect-TS/effect/commit/0a82d88b7da73278b6f270118e396d5ed4a64747) Thanks @brandon-julio-t! - Normalize cluster durable clock wake-up timestamps to whole milliseconds.
+
+- [#6945](https://github.com/Effect-TS/effect/pull/6945) [`9215bc5`](https://github.com/Effect-TS/effect/commit/9215bc5da7dd10aa45f07fe44b98f06b6e433d62) Thanks @fubhy! - Preserve integral precision when parsing decimal nano and micro duration inputs
+
+- [#7050](https://github.com/Effect-TS/effect/pull/7050) [`a1b5df2`](https://github.com/Effect-TS/effect/commit/a1b5df2064d92431cfc6e638af613cc3114313d7) Thanks @fubhy! - Include schedule errors in the error channel of `Effect.schedule` and `Effect.scheduleFrom`.
+
+- [#7062](https://github.com/Effect-TS/effect/pull/7062) [`92a9ac5`](https://github.com/Effect-TS/effect/commit/92a9ac5ac0aa63d8975b9ba7a094d6a8f59a98f2) Thanks @fubhy! - Fix the inspectable JSON identity of `FiberSet`.
+
+- [#6959](https://github.com/Effect-TS/effect/pull/6959) [`6bde7f2`](https://github.com/Effect-TS/effect/commit/6bde7f27f3243427203e53fe74472990e5c2a349) Thanks @fubhy! - Match Fish completions against the full nested command path.
+
+- [#6951](https://github.com/Effect-TS/effect/pull/6951) [`a712131`](https://github.com/Effect-TS/effect/commit/a7121310dbb60cbd819bbd702f97663098ec7bb8) Thanks @fubhy! - Use the supplied hash for `HashMap.modifyHash` insertions, updates, and removals.
+
+- [#6989](https://github.com/Effect-TS/effect/pull/6989) [`2e6f760`](https://github.com/Effect-TS/effect/commit/2e6f760dcb44e2b984f3311a8af03a1d68a2ec7e) Thanks @fubhy! - Support standard `BodyInit` values when reading converted client request bodies through `HttpServerRequest`.
+
+- [#6986](https://github.com/Effect-TS/effect/pull/6986) [`aa05804`](https://github.com/Effect-TS/effect/commit/aa0580497e027ed30b756058db0067c3fe07664f) Thanks @fubhy! - Synchronize HTTP server response content headers when replacing the body.
+
+- [#6944](https://github.com/Effect-TS/effect/pull/6944) [`badd3bf`](https://github.com/Effect-TS/effect/commit/badd3bf65fac4dd1e66e1f602db43659722dfced) Thanks @fubhy! - Make `Iterable.flatten` stack safe across empty iterables.
+
+- [#6968](https://github.com/Effect-TS/effect/pull/6968) [`02b0265`](https://github.com/Effect-TS/effect/commit/02b02651ede46a5a2dd3ef8081d0ad89648d0cbf) Thanks @fubhy! - Allow MCP tool calls to omit optional arguments.
+
+- [#7033](https://github.com/Effect-TS/effect/pull/7033) [`3437e21`](https://github.com/Effect-TS/effect/commit/3437e21a56d805781c5e5946a6189795a1dfd411) Thanks @fubhy! - Fix memory journal conflict detection skipping the first newer entry.
+
+- [#7034](https://github.com/Effect-TS/effect/pull/7034) [`41a550d`](https://github.com/Effect-TS/effect/commit/41a550d1fed31e829929a8f5362b5340303164ac) Thanks @fubhy! - Return the first unused remote sequence from the in-memory event journal.
+
+- [#7042](https://github.com/Effect-TS/effect/pull/7042) [`17b5d50`](https://github.com/Effect-TS/effect/commit/17b5d50219ad49533cf9e33d01924a3e16af5eb3) Thanks @fubhy! - Relay entries imported into an in-memory event journal to other remotes.
+
+- [#7074](https://github.com/Effect-TS/effect/pull/7074) [`96e5e95`](https://github.com/Effect-TS/effect/commit/96e5e9576b0315c747462761a61940ff9fe32dd1) Thanks @fubhy! - Preserve and update runner health in the in-memory cluster runner storage.
+
+- [#7038](https://github.com/Effect-TS/effect/pull/7038) [`e4d589e`](https://github.com/Effect-TS/effect/commit/e4d589e0ea08dc57c4793053b395dc0fcc499f34) Thanks @fubhy! - Clear in-memory message primary-key indexes when clearing an entity address.
+
+- [#7005](https://github.com/Effect-TS/effect/pull/7005) [`ae4cf7b`](https://github.com/Effect-TS/effect/commit/ae4cf7b5e2cb5f8c55657e31a61789ad21c38c18) Thanks @fubhy! - Generate valid MSSQL upserts for multi-table persistence.
+
+- [#6998](https://github.com/Effect-TS/effect/pull/6998) [`6ef5f1a`](https://github.com/Effect-TS/effect/commit/6ef5f1a041f3a40bf03fadd0b1feb275c277c635) Thanks @fubhy! - Decode split UTF-8 sequences correctly in NDJSON streams.
+
+- [#6972](https://github.com/Effect-TS/effect/pull/6972) [`2235a29`](https://github.com/Effect-TS/effect/commit/2235a29502c3f33cf6468511ad931089013a7916) Thanks @tim-smart! - Persist a serializable defect when a cluster reply cannot be encoded, preventing persisted entity callers from hanging.
+
+- [#6962](https://github.com/Effect-TS/effect/pull/6962) [`b32f4cb`](https://github.com/Effect-TS/effect/commit/b32f4cb7b2d8ebe817075322622498e3beb05336) Thanks @fubhy! - Support empty records and non-array iterables in `Prompt.all`.
+
+- [#7023](https://github.com/Effect-TS/effect/pull/7023) [`7f4c095`](https://github.com/Effect-TS/effect/commit/7f4c095b62da43780dd7fc2a5d1785ddfce60edf) Thanks @tim-smart! - Rename `RateLimiter.makeSleep` to `RateLimiter.sleep` and support self-first partially applied and uncurried usage.
+
+- [#7041](https://github.com/Effect-TS/effect/pull/7041) [`5f3fb81`](https://github.com/Effect-TS/effect/commit/5f3fb814d18d8a54946c1c1cd0b41459cdb24006) Thanks @fubhy! - End runner streams after emitting their terminal replies.
+
+- [#7020](https://github.com/Effect-TS/effect/pull/7020) [`17f0b91`](https://github.com/Effect-TS/effect/commit/17f0b91a243ccfe4a38d27debdc983adf434e738) Thanks @gcanti! - Fix `Schema.make` to preserve existing nested `Schema.Class` instances, including in array fields, while recursively constructing plain class inputs provided at runtime inside unions. Constructor defaults remain scoped to structural field and element occurrences, with `SchemaAST.Context.constructorDefault` representing the single default link for each occurrence.
+  
+  Optimize `Function.memoize` to use a single `WeakMap` lookup for cached values. Its callback no longer accepts `undefined` as a return type because `undefined` represents a cache miss.
+  
+  The performance of the two array paths can be reproduced by saving the following program as
+  `scratchpad/schema-make-6890-benchmark.ts` and running `node scratchpad/schema-make-6890-benchmark.ts` from the repository
+  root:
+  
+  ```ts
+  import { Schema } from "effect"
+  import { performance } from "node:perf_hooks"
+  
+  class Row extends Schema.Class<Row>("Row")({ value: Schema.String }) {}
+  class DirectTable extends Schema.Class<DirectTable>("DirectTable")({ rows: Schema.Array(Row) }) {}
+  class UnionTable extends Schema.Class<UnionTable>("UnionTable")({ rows: Schema.Array(Schema.Union([Row])) }) {}
+  
+  const rows = Array.from({ length: 30_000 }, (_, value) => Row.make({ value: String(value) }))
+  
+  function benchmark(label: string, make: () => { readonly rows: ReadonlyArray<Row> }) {
+    const samples: Array<number> = []
+    for (let i = 0; i < 6; i++) {
+      const start = performance.now()
+      const result = make()
+      samples.push(performance.now() - start)
+      if (result.rows[0] !== rows[0] || result.rows.at(-1) !== rows.at(-1)) {
+        throw new Error(`${label} did not preserve Row identity`)
+      }
+    }
+    console.log(`${label}: ${samples.slice(1).map((n) => n.toFixed(3)).join(", ")} ms`)
+  }
+  
+  benchmark("Array(Class)", () => DirectTable.make({ rows }))
+  benchmark("Array(Union([Class]))", () => UnionTable.make({ rows }))
+  ```
+  
+  Representative local results on Node 24.12.0 (six runs, with the first discarded):
+  
+  ```text
+  Array(Class): 0.639, 0.498, 0.447, 0.448, 0.451 ms
+  Array(Union([Class])): 3.141, 2.195, 2.126, 2.108, 2.057 ms
+  ```
+
+- [#7055](https://github.com/Effect-TS/effect/pull/7055) [`0cdadd7`](https://github.com/Effect-TS/effect/commit/0cdadd75bc8abbbcad7956a4bc71f4e7a9b13250) Thanks @fubhy! - Fix `Stream.slidingSize` to produce the same windows regardless of upstream chunk boundaries.
+
+- [#6978](https://github.com/Effect-TS/effect/pull/6978) [`39b57d7`](https://github.com/Effect-TS/effect/commit/39b57d7857358040558b67dd33eafc7bb5457830) Thanks @fubhy! - Retain the last SSE event ID across dispatched events.
+
+- [#6976](https://github.com/Effect-TS/effect/pull/6976) [`5a6a573`](https://github.com/Effect-TS/effect/commit/5a6a5738e5bfc39e3a37ae7ba99081601fa19ac3) Thanks @fubhy! - Recognize and ignore a leading UTF-8 byte order mark in server-sent event streams.
+
+- [#7048](https://github.com/Effect-TS/effect/pull/7048) [`59f5e99`](https://github.com/Effect-TS/effect/commit/59f5e9981913b92d7a9beb2214a21d658b999d3a) Thanks @fubhy! - Ignore malformed retry directives when parsing server-sent event streams.
+
+- [#7028](https://github.com/Effect-TS/effect/pull/7028) [`45379d6`](https://github.com/Effect-TS/effect/commit/45379d6179ee4df2cbd3f848bd39ff7149c24a38) Thanks @fubhy! - Fix `Trie.insert` to replace existing values without mutating the original trie or increasing its size.
+
+- [#6973](https://github.com/Effect-TS/effect/pull/6973) [`1949439`](https://github.com/Effect-TS/effect/commit/1949439175809ef81ab9c6411ed5559109edb4c9) Thanks @fubhy! - Separate the default `VariantSchema` cache from named variant entries.
+
+- [#7072](https://github.com/Effect-TS/effect/pull/7072) [`e443403`](https://github.com/Effect-TS/effect/commit/e443403cf0e4effea14bb6cd950c5ac1c86cc748) Thanks @fubhy! - Keep MCP tool calls that return void successful.
+
+- [#7000](https://github.com/Effect-TS/effect/pull/7000) [`03af7e8`](https://github.com/Effect-TS/effect/commit/03af7e85551204c605ea2fa2c43c10a4538ac8fb) Thanks @fubhy! - Close suspended workflow scopes after resumed completion.
+
+- [#7027](https://github.com/Effect-TS/effect/pull/7027) [`130b28d`](https://github.com/Effect-TS/effect/commit/130b28df552d7053407b041a96ff09dae82575e5) Thanks @pawelblaszczyk5! - Prevent Effect.updateService and Effect.updateServiceScoped supertype widening
+
+- [#6948](https://github.com/Effect-TS/effect/pull/6948) [`c987a12`](https://github.com/Effect-TS/effect/commit/c987a12a01b6a52ad53d29edf02613b03574dbcc) Thanks @fubhy! - Honor numeric zero time-to-live values in `Cache.make` and `ScopedCache.make`.
+
+- [#6974](https://github.com/Effect-TS/effect/pull/6974) [`4158562`](https://github.com/Effect-TS/effect/commit/41585620977de9b84171f76619b72e29cc2284e5) Thanks @fubhy! - Handle accepted undefined fields during variant extraction.
+
+- [#7013](https://github.com/Effect-TS/effect/pull/7013) [`306014a`](https://github.com/Effect-TS/effect/commit/306014a1ce4d5cb956c76bdc20e4e28ab3e61a6a) Thanks @tim-smart! - Fix several edge cases in the vendored FindMyWay router.
+
+- [#6949](https://github.com/Effect-TS/effect/pull/6949) [`729a663`](https://github.com/Effect-TS/effect/commit/729a663275dd31f2357c446fe69664429220a83d) Thanks @fubhy! - Keep TestClock nanosecond access total after infinite adjustments.
+
+- [#6997](https://github.com/Effect-TS/effect/pull/6997) [`caf84b6`](https://github.com/Effect-TS/effect/commit/caf84b660044089e8d7f4067b279b27b8b50e8fd) Thanks @fubhy! - Isolate compiled SQL fragment caches by compiler instance.
+
+- [#6960](https://github.com/Effect-TS/effect/pull/6960) [`ce067f7`](https://github.com/Effect-TS/effect/commit/ce067f799ea27735d4194345298a216aaf429f01) Thanks @fubhy! - Mark omittable CLI flags and arguments as optional in structured help.
+
+- [#7025](https://github.com/Effect-TS/effect/pull/7025) [`7a41f5a`](https://github.com/Effect-TS/effect/commit/7a41f5aa72d540ecf2746992ecc3fa3e6b40d31f) Thanks @pawelblaszczyk5! - Prevent Effect.provideServiceEffect supertype widening
+
+- [#7056](https://github.com/Effect-TS/effect/pull/7056) [`781022a`](https://github.com/Effect-TS/effect/commit/781022acdd3537ca18c88e2fa3681bafa6ef1b21) Thanks @fubhy! - Fix Map and Set equality allowing a right-side entry to match multiple left-side entries.
+
+- [#7063](https://github.com/Effect-TS/effect/pull/7063) [`39f1297`](https://github.com/Effect-TS/effect/commit/39f1297acc08864feb12de6b8cf2bf73434f6cf5) Thanks @fubhy! - Preserve literal element types in `Tuple.make`.
+
+- [#6955](https://github.com/Effect-TS/effect/pull/6955) [`2db266b`](https://github.com/Effect-TS/effect/commit/2db266b1bfbc81868bc1778c37c76032a267c79f) Thanks @fubhy! - Include plain variant structs in the default variant union.
+
+- [#6954](https://github.com/Effect-TS/effect/pull/6954) [`2141e28`](https://github.com/Effect-TS/effect/commit/2141e28903754d72604acf81673ceb2c62a56646) Thanks @fubhy! - Preserve CRLF state across SSE input chunk boundaries.
+
+- [#6950](https://github.com/Effect-TS/effect/pull/6950) [`3c5e429`](https://github.com/Effect-TS/effect/commit/3c5e429878669ffcf5e0da4ddfbf50bde5bbcaad) Thanks @fubhy! - Preserve nanosecond precision for large `TestClock` wall-clock timestamps.
+
+- [#6958](https://github.com/Effect-TS/effect/pull/6958) [`20ddc63`](https://github.com/Effect-TS/effect/commit/20ddc630584f8fe488162ba384adcae53fc6810a) Thanks @fubhy! - Preserve hidden command metadata when adding subcommands or shared flags.
+
+- [#6939](https://github.com/Effect-TS/effect/pull/6939) [`841b3ea`](https://github.com/Effect-TS/effect/commit/841b3ea6ae19a784bc1c20497b02f632af0c91e9) Thanks @fubhy! - Preserve sibling provider input evidence when `Config.all` evaluates a failing child.
+
+- [#6836](https://github.com/Effect-TS/effect/pull/6836) [`82a3fbf`](https://github.com/Effect-TS/effect/commit/82a3fbfce8b9df33e587076b7d7168ecd6799e17) Thanks @mkdynamic! - Route provider-executed tool results into the assistant message in `Prompt.fromResponseParts`
+
+- [#7003](https://github.com/Effect-TS/effect/pull/7003) [`eb9ee83`](https://github.com/Effect-TS/effect/commit/eb9ee83b38844a71d1cd5653a229309cfcb04a36) Thanks @fubhy! - Persist permanent entries in KVS `setMany` operations.
+
+- [#7039](https://github.com/Effect-TS/effect/pull/7039) [`64dc7c7`](https://github.com/Effect-TS/effect/commit/64dc7c76dc5c89887b9e7c181d1873dcbb7820d1) Thanks @fubhy! - Fix failed `ResourceRef` rebuilds permanently blocking waiters.
+
+- [#6971](https://github.com/Effect-TS/effect/pull/6971) [`84dc8ab`](https://github.com/Effect-TS/effect/commit/84dc8ab7accc682bc668c78a97e4a1776b633be8) Thanks @tim-smart! - Serialize concurrent nested SQL transactions to prevent savepoint collisions. Cross-dependent sibling nested
+  transactions now deadlock instead of interleaving and risking silent data corruption.
+
+- [#6952](https://github.com/Effect-TS/effect/pull/6952) [`b4463f4`](https://github.com/Effect-TS/effect/commit/b4463f46fc33d3b01ea5eadd7d012a5abda347a3) Thanks @fubhy! - Register alternate flags used by `Param.orElse` and `Param.orElseResult`.
+
+- [#6732](https://github.com/Effect-TS/effect/pull/6732) [`592dd36`](https://github.com/Effect-TS/effect/commit/592dd361645739ac0cd8e6babb084cd27403c172) Thanks @tim-smart! - Rename the Schema error constructors to align with their `Data` counterparts.
+  
+  - `Schema.ErrorClass` is now `Schema.Error`.
+  - `Schema.TaggedErrorClass` is now `Schema.TaggedError`.
+  - The JavaScript `Error` instance schema is now `Schema.ErrorInstance`.
+  - `Schema.ErrorReviver` is now `Schema.ErrorInstanceReviver`.
+
+- [#7068](https://github.com/Effect-TS/effect/pull/7068) [`85d2b44`](https://github.com/Effect-TS/effect/commit/85d2b446e3059de4919be730105868f79728308d) Thanks @tim-smart! - Report retried RPC socket open failures through the `onTransientError` protocol hook and fail in-flight requests when the retry policy is exhausted.
+
+- [#7006](https://github.com/Effect-TS/effect/pull/7006) [`32e4a69`](https://github.com/Effect-TS/effect/commit/32e4a69b3151b7ec4058af2213b96a41d11e9e06) Thanks @fubhy! - Scope custom persisted queue ID deduplication to each named queue.
+
+- [#6938](https://github.com/Effect-TS/effect/pull/6938) [`13c5872`](https://github.com/Effect-TS/effect/commit/13c5872ed30830360367ad89af2dab68a003c351) Thanks @fubhy! - Honor populated variables before dotenv expansion defaults in `ConfigProvider`.
+
+- [#7040](https://github.com/Effect-TS/effect/pull/7040) [`3454cdb`](https://github.com/Effect-TS/effect/commit/3454cdb528fdb5d3ed0c5c5c8169bc47de41fbd8) Thanks @fubhy! - Fix `SynchronizedRef.getAndUpdateSome` to update its backing ref.
+
+- [#7018](https://github.com/Effect-TS/effect/pull/7018) [`e930804`](https://github.com/Effect-TS/effect/commit/e9308045be1d8a00c0b4046f1e8ff22cf68c93da) Thanks @tim-smart! - Hold persisted cluster messages while entity layers are still registering, while retaining a bounded failure when
+  registration never begins.
+
+- [#6987](https://github.com/Effect-TS/effect/pull/6987) [`7f12d4b`](https://github.com/Effect-TS/effect/commit/7f12d4b4e731dc3a213ae5c3f60db9edc50292d2) Thanks @fubhy! - Map WebSocket send exceptions and transform stream write rejections to typed `SocketError` failures.
+
+- [#6977](https://github.com/Effect-TS/effect/pull/6977) [`181c9ef`](https://github.com/Effect-TS/effect/commit/181c9ef5e5d4ab247bf4aec06424f15b0a1e802e) Thanks @fubhy! - Default empty Server-Sent Event types to `message`.
+
+- [#7010](https://github.com/Effect-TS/effect/pull/7010) [`dd9f891`](https://github.com/Effect-TS/effect/commit/dd9f891e23f316abb6192893008f0e33ece9d97d) Thanks @tim-smart! - Rename `Command.withHidden` to `Command.unlisted`, along with the `hidden` command property which is now `unlisted`.
+
+- [#7054](https://github.com/Effect-TS/effect/pull/7054) [`433fb81`](https://github.com/Effect-TS/effect/commit/433fb81ca4c15c681a8ae097ce3ff9bd3a9c9aa5) Thanks @fubhy! - Fix the return type of `Channel.runCount` to expose its numeric result.
+
+- [#7012](https://github.com/Effect-TS/effect/pull/7012) [`8459cdb`](https://github.com/Effect-TS/effect/commit/8459cdbae8a476dc04b6247fffe6a1668dcb1217) Thanks @tim-smart! - Vendor the multipart parser as `effect/unstable/http/MultipartParser`, add the Node.js adapter at `@effect/platform-node/NodeMultipartParser`, and remove the external `multipasta` dependency.
+
+- [#6953](https://github.com/Effect-TS/effect/pull/6953) [`6124ab3`](https://github.com/Effect-TS/effect/commit/6124ab39eb64688fbd5d688d24766542f9cb5a2c) Thanks @fubhy! - Reject truncated MessagePack frames at the end of a stream.
+
+- [#6961](https://github.com/Effect-TS/effect/pull/6961) [`01bd954`](https://github.com/Effect-TS/effect/commit/01bd9546f142706fca1628f7261e6d1cb9638948) Thanks @fubhy! - Preserve file and directory semantics in CLI completion descriptors.
+
+- [#6990](https://github.com/Effect-TS/effect/pull/6990) [`ba2c3aa`](https://github.com/Effect-TS/effect/commit/ba2c3aa05eb87ec05d263b960017ecf29746f66a) Thanks @fubhy! - Generate unique persisted paths for multipart files with duplicate filenames.
+
+- [#7019](https://github.com/Effect-TS/effect/pull/7019) [`0a45ef3`](https://github.com/Effect-TS/effect/commit/0a45ef3bb4a1ae9b345c43c548db4336a31b3191) Thanks @tim-smart! - Round Redis persistence TTLs up to whole milliseconds before passing them to integer-only expiration commands.
+
+- [#7012](https://github.com/Effect-TS/effect/pull/7012) [`8459cdb`](https://github.com/Effect-TS/effect/commit/8459cdbae8a476dc04b6247fffe6a1668dcb1217) Thanks @tim-smart! - Prevent malformed encoded multipart filenames from throwing during parsing.
+
+- [#7029](https://github.com/Effect-TS/effect/pull/7029) [`eaa7e71`](https://github.com/Effect-TS/effect/commit/eaa7e71b88bf59b24610128c6115a2a126432731) Thanks @fubhy! - Fix unencrypted event log conflict scanning to inspect the newer history suffix.
+
+- [#6988](https://github.com/Effect-TS/effect/pull/6988) [`db4c2cc`](https://github.com/Effect-TS/effect/commit/db4c2ccdec77d813b6f4cc72a302ee7c4fe6e39d) Thanks @fubhy! - Preserve lexical ordering in streaming template interpolation.
+
+- [#6964](https://github.com/Effect-TS/effect/pull/6964) [`22f150a`](https://github.com/Effect-TS/effect/commit/22f150a0936cef30517e87eaca73bff1c5e4873a) Thanks @fubhy! - Correct year, ordinal, and meridiem date-mask formatting.
+
+- [#6966](https://github.com/Effect-TS/effect/pull/6966) [`90ffb08`](https://github.com/Effect-TS/effect/commit/90ffb083b3091c211300f50a42ba7bf56536c0ee) Thanks @fubhy! - Preserve fractional leading zeros while editing float prompts.
+
+- [#6982](https://github.com/Effect-TS/effect/pull/6982) [`d517692`](https://github.com/Effect-TS/effect/commit/d517692ef75f45d5f6d9d68b32d41fa0ccc56c99) Thanks @fubhy! - Reject NDJSON values without a JSON representation.
+
+- [#6942](https://github.com/Effect-TS/effect/pull/6942) [`01af079`](https://github.com/Effect-TS/effect/commit/01af079c189d1fc5067d3b1933b2870c4baf2693) Thanks @fubhy! - Validate object-based DateTime instants before construction.
+
+- [#6985](https://github.com/Effect-TS/effect/pull/6985) [`32a59e8`](https://github.com/Effect-TS/effect/commit/32a59e8058b1ec9738cb083cf1cb116b393ca114) Thanks @fubhy! - Preserve original HTTP response bytes when reading response text first.
+
 ## 4.0.0-beta.103
 
 ### Minor Changes
@@ -2137,7 +2824,7 @@
 - [#1725](https://github.com/Effect-TS/effect-smol/pull/1725) [`27fea0f`](https://github.com/Effect-TS/effect-smol/commit/27fea0f66910de5905f40fd63f8ddbb6f7ac5aba) Thanks @tim-smart! - Improve unstable HttpApi runtime failures for missing server middleware and missing group implementations.
   - HttpApiBuilder.applyMiddleware now resolves middleware services via Context.getUnsafe, so missing middleware fails with a clear "Service not found: <middleware>" error instead of an opaque is not a function TypeError.
   - HttpApiBuilder.layer now reports missing groups with actionable context (group identifier, service key, suggested HttpApiBuilder.group(...) call, and available group keys).
-  - Added regression tests in packages/platform-node/test/HttpApi.test.ts covering:
+  - Added regression tests in packages/platform/node/test/HttpApi.test.ts covering:
     - addHttpApi + API-level middleware applied across merged groups
     - missing middleware service diagnostics
     - missing addHttpApi group layer diagnostics

@@ -65,7 +65,7 @@ export const TranscriptionUpdate = Schema.Union([
 ]);
 export type TranscriptionUpdate = typeof TranscriptionUpdate.Type;
 
-export class TranscriptionDisabledError extends Schema.TaggedErrorClass<TranscriptionDisabledError>()(
+export class TranscriptionDisabledError extends Schema.TaggedError<TranscriptionDisabledError>()(
   "TranscriptionDisabledError",
   {},
 ) {
@@ -74,7 +74,7 @@ export class TranscriptionDisabledError extends Schema.TaggedErrorClass<Transcri
   }
 }
 
-export class TranscriptionSidecarError extends Schema.TaggedErrorClass<TranscriptionSidecarError>()(
+export class TranscriptionSidecarError extends Schema.TaggedError<TranscriptionSidecarError>()(
   "TranscriptionSidecarError",
   {
     reason: Schema.Literals(["spawnFailed", "crashed", "protocol", "notFound"]),
@@ -88,7 +88,7 @@ export class TranscriptionSidecarError extends Schema.TaggedErrorClass<Transcrip
   }
 }
 
-export class TranscriptionSessionLookupError extends Schema.TaggedErrorClass<TranscriptionSessionLookupError>()(
+export class TranscriptionSessionLookupError extends Schema.TaggedError<TranscriptionSessionLookupError>()(
   "TranscriptionSessionLookupError",
   {
     sessionId: Schema.String,

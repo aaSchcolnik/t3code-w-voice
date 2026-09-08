@@ -137,7 +137,6 @@ function LocalSettingsRouteScreen() {
             value={`${environmentCount}`}
             target="SettingsEnvironments"
           />
-          <SettingsRow icon="chart.bar.xaxis" label="Limits" target="SettingsLimits" />
           <SettingsRow icon="waveform" label="Voice" target="SettingsVoice" />
         </SettingsSection>
 
@@ -487,7 +486,6 @@ function ConfiguredSettingsRouteScreen() {
             value={`${environmentCount}`}
             target="SettingsEnvironments"
           />
-          <SettingsRow icon="chart.bar.xaxis" label="Limits" target="SettingsLimits" />
           <SettingsRow icon="waveform" label="Voice" target="SettingsVoice" />
           <SettingsSwitchRow
             icon="bell.badge"
@@ -673,6 +671,8 @@ function AutoSettleSettingsRows() {
                     patch: filterSharedServerPatch(
                       patch,
                       target?.serverConfig?.environment.capabilities,
+                      target?.serverConfig?.settings,
+                      referenceSettings,
                     ),
                   },
                 });

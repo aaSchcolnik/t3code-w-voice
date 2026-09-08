@@ -573,7 +573,7 @@ export const RemotePreviewHostSignalInput = Schema.Struct({
 });
 export type RemotePreviewHostSignalInput = typeof RemotePreviewHostSignalInput.Type;
 
-export class RemotePreviewNoHostError extends Schema.TaggedErrorClass<RemotePreviewNoHostError>()(
+export class RemotePreviewNoHostError extends Schema.TaggedError<RemotePreviewNoHostError>()(
   "RemotePreviewNoHostError",
   {
     environmentId: EnvironmentId,
@@ -585,7 +585,7 @@ export class RemotePreviewNoHostError extends Schema.TaggedErrorClass<RemotePrev
   }
 }
 
-export class RemotePreviewControllerBusyError extends Schema.TaggedErrorClass<RemotePreviewControllerBusyError>()(
+export class RemotePreviewControllerBusyError extends Schema.TaggedError<RemotePreviewControllerBusyError>()(
   "RemotePreviewControllerBusyError",
   {
     sessionId: RemotePreviewSessionId,
@@ -598,7 +598,7 @@ export class RemotePreviewControllerBusyError extends Schema.TaggedErrorClass<Re
   }
 }
 
-export class RemotePreviewViewerLimitError extends Schema.TaggedErrorClass<RemotePreviewViewerLimitError>()(
+export class RemotePreviewViewerLimitError extends Schema.TaggedError<RemotePreviewViewerLimitError>()(
   "RemotePreviewViewerLimitError",
   {
     environmentId: EnvironmentId,
@@ -611,7 +611,7 @@ export class RemotePreviewViewerLimitError extends Schema.TaggedErrorClass<Remot
   }
 }
 
-export class RemotePreviewRevokedError extends Schema.TaggedErrorClass<RemotePreviewRevokedError>()(
+export class RemotePreviewRevokedError extends Schema.TaggedError<RemotePreviewRevokedError>()(
   "RemotePreviewRevokedError",
   {
     sessionId: RemotePreviewSessionId,
@@ -622,7 +622,7 @@ export class RemotePreviewRevokedError extends Schema.TaggedErrorClass<RemotePre
   }
 }
 
-export class RemotePreviewDevToolsOpenError extends Schema.TaggedErrorClass<RemotePreviewDevToolsOpenError>()(
+export class RemotePreviewDevToolsOpenError extends Schema.TaggedError<RemotePreviewDevToolsOpenError>()(
   "RemotePreviewDevToolsOpenError",
   {
     sessionId: RemotePreviewSessionId,
@@ -634,7 +634,7 @@ export class RemotePreviewDevToolsOpenError extends Schema.TaggedErrorClass<Remo
   }
 }
 
-export class RemotePreviewViewerSigningKeyLoadError extends Schema.TaggedErrorClass<RemotePreviewViewerSigningKeyLoadError>()(
+export class RemotePreviewViewerSigningKeyLoadError extends Schema.TaggedError<RemotePreviewViewerSigningKeyLoadError>()(
   "RemotePreviewViewerSigningKeyLoadError",
   {
     cause: Schema.Defect(),
@@ -645,7 +645,7 @@ export class RemotePreviewViewerSigningKeyLoadError extends Schema.TaggedErrorCl
   }
 }
 
-export class RemotePreviewViewerEnvironmentMismatchError extends Schema.TaggedErrorClass<RemotePreviewViewerEnvironmentMismatchError>()(
+export class RemotePreviewViewerEnvironmentMismatchError extends Schema.TaggedError<RemotePreviewViewerEnvironmentMismatchError>()(
   "RemotePreviewViewerEnvironmentMismatchError",
   {
     environmentId: EnvironmentId,

@@ -1,109 +1,184 @@
-import { describe, expect, it } from "vite-plus/test";
-
 import {
-  describeUsageSource,
-  formatProgressPrimary,
-  formatProgressSecondary,
-  formatResetTime,
-  formatUsageUpdatedAt,
-  formatUsageValue,
-  resolveUsageCardMessage,
-  usageMeterTone,
-} from "./usage.ts";
+  EnvironmentId,
+  UsageDay,
+  USAGE_CONTRACT_VERSION,
+  type UsageSummary,
+} from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 
-describe("usage presentation", () => {
-  it("formats percentage and currency progress without changing semantics", () => {
-    expect(
-      formatProgressPrimary({
-        kind: "progress",
-        id: "weekly",
-        label: "Weekly",
-        usedPercent: 37,
-        remainingPercent: 63,
+import type { EnvironmentPresentation } from "../connection/presentation.ts";
+import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
+import { refreshUsage } from "./usage.ts";
+
+const input = {
+  sinceDay: UsageDay.make("2026-09-05"),
+  untilDay: UsageDay.make("2026-09-05"),
+  timeZone: "UTC",
+};
+const pricing = { status: "fresh" as const, source: "test", fetchedAt: null, knownModels: 1 };
+const summary: UsageSummary = {
+  ...input,
+  contractVersion: USAGE_CONTRACT_VERSION,
+  readAt: "2026-09-05T12:00:00Z",
+  buckets: [],
+  sources: [],
+  pricing,
+  scanDurationMs: 1,
+};
+const registries: AtomRegistry.AtomRegistry[] = [];
+afterEach(() => {
+  for (const registry of registries.splice(0)) registry.dispose();
+});
+
+function harness(ids = ["a"]) {
+  const registry = AtomRegistry.make();
+  registries.push(registry);
+  const environments = ids.map((id) => {
+    const environmentId = EnvironmentId.make(id);
+    const rates = Promise.withResolvers<
+      AsyncResult.Success<typeof pricing> | AsyncResult.Failure<never, unknown>
+    >();
+    const scan = Promise.withResolvers<UsageSummary>();
+    const scanStarted = Promise.withResolvers<void>();
+    const presentation = Atom.make({
+      connection: { phase: "connected" },
+    } as EnvironmentPresentation | null);
+    const query = Atom.make(
+      Effect.promise(() => {
+        scanStarted.resolve();
+        return scan.promise;
       }),
-    ).toBe("63% left");
-    expect(
-      formatProgressPrimary({
-        kind: "progress",
-        id: "extra",
-        label: "Extra usage",
-        usedPercent: 50,
-        remainingPercent: 50,
-        usedValue: 25,
-        limitValue: 50,
-        valueUnit: "currency-usd",
-      }),
-    ).toBe("$25.00 used");
-    expect(
-      formatProgressSecondary({
-        kind: "progress",
-        id: "extra",
-        label: "Extra usage",
-        usedPercent: 50,
-        remainingPercent: 50,
-        usedValue: 25,
-        limitValue: 50,
-        valueUnit: "currency-usd",
-      }),
-    ).toBe("$50.00 limit");
-    expect(formatUsageValue(12_345, "count")).toBe("12,345");
+    );
+    return { environmentId, rates, scan, scanStarted, presentation, query };
   });
-
-  it("formats reset countdowns at day, hour, and minute granularity", () => {
-    const now = Date.parse("2026-07-26T00:00:00Z");
-    expect(formatResetTime("2026-07-27T16:00:00Z", now)).toBe("Resets in 1d 16h");
-    expect(formatResetTime("2026-07-26T05:00:00Z", now)).toBe("Resets in 5h");
-    expect(formatResetTime("2026-07-26T00:04:30Z", now)).toBe("Resets in 5m");
-    expect(formatResetTime("2026-07-26T00:00:30Z", now)).toBe("Resets in 1m");
-    expect(formatResetTime("2026-07-25T23:59:59Z", now)).toBe("Resets now");
-    expect(formatResetTime("not-a-date", now)).toBe("Reset time unavailable");
-  });
-
-  it.each([
-    { remainingPercent: 0, expected: "critical" },
-    { remainingPercent: 10, expected: "critical" },
-    { remainingPercent: 10.1, expected: "warning" },
-    { remainingPercent: 25, expected: "warning" },
-    { remainingPercent: 25.1, expected: "normal" },
-    { remainingPercent: 100, expected: "normal" },
-  ] as const)(
-    "uses $expected meter tone at $remainingPercent%",
-    ({ remainingPercent, expected }) => {
-      expect(usageMeterTone(remainingPercent)).toBe(expected);
+  function get(environmentId: EnvironmentId) {
+    const environment = environments.find((entry) => entry.environmentId === environmentId);
+    if (!environment) throw new Error(`Unknown environment: ${environmentId}`);
+    return environment;
+  }
+  const options = {
+    registry,
+    environmentIds: environments.map((entry) => entry.environmentId),
+    input,
+    server: {
+      usageSummary: ({ environmentId }: { environmentId: EnvironmentId }) =>
+        get(environmentId).query,
+      refreshUsageRates: {
+        label: "test:rates",
+        run: (
+          _registry: AtomRegistry.AtomRegistry,
+          { environmentId }: { environmentId: EnvironmentId },
+        ) => get(environmentId).rates.promise,
+      },
     },
-  );
+    presentations: {
+      presentationAtom: (environmentId: EnvironmentId) => get(environmentId).presentation,
+    },
+  } satisfies Parameters<typeof refreshUsage>[0];
+  return { registry, environments, refresh: () => refreshUsage(options) };
+}
 
-  it("describes official and best-effort sources", () => {
-    expect(describeUsageSource("official")).toEqual({
-      label: "Provider API",
-      description: null,
+describe("manual usage refresh", () => {
+  it.each(["success", "failure"])("waits for the rescan after a pricing %s", async (result) => {
+    const {
+      environments: [environment],
+      refresh,
+    } = harness();
+    const entry = environment!;
+    let finished = false;
+    const refreshing = refresh().then(() => {
+      finished = true;
     });
-    expect(describeUsageSource("vendor-private")).toEqual({
-      label: "Best-effort source",
-      description:
-        "This provider does not publish a stable personal subscription quota API. T3 mirrors the local provider client and may show partial data if the vendor changes it.",
-    });
+    expect(finished).toBe(false);
+    entry.rates.resolve(
+      result === "success"
+        ? AsyncResult.success(pricing)
+        : AsyncResult.fail(new Error("Pricing offline")),
+    );
+    await entry.scanStarted.promise;
+    expect(finished).toBe(false);
+    entry.scan.resolve(summary);
+    await refreshing;
+    expect(finished).toBe(true);
   });
 
-  it("resolves provider-card fallback messages", () => {
-    expect(resolveUsageCardMessage({ status: "error", message: "Provider request failed." })).toBe(
-      "Provider request failed.",
-    );
-    expect(resolveUsageCardMessage({ status: "unavailable" })).toBe(
-      "No local subscription credentials were found.",
-    );
-    expect(resolveUsageCardMessage({ status: "available" })).toBe(
-      "No quota data is available for this account.",
-    );
+  it("settles when an environment disconnects during the rescan", async () => {
+    const {
+      registry,
+      environments: [environment],
+      refresh,
+    } = harness();
+    const entry = environment!;
+    const refreshing = refresh();
+    entry.rates.resolve(AsyncResult.success(pricing));
+    await entry.scanStarted.promise;
+    registry.set(entry.presentation, null);
+    await refreshing;
   });
 
-  it("formats the snapshot update time", () => {
-    const fetchedAt = "2026-07-26T15:42:00Z";
-    const expectedTime = new Intl.DateTimeFormat(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(Date.parse(fetchedAt));
-    expect(formatUsageUpdatedAt(fetchedAt)).toBe(`Updated ${expectedTime}`);
-    expect(formatUsageUpdatedAt("not-a-date")).toBeNull();
+  it("waits for healthy environments without waiting for a recovering environment", async () => {
+    const { registry, environments, refresh } = harness(["healthy", "recovering"]);
+    const [healthy, recovering] = environments;
+    registry.set(recovering!.presentation, null);
+    let finished = false;
+    const refreshing = refresh().then(() => {
+      finished = true;
+    });
+    for (const entry of environments) entry.rates.resolve(AsyncResult.success(pricing));
+    await healthy!.scanStarted.promise;
+    expect(finished).toBe(false);
+    healthy!.scan.resolve(summary);
+    await refreshing;
+    expect(finished).toBe(true);
+  });
+
+  it("settles when connected state has no usable RPC session", async () => {
+    const {
+      environments: [environment],
+      refresh,
+    } = harness();
+    const entry = environment!;
+    const refreshing = refresh();
+    entry.rates.resolve(
+      AsyncResult.fail(
+        new EnvironmentRpcUnavailableError({
+          environmentId: entry.environmentId,
+          message: "No session",
+        }),
+      ),
+    );
+    await refreshing;
+  });
+
+  it("replaces a scan that started before pricing was refreshed", async () => {
+    const {
+      registry,
+      environments: [environment],
+      refresh,
+    } = harness();
+    const entry = environment!;
+    let reads = 0;
+    const rescanned = Promise.withResolvers<void>();
+    const query = Atom.make(
+      Effect.promise(() => {
+        reads += 1;
+        if (reads > 1) {
+          rescanned.resolve();
+          return Promise.resolve(summary);
+        }
+        return new Promise<UsageSummary>(() => {});
+      }),
+    );
+    entry.query = query;
+    const unmount = registry.mount(query);
+    expect(reads).toBe(1);
+    const refreshing = refresh();
+    entry.rates.resolve(AsyncResult.success(pricing));
+    await rescanned.promise;
+    await refreshing;
+    expect(reads).toBe(2);
+    unmount();
   });
 });

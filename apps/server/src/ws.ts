@@ -9,6 +9,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -157,7 +158,7 @@ import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
-import * as SubscriptionLimitsService from "./usage/SubscriptionLimitsService.ts";
+import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
@@ -684,9 +685,9 @@ const makeWsRpcLayer = (
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
       const sessions = yield* SessionStore.SessionStore;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
+      const hostResources = yield* HostResources.HostResources;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
-      const subscriptionLimits = yield* SubscriptionLimitsService.SubscriptionLimitsService;
       const usage = yield* UsageService.UsageService;
       const relayClient = yield* RelayClient.RelayClient;
       const projectionProjects = yield* ProjectionProjectRepository;
@@ -1950,6 +1951,7 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.providerConsumeResetCredit,
             Effect.gen(function* () {
+              if ("sourceId" in input) return yield* usageLimitSources.consumeResetCredit(input);
               const instance = yield* providerInstances.getInstance(input.instanceId);
               // A disabled instance must not spend anything on its account.
               if (instance === undefined || !instance.enabled) {
@@ -2347,9 +2349,9 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverGetProcessDiagnostics, processDiagnostics.read, {
             "rpc.aggregate": "server",
           }),
-        [WS_METHODS.usageRead]: (input) =>
-          observeRpcEffect(WS_METHODS.usageRead, subscriptionLimits.read(input), {
-            "rpc.aggregate": "subscription-limits",
+        [WS_METHODS.serverGetHostResources]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverGetHostResources, hostResources.read, {
+            "rpc.aggregate": "server",
           }),
         [WS_METHODS.serverGetProcessResourceHistory]: (input) =>
           observeRpcEffect(
@@ -2744,9 +2746,12 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.assetsCreateUrl,
             Effect.gen(function* () {
+              const path = yield* Path.Path;
+              // An absolute media path can be linked from a thread on another environment.
               if (
                 input.resource._tag === "attachment" ||
-                input.resource._tag === "native-app-icon"
+                input.resource._tag === "native-app-icon" ||
+                (input.resource._tag === "media-file" && path.isAbsolute(input.resource.path))
               ) {
                 return yield* issueAssetUrl({ resource: input.resource });
               }

@@ -4,7 +4,7 @@
 
 Base: `3d390f232bdbc3f0d3d6a2ae3c775084f494b547` (`3d390f232bdbc3f0d3d6a2ae3c775084f494b547`)
 
-Head: `main` (`a94cbed84e9e49bea4bff925599c0f19c4e3deab`)
+Head: `origin/main` (`20cb4f260e45d37fa417c292c57be015314efe16`)
 
 This file is generated from the API diff and `migration/annotations/*.yaml`.
 
@@ -312,6 +312,7 @@ These v4 modules did not have a mapped v3 module. Treat them as v4-only unless a
 more specific migration guide says otherwise.
 
 ```text
+@effect/platform-node/NodeMultipartParser (barrel: @effect/platform-node)
 effect/ErrorReporter (barrel: effect)
 effect/Filter (barrel: effect)
 effect/JsonPatch (barrel: effect)
@@ -338,11 +339,9 @@ effect/unstable/eventlog/EventLogSessionAuth (barrel: effect/unstable/eventlog)
 effect/unstable/eventlog/SqlEventLogServerUnencrypted (barrel: effect/unstable/eventlog)
 effect/unstable/http/FindMyWay (barrel: effect/unstable/http)
 effect/unstable/http/HttpStaticServer (barrel: effect/unstable/http)
-effect/unstable/http/Multipasta (barrel: effect/unstable/http)
-effect/unstable/http/Multipasta/HeadersParser (barrel: effect/unstable/http)
-effect/unstable/http/Multipasta/Node (barrel: effect/unstable/http)
-effect/unstable/http/Multipasta/Search (barrel: effect/unstable/http)
-effect/unstable/http/Multipasta/Web (barrel: effect/unstable/http)
+effect/unstable/http/MultipartParser (barrel: effect/unstable/http)
+effect/unstable/http/MultipartParser/HeadersParser (barrel: effect/unstable/http)
+effect/unstable/http/MultipartParser/Search (barrel: effect/unstable/http)
 effect/unstable/httpapi/HttpApiTest (barrel: effect/unstable/httpapi)
 effect/unstable/observability/PrometheusMetrics (barrel: effect/unstable/observability)
 effect/unstable/persistence/Redis (barrel: effect/unstable/persistence)
@@ -4927,7 +4926,9 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 ### `@effect/ai/McpSchema`
 
-- `McpSchema.ContentBlock` -> `McpSchema.ContentBlock`: Moved to effect/unstable/ai/McpSchema. It remains the MCP content-block union, but v4 exports it as a const schema rather than a Schema.Union subclass.
+- `McpSchema.ContentBlock` -> `McpSchema.ContentBlock`: Moved to effect/unstable/ai/McpSchema. It remains the MCP content-block union, but v4 exports it as a const schema rather than a Schema.Union subclass. Binary image, audio, and blob data still use Uint8Array values with base64 wire encoding.
+
+- `McpSchema.ElicitResult` -> `McpSchema.ElicitResult`: Moved to effect/unstable/ai/McpSchema. It remains discriminated by action, but accepted content is now optional and, when present, is a record of strings, finite numbers, booleans, or string arrays; declined and canceled responses still omit content.
 
 - `McpSchema.McpError` -> `McpSchema.McpError`: Moved, but changed from a constructable base class to a union schema of standard tagged protocol errors plus McpErrorBase. Use McpErrorBase to construct a generic MCP error.
 
@@ -5373,7 +5374,7 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 - `Options.between` -> `Flag.between`: Use the moved combinator; v4 validates bounds when constructing the parameter.
 
-- `Options.boolean` -> `Flag.boolean`: Use the moved constructor; --no-name is automatic and aliases are added with Flag.withAlias.
+- `Options.boolean` -> `Flag.boolean + Flag.withDefault`: Use Flag.boolean(name).pipe(Flag.withDefault(false)) to preserve v3's omitted-flag default; bare Flag.boolean is now required. --no-name is automatic and aliases are added with Flag.withAlias.
 
 - `Options.choice` -> `Flag.choice`: Use the moved constructor.
 
@@ -5673,21 +5674,23 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 ### `@effect/cluster/Message`
 
-- `Message.serialize` -> `effect/unstable/cluster/Message#serialize`: Moved into core Effect. It now returns Envelope.Partial; use serializeEnvelope for the JSON Envelope.Encoded form.
+- `Message.serialize` -> `effect/unstable/cluster/Message#serialize`: Moved into core Effect. Pass the transport's codecFor as the second argument; use serializeEnvelope for the JSON Envelope.Encoded form.
 
 ### `@effect/cluster/MessageStorage`
 
-- `MessageStorage.Encoded` -> `effect/unstable/cluster/MessageStorage#Encoded`: Moved into core Effect; use the v4 Envelope.Encoded and Reply.Encoded aliases in custom encoded storage implementations.
+- `MessageStorage.Encoded` -> `effect/unstable/cluster/MessageStorage#Encoded`: Moved into core Effect; use the v4 Envelope.Encoded and Reply.Encoded aliases. Custom drivers now implement batched resetAddresses, and unprocessedMessages receives optional limit and address filters.
 
-- `MessageStorage.make` -> `effect/unstable/cluster/MessageStorage#make`: Moved into core Effect. Context service projections now use the Service property instead of Type.
+- `MessageStorage.make` -> `effect/unstable/cluster/MessageStorage#make`: Moved into core Effect. Context service projections now use the Service property instead of Type. Custom service implementations must also provide resetAddresses for batched mailbox resets.
+
+- `MessageStorage.makeEncoded` -> `effect/unstable/cluster/MessageStorage#makeEncoded`: Moved into core Effect. Custom encoded drivers must replace resetAddress with resetAddresses and may use the new limit and addresses options passed to unprocessedMessages.
 
 ### `@effect/cluster/Reply`
 
-- `Reply.ReplyEncoded` -> `effect/unstable/cluster/Reply#Encoded`: Renamed to Encoded and no longer parameterized by an Rpc; payload fields are unknown and validated by Reply.Reply(rpc).
+- `Reply.ReplyEncoded` -> `effect/unstable/cluster/Reply#Encoded`: Renamed to Encoded and no longer parameterized by an Rpc; payload fields are unknown and validated by Reply.Reply(rpc, codecFor) with the transport's codec.
 
 - `Reply.TypeId` -> `none`: The reply marker is private in v4. Use Reply.isReply for runtime refinement.
 
-- `Reply.serialize` -> `effect/unstable/cluster/Reply#serialize`: Moved into core Effect and now returns the non-generic Reply.Encoded wire union.
+- `Reply.serialize` -> `effect/unstable/cluster/Reply#serialize`: Moved into core Effect and now returns the non-generic Reply.Encoded wire union. Pass the transport's codecFor as the second argument.
 
 ### `@effect/cluster/Runner`
 
@@ -5703,7 +5706,7 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 ### `@effect/cluster/Runners`
 
-- `Runners.make` -> `effect/unstable/cluster/Runners#make`: Moved into core Effect with the same callbacks and requirements; Context service projections now use Service instead of Type.
+- `Runners.make` -> `effect/unstable/cluster/Runners#make`: Moved into core Effect. Its options now require codecFor; pass the codec used by the remote runner transport, such as RpcSerialization.json.codecFor for JSON. Context service projections now use Service instead of Type.
 
 - `Runners.makeNoop` -> `effect/unstable/cluster/Runners#makeNoop`: Moved into core Effect; it returns the Context.Service implementation through the Service projection instead of Type.
 
@@ -5717,7 +5720,7 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 - `ShardingConfig.config` -> `effect/unstable/cluster/ShardingConfig#config`: Moved into core Effect; its Context service value type now uses the Service property instead of Type.
 
-- `ShardingConfig.defaults` -> `effect/unstable/cluster/ShardingConfig#defaults`: Moved into core Effect with the same complete defaults; service type projections now use Service instead of Type.
+- `ShardingConfig.defaults` -> `effect/unstable/cluster/ShardingConfig#defaults`: Moved into core Effect; service type projections now use Service instead of Type. V4 also defaults maxResidentEntities to 10,000 and unprocessedMessageBatchSize to 1,024.
 
 - `ShardingConfig.layer` -> `effect/unstable/cluster/ShardingConfig#layer`: Moved into core Effect with the same shallow default merge; service type projections now use Service instead of Type.
 
@@ -5966,6 +5969,8 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 - `RateLimiter.RateLimiterError` -> `effect/unstable/persistence/RateLimiter#RateLimiterError`: The retained name is now a wrapper error class whose reason is RateLimitExceeded or RateLimitStoreError.
 
 - `RateLimiter.TypeId` -> `effect/unstable/persistence/RateLimiter#TypeId`: Import TypeId from the v4 unstable RateLimiter module; it is now a string brand.
+
+- `RateLimiter.makeSleep` -> `effect/unstable/persistence/RateLimiter#sleep`: The accessor Effect was replaced by sleep; obtain the RateLimiter service and pass it to sleep directly or with its curried overload.
 
 ### `@effect/experimental/RateLimiter/Redis`
 
@@ -6441,7 +6446,7 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 - `Error.TypeId` -> `none`: The PlatformError runtime marker is internal in v4; use the PlatformError class/tag.
 
-- `Error.TypeIdError` -> `Data.TaggedError or Schema.ErrorClass`: The platform-specific error-class factory was removed; define tagged data errors or schema-backed error classes directly.
+- `Error.TypeIdError` -> `Data.TaggedError or Schema.Error`: The platform-specific error-class factory was removed; define tagged data errors or schema-backed error classes directly.
 
 - `Error.isPlatformError` -> `value instanceof PlatformError.PlatformError`: PlatformError is a class in v4; use an instanceof check or match its PlatformError tag.
 
@@ -6502,6 +6507,8 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 - `FileSystem.make` -> `FileSystem.make`: The constructor remains after moving the module to effect/FileSystem; adapt the implementation to the v4 service shape.
 
 ### `@effect/platform/Headers`
+
+- `Headers.Headers` -> `Headers.Headers`: Import Headers from effect/unstable/http; the immutable string-record interface is retained with its v4 TypeId brand.
 
 - `Headers.HeadersTypeId` -> `Headers.TypeId`: The public Headers type-id symbol was renamed from HeadersTypeId to TypeId.
 
@@ -6757,11 +6764,11 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 - `HttpApiSchema.Empty` -> `effect/unstable/httpapi/HttpApiSchema#Empty`: The API remains and returns Schema.Void annotated with the supplied status.
 
-- `HttpApiSchema.EmptyError` -> `effect/Schema#ErrorClass`: Define a normal schema error with httpApiStatus, then derive its no-content wire schema with asNoContent.
+- `HttpApiSchema.EmptyError` -> `effect/Schema#Error`: Define a normal schema error with httpApiStatus, then derive its no-content wire schema with asNoContent.
 
-- `HttpApiSchema.EmptyErrorClass` -> `effect/Schema#ErrorClass`: The class and no-content codec are separate in v4; combine ErrorClass with HttpApiSchema.asNoContent.
+- `HttpApiSchema.EmptyErrorClass` -> `effect/Schema#Error`: The class and no-content codec are separate in v4; combine Schema.Error with HttpApiSchema.asNoContent.
 
-- `HttpApiSchema.EmptyErrorUnify` -> `none`: Removed with EmptyError; Schema.ErrorClass instances already support yieldable-error behavior.
+- `HttpApiSchema.EmptyErrorUnify` -> `none`: Removed with EmptyError; Schema.Error instances already support yieldable-error behavior.
 
 - `HttpApiSchema.EmptyErrorUnifyIgnore` -> `none`: Removed with EmptyError; do not recreate the old Unify marker.
 
@@ -7583,6 +7590,8 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 ### `@effect/rpc/RpcMessage`
 
+- `RpcMessage.FromServerEncoded` -> `effect/unstable/rpc/RpcMessage#FromServerEncoded`: The union is retained and now also includes RequestEncoded for server-originated requests and notifications. Handle \_tag: "Request" when matching exhaustively; isNotification identifies notifications.
+
 - `RpcMessage.RequestId` -> `effect/unstable/rpc/RpcMessage#RequestId`: Request ids are now branded string or number values; convert bigint ids before calling the retained RequestId constructor.
 
 - `RpcMessage.RequestIdTypeId` -> `effect/unstable/rpc/RpcMessage#RequestId`: The public symbol marker was removed; use the branded RequestId type and RequestId constructor rather than inspecting its brand.
@@ -7631,7 +7640,7 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 ### `@effect/rpc/RpcServer`
 
-- `RpcServer.Protocol` -> `effect/unstable/rpc/RpcServer#Protocol`: Retained as a Context.Service; custom transports now expose a disconnect queue and explicit capability flags.
+- `RpcServer.Protocol` -> `effect/unstable/rpc/RpcServer#Protocol`: Retained as a Context.Service; custom transports now expose a disconnect queue, explicit capability flags, and codecFor for schema-aware payload and exit encoding.
 
 - `RpcServer.fiberIdClientInterrupt` -> `effect/unstable/rpc/RpcSchema#ClientAbort`: The sentinel FiberId was replaced by a Cause annotation; inspect ClientAbort in the interruption cause when client cancellation must be distinguished.
 
@@ -8505,7 +8514,7 @@ effect/unstable/rpc/Utils (barrel: effect/unstable/rpc)
 
 - `Arbitrary.ArbitraryGenerationContext` -> `Schema.Annotations.ToArbitrary.Context`: Use the v4 arbitrary-derivation context type from Schema.Annotations.
 
-- `Arbitrary.LazyArbitrary` -> `Schema.LazyArbitrary`: The lazy arbitrary type moved onto Schema.
+- `Arbitrary.LazyArbitrary` -> `Schema.Arbitrary`: The arbitrary factory type moved onto Schema.
 
 #### `Arbitrary.make`
 
@@ -8516,19 +8525,19 @@ Arbitrary derivation is now exposed directly by Schema.
 **Example**
 
 ```ts
-Schema.toArbitrary(schema)
+Schema.toArbitrary(schema)(FastCheck)
 ```
 
 #### `Arbitrary.makeLazy`
 
-**Replacement:** `Schema.toArbitraryLazy`
+**Replacement:** `Schema.toArbitrary`
 
 Lazy arbitrary derivation is now exposed directly by Schema.
 
 **Example**
 
 ```ts
-Schema.toArbitraryLazy(schema)
+Schema.toArbitrary(schema)
 ```
 
 ### `effect/Array`
@@ -9695,8 +9704,6 @@ Schema.toArbitraryLazy(schema)
 
 - `Effect.getRuntimeFlags` -> `none`: RuntimeFlags are no longer a public Effect service; use supported high-level runtime options. No direct public replacement exists in v4; rewrite the call site around the stated v4 primitive.
 
-- `Effect.head` -> `Effect.flatMap + Array.head + Effect.fromOption`: Inspect the produced iterable explicitly and fail when it is empty. Adapt arguments and imports to the v4 API.
-
 - `Effect.if` -> `Effect.suspend`: Select the branch lazily with a JavaScript conditional inside `Effect.suspend`. Adapt arguments and imports to the v4 API.
 
 - `Effect.ignoreLogged` -> `Effect.ignore`: Pass `{ log: true }` to the consolidated ignore combinator. Adapt arguments and imports to the v4 API.
@@ -10247,6 +10254,8 @@ FastCheck.nat({ max: 0xffff }).map(String.fromCharCode)
 
 - `FastCheck.constant` -> `FastCheck.constant`: Import FastCheck from effect/testing. The API remains; v4 infers literal types by default.
 
+- `FastCheck.context` -> `FastCheck.context`: Import FastCheck from effect/testing. The API is otherwise unchanged.
+
 #### `FastCheck.fullUnicode`
 
 **Replacement:** `FastCheck.string`
@@ -10689,6 +10698,8 @@ FastCheck.uuid({ version: 4 })
 
 ### `effect/Graph`
 
+- `Graph.Edge` -> `Graph.Edge`: The type remains as a structural interface, but its Data.Class constructor/value export was removed. Replace new Graph.Edge({ source, target, data }) with an object literal.
+
 - `Graph.Graph` -> `Graph.Graph`: The immutable type remains, but storage is opaque; replace field access with Graph nodes, edges, count, lookup, neighbor, and acyclicity APIs.
 
 - `Graph.MutableGraph` -> `Graph.MutableGraph`: The mutable type remains but no longer extends Graph.Proto; obtain it through Graph.mutate or Graph.beginMutation and use public mutation/query functions.
@@ -10769,6 +10780,8 @@ stream.pipe(
 - `HashSet.values` -> `none`: The HashSet itself is iterable; iterate it directly or call self[Symbol.iterator]() when an iterator object is required.
 
 ### `effect/Inspectable`
+
+- `Inspectable.format` -> `Formatter.formatJson`: Use Formatter.formatJson(input, { space: 2 }) to preserve the v3 helper's pretty-printed JSON output.
 
 - `Inspectable.redact` -> `Redactable.redact`: The redaction protocol moved to Redactable and now receives the current fiber Context.
 
@@ -11256,7 +11269,11 @@ JsonSchema.toDocumentDraft07(Schema.toJsonSchemaDocument(schema))
 
 ### `effect/Match`
 
+- `Match.Matcher` -> `Match.Matcher`: The type is retained, but its fifth argument is now a flavor marker (ValueFlavor for Match.value and never for Match.type or Match.fn) rather than the provided value; an optional seventh Args tuple tracks Match.fn selector arguments. Prefer inference from Match.type, Match.value, or Match.fn and update hand-written Matcher annotations.
+
 - `Match.MatcherTypeId` -> `none`: The public matcher brand was internalized. Obtain matchers from Match.type or Match.value and use their public \_tag when discrimination is required.
+
+- `Match.Not` -> `Match.Not`: The case type is retained. Its evaluate method now receives any Match.fn selector arguments after the selected input; update custom case implementations that consume those arguments.
 
 - `Match.SafeRefinementId` -> `none`: The public safe-refinement brand was internalized. Use Predicate.Refinement, Predicate.Predicate, or a built-in Match refinement instead of constructing the brand.
 
@@ -11281,6 +11298,8 @@ JsonSchema.toDocumentDraft07(Schema.toJsonSchemaDocument(schema))
 - `Match.Types.ToSafeRefinement` -> `Match.Types.ToSafeRefinement`: The type-only matching helper is retained unchanged.
 
 - `Match.ValueMatcher` -> `Match.ValueMatcher`: The type is retained, but value now uses Result instead of Either and the brand is private; create values with Match.value.
+
+- `Match.When` -> `Match.When`: The case type is retained. Its evaluate method now receives any Match.fn selector arguments after the selected input; update custom case implementations that consume those arguments.
 
 - `Match.either` -> `Match.result`: Renamed finalizer with a container change: matched Right and unmatched Left become Result.Success and Result.Failure.
 
@@ -12198,7 +12217,7 @@ SchemaIssue.makeFormatterStandardSchemaV1()(error.issue).issues
 
 - `ParseResult.DecodeUnknown` -> `Schema.decodeUnknownEffect`: Use the function type returned by Schema.decodeUnknownEffect.
 
-- `ParseResult.Forbidden` -> `SchemaIssue.Forbidden`: Forbidden failures use the v4 SchemaIssue class; its constructor takes issue annotations only and no longer stores the schema AST or actual input value.
+- `ParseResult.Forbidden` -> `SchemaIssue.Forbidden`: Forbidden failures use the v4 SchemaIssue class; its constructor takes issue annotations plus optional input and parse options, retaining input only when reportInput is true.
 
 - `ParseResult.Missing` -> `SchemaIssue.MissingKey`: Missing-key failures use the v4 SchemaIssue class.
 
@@ -13194,7 +13213,9 @@ Schema.toFormatter(schema)
 
 - `Schedule.addDelayEffect` -> `Schedule.addDelay`: The v4 function is effectful by default and its callback receives full Schedule.Metadata; read metadata.output when only the prior output is needed.
 
-- `Schedule.andThenEither` -> `Schedule.andThenResult`: Sequential phase tagging now uses Result: self outputs are Result.fail and the following schedule outputs are Result.succeed.
+- `Schedule.andThen` -> `Schedule.concat`: The sequencing combinator was renamed to Schedule.concat.
+
+- `Schedule.andThenEither` -> `Schedule.concatResult`: Sequential phase tagging now uses Result: self outputs are Result.fail and the following schedule outputs are Result.succeed.
 
 - `Schedule.as` -> `Schedule.map`: Map the metadata to the constant output; Schedule.map accepts either a plain value or an Effect.
 
@@ -13246,7 +13267,7 @@ Schema.toFormatter(schema)
 
 - `Schedule.fromDelay` -> `Schedule.duration`: The duration constructor recurs once after the supplied delay.
 
-- `Schedule.fromDelays` -> `Schedule.duration + Schedule.andThen`: Build one Schedule.duration per delay and sequence them with Schedule.andThen.
+- `Schedule.fromDelays` -> `Schedule.duration + Schedule.concat`: Build one Schedule.duration per delay and sequence them with Schedule.concat.
 
 - `Schedule.fromFunction` -> `Schedule.identity + Schedule.map`: Start with Schedule.identity\<A\>() and map metadata.input through the function.
 
@@ -13890,9 +13911,7 @@ Schema.toFormatter(schema)
 
 - `Schema.TaggedClass` -> `Schema.TaggedClass`: The API remains public in v4, but its type/value declaration was consolidated; use the v4 declaration and update inferred types/signature as needed.
 
-- `Schema.TaggedError` -> `Schema.TaggedErrorClass`: Rename the tagged error class constructor.
-
-- `Schema.TaggedErrorClass` -> `Schema.TaggedErrorClass`: The API remains public in v4, but its type/value declaration was consolidated; use the v4 declaration and update inferred types/signature as needed.
+- `Schema.TaggedErrorClass` -> `Schema.TaggedError`: The exported helper interface was removed; use the class returned by Schema.TaggedError and infer its types.
 
 - `Schema.TaggedRequest` -> `effect/unstable/rpc/Rpc.make`: The Schema request/serialization protocol was removed; migrate RPC requests to the v4 Rpc APIs.
 

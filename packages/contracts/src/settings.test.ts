@@ -150,6 +150,21 @@ describe("ClaudeSettings auto-compaction", () => {
   });
 });
 
+describe("ClientSettings load balancing", () => {
+  it("requires opt-in when settings are new or omit load balancing", () => {
+    expect(decodeClientSettings({}).loadBalancingEnabled).toBe(false);
+    expect(decodeClientSettings({ loadBalancingWeights: {} }).loadBalancingEnabled).toBe(false);
+  });
+
+  it.each([true, false])("preserves a saved choice of %s", (loadBalancingEnabled) => {
+    const settings = decodeClientSettings({ loadBalancingEnabled });
+    expect(encodeClientSettings(settings).loadBalancingEnabled).toBe(loadBalancingEnabled);
+    expect(decodeClientSettingsPatch({ loadBalancingEnabled }).loadBalancingEnabled).toBe(
+      loadBalancingEnabled,
+    );
+  });
+});
+
 describe("ClientSettings word wrap", () => {
   it("defaults word wrap on", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);
@@ -167,113 +182,84 @@ describe("ClientSettings word wrap", () => {
   });
 });
 
-describe("Voice settings", () => {
-  it("defaults per-device inference settings without changing legacy clients", () => {
+describe("ClientSettings window capture", () => {
+  it("defaults capture off while keeping its feedback enabled", () => {
     const settings = decodeClientSettings({});
 
-    expect(settings.voiceInferenceMode).toBe("auto");
-    expect(settings.voiceModelId).toBe("");
-    expect(settings.voiceModelQuant).toBe("");
+    expect(settings.snapShotEnabled).toBe(false);
+    expect(settings.snapShotIncludeAccessibility).toBe(true);
+    expect(settings.snapShotShortcut).toEqual({ kind: "both-shift-keys" });
+    expect(settings.snapShotPlaySound).toBe(true);
+    expect(settings.snapShotSound).toBe("soft-pop");
+    expect(settings.snapShotFlash).toBe(true);
+    expect(settings.snapShotAnimations).toBe(true);
   });
 
-  it("defaults the server voice engine and dictionary", () => {
-    const voice = decodeServerSettings({}).voice;
-
-    expect(voice.engine).toBe("sidecar");
-    expect(voice.dictionary).toEqual([]);
-  });
-
-  it("decodes voice inference and dictionary patches", () => {
+  it("accepts capture preference updates", () => {
     expect(
       decodeClientSettingsPatch({
-        voiceInferenceMode: "local",
-        voiceModelId: "parakeet-tdt-0.6b-v3",
-        voiceModelQuant: "Q8_0",
+        snapShotEnabled: true,
+        snapShotIncludeAccessibility: false,
+        snapShotShortcut: {
+          key: "w",
+          metaKey: false,
+          ctrlKey: false,
+          shiftKey: true,
+          altKey: true,
+          modKey: false,
+        },
+        snapShotPlaySound: false,
+        snapShotSound: "camera-shutter",
+        snapShotFlash: false,
+        snapShotAnimations: false,
       }),
-    ).toMatchObject({ voiceInferenceMode: "local", voiceModelQuant: "Q8_0" });
-    expect(
-      decodeServerSettingsPatch({
-        voice: {
-          engine: "transcribecpp",
-          dictionary: [
-            {
-              id: "complyq",
-              type: "alias",
-              originals: ["comply q"],
-              replacement: "ComplyQ",
-            },
-          ],
-        },
-      }).voice,
-    ).toMatchObject({
-      engine: "transcribecpp",
-      dictionary: [
-        {
-          id: "complyq",
-          caseSensitive: false,
-          fuzzy: false,
-          enabled: true,
-        },
-      ],
+    ).toEqual({
+      snapShotEnabled: true,
+      snapShotIncludeAccessibility: false,
+      snapShotShortcut: {
+        key: "w",
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: true,
+        altKey: true,
+        modKey: false,
+      },
+      snapShotPlaySound: false,
+      snapShotSound: "camera-shutter",
+      snapShotFlash: false,
+      snapShotAnimations: false,
     });
   });
 
-  it("rejects malformed aliases, term replacements, and duplicate IDs at the server boundary", () => {
-    expect(() =>
-      decodeServerSettingsPatch({
-        voice: {
-          dictionary: [{ id: "alias", type: "alias", originals: ["spoken"] }],
-        },
+  it("rejects unknown capture sounds", () => {
+    expect(() => decodeClientSettingsPatch({ snapShotSound: "doorbell" })).toThrow();
+  });
+
+  it("accepts modifier pair shortcuts", () => {
+    expect(
+      decodeClientSettingsPatch({
+        snapShotShortcut: { kind: "modifier-pair", modifier: "meta" },
       }),
-    ).toThrow();
+    ).toEqual({
+      snapShotShortcut: { kind: "modifier-pair", modifier: "meta" },
+    });
     expect(() =>
-      decodeServerSettingsPatch({
-        voice: {
-          dictionary: [{ id: "term", type: "term", originals: ["ComplyQ"], replacement: "other" }],
-        },
-      }),
-    ).toThrow();
-    expect(() =>
-      decodeServerSettingsPatch({
-        voice: {
-          dictionary: [
-            { id: "duplicate", type: "term", originals: ["first"] },
-            { id: "duplicate", type: "term", originals: ["second"] },
-          ],
-        },
+      decodeClientSettingsPatch({
+        snapShotShortcut: { kind: "modifier-pair", modifier: "hyper" },
       }),
     ).toThrow();
   });
 
-  it("bounds dictionary entry counts, variants, and text lengths", () => {
+  it("rejects a capture shortcut with no modifier", () => {
     expect(() =>
-      decodeServerSettingsPatch({
-        voice: {
-          dictionary: Array.from({ length: 257 }, (_, index) => ({
-            id: `term-${index}`,
-            type: "term",
-            originals: ["term"],
-          })),
-        },
-      }),
-    ).toThrow();
-    expect(() =>
-      decodeServerSettingsPatch({
-        voice: {
-          dictionary: [
-            {
-              id: "too-many-originals",
-              type: "term",
-              originals: Array.from({ length: 17 }, (_, index) => `term-${index}`),
-            },
-          ],
-        },
-      }),
-    ).toThrow();
-    expect(() =>
-      decodeServerSettingsPatch({
-        voice: {
-          dictionary: [{ id: "long", type: "term", originals: ["x".repeat(257)] }],
+      decodeClientSettingsPatch({
+        snapShotShortcut: {
+          key: "w",
+          metaKey: false,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          modKey: false,
         },
       }),
     ).toThrow();
@@ -488,18 +474,17 @@ describe("ClientSettings context window meter", () => {
 });
 
 describe("ClientSettings composer collapse", () => {
-  it("collapses on blur and scroll by default and accepts opting out of each", () => {
-    const defaults = decodeClientSettings({});
-    expect(defaults.composerCollapseOnBlur).toBe(true);
-    expect(defaults.composerCollapseOnScroll).toBe(true);
-
-    const blurOff = decodeClientSettings({ composerCollapseOnBlur: false });
-    expect(blurOff.composerCollapseOnBlur).toBe(false);
-    expect(blurOff.composerCollapseOnScroll).toBe(true);
-
+  it("collapses on scroll by default and accepts opting out", () => {
+    expect(decodeClientSettings({}).composerCollapseOnScroll).toBe(true);
     expect(
       decodeClientSettingsPatch({ composerCollapseOnScroll: false }).composerCollapseOnScroll,
     ).toBe(false);
+  });
+
+  it("drops the retired blur trigger key", () => {
+    const decoded = decodeClientSettings({ composerCollapseOnBlur: false });
+    expect(decoded.composerCollapseOnScroll).toBe(true);
+    expect(decoded).not.toHaveProperty("composerCollapseOnBlur");
   });
 });
 
@@ -528,6 +513,25 @@ describe("ServerSettings thread settlement", () => {
   it.each([-1, 0, 91])("rejects an auto-settle threshold outside 1..90: %s", (value) => {
     expect(() => decodeServerSettings({ sidebarAutoSettleAfterDays: value })).toThrow();
     expect(() => decodeServerSettingsPatch({ sidebarAutoSettleAfterDays: value })).toThrow();
+  });
+});
+
+describe("ClientSettings pull request merge methods", () => {
+  it("defaults to no project overrides and accepts supported methods", () => {
+    expect(decodeClientSettings({}).pullRequestMergeMethodOverrides).toEqual({});
+    expect(
+      decodeClientSettingsPatch({
+        pullRequestMergeMethodOverrides: { project: "squash" },
+      }).pullRequestMergeMethodOverrides,
+    ).toEqual({ project: "squash" });
+  });
+
+  it("rejects unsupported project merge methods", () => {
+    expect(() =>
+      decodeClientSettingsPatch({
+        pullRequestMergeMethodOverrides: { project: "fast-forward" },
+      }),
+    ).toThrow();
   });
 });
 
@@ -1133,6 +1137,7 @@ describe("ServerSettings environment icon", () => {
 
   it("keeps a kind this build knows", () => {
     expect(decodeServerSettings({ environmentIcon: "mac-mini" }).environmentIcon).toBe("mac-mini");
+    expect(decodeServerSettings({ environmentIcon: "linux" }).environmentIcon).toBe("linux");
   });
 
   it("decodes a kind from a newer server as null instead of failing the snapshot", () => {
@@ -1142,5 +1147,121 @@ describe("ServerSettings environment icon", () => {
   it("round-trips through encode", () => {
     const settings = decodeServerSettings({ environmentIcon: "laptop" });
     expect(encodeServerSettings(settings).environmentIcon).toBe("laptop");
+
+    const linuxSettings = decodeServerSettings({ environmentIcon: "linux" });
+    expect(encodeServerSettings(linuxSettings).environmentIcon).toBe("linux");
+  });
+});
+
+describe("Voice settings", () => {
+  it("defaults per-device inference settings without changing legacy clients", () => {
+    const settings = decodeClientSettings({});
+
+    expect(settings.voiceInferenceMode).toBe("auto");
+    expect(settings.voiceModelId).toBe("");
+    expect(settings.voiceModelQuant).toBe("");
+  });
+
+  it("defaults the server voice engine and dictionary", () => {
+    const voice = decodeServerSettings({}).voice;
+
+    expect(voice.engine).toBe("sidecar");
+    expect(voice.dictionary).toEqual([]);
+  });
+
+  it("decodes voice inference and dictionary patches", () => {
+    expect(
+      decodeClientSettingsPatch({
+        voiceInferenceMode: "local",
+        voiceModelId: "parakeet-tdt-0.6b-v3",
+        voiceModelQuant: "Q8_0",
+      }),
+    ).toMatchObject({ voiceInferenceMode: "local", voiceModelQuant: "Q8_0" });
+    expect(
+      decodeServerSettingsPatch({
+        voice: {
+          engine: "transcribecpp",
+          dictionary: [
+            {
+              id: "complyq",
+              type: "alias",
+              originals: ["comply q"],
+              replacement: "ComplyQ",
+            },
+          ],
+        },
+      }).voice,
+    ).toMatchObject({
+      engine: "transcribecpp",
+      dictionary: [
+        {
+          id: "complyq",
+          caseSensitive: false,
+          fuzzy: false,
+          enabled: true,
+        },
+      ],
+    });
+  });
+
+  it("rejects malformed aliases, term replacements, and duplicate IDs at the server boundary", () => {
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: [{ id: "alias", type: "alias", originals: ["spoken"] }],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: [{ id: "term", type: "term", originals: ["ComplyQ"], replacement: "other" }],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: [
+            { id: "duplicate", type: "term", originals: ["first"] },
+            { id: "duplicate", type: "term", originals: ["second"] },
+          ],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("bounds dictionary entry counts, variants, and text lengths", () => {
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: Array.from({ length: 257 }, (_, index) => ({
+            id: `term-${index}`,
+            type: "term",
+            originals: ["term"],
+          })),
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: [
+            {
+              id: "too-many-originals",
+              type: "term",
+              originals: Array.from({ length: 17 }, (_, index) => `term-${index}`),
+            },
+          ],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({
+        voice: {
+          dictionary: [{ id: "long", type: "term", originals: ["x".repeat(257)] }],
+        },
+      }),
+    ).toThrow();
   });
 });

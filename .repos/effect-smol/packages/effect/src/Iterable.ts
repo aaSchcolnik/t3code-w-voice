@@ -1276,6 +1276,13 @@ export const group: <A>(self: Iterable<A>) => Iterable<NonEmptyArray<A>> = group
  * that produced that key. Unlike `group`, matching elements do not need to be
  * consecutive.
  *
+ * **Gotchas**
+ *
+ * When the key function returns a finite union of string literals or unique
+ * symbols, the result preserves those keys as optional properties because the
+ * input may not produce every key. Open `string` and `symbol` key types retain
+ * their record index signatures.
+ *
  * **Example** (Grouping by a key)
  *
  * ```ts import.meta.vitest
@@ -1313,15 +1320,15 @@ export const group: <A>(self: Iterable<A>) => Iterable<NonEmptyArray<A>> = group
 export const groupBy: {
   <A, K extends string | symbol>(
     f: (a: A) => K
-  ): (self: Iterable<A>) => Record<Record.ReadonlyRecord.NonLiteralKey<K>, NonEmptyArray<A>>
+  ): (self: Iterable<A>) => Record.ReadonlyRecord.GroupByResult<K, NonEmptyArray<A>>
   <A, K extends string | symbol>(
     self: Iterable<A>,
     f: (a: A) => K
-  ): Record<Record.ReadonlyRecord.NonLiteralKey<K>, NonEmptyArray<A>>
+  ): Record.ReadonlyRecord.GroupByResult<K, NonEmptyArray<A>>
 } = dual(2, <A, K extends string | symbol>(
   self: Iterable<A>,
   f: (a: A) => K
-): Record<Record.ReadonlyRecord.NonLiteralKey<K>, NonEmptyArray<A>> => {
+): Record.ReadonlyRecord.GroupByResult<K, NonEmptyArray<A>> => {
   const out: Record<string | symbol, NonEmptyArray<A>> = {}
   for (const a of self) {
     const k = f(a)
@@ -1543,19 +1550,20 @@ export const flatten = <A>(self: Iterable<Iterable<A>>): Iterable<A> => ({
     const outerIterator = self[Symbol.iterator]()
     let innerIterator: Iterator<A> | undefined
     function next() {
-      if (innerIterator === undefined) {
-        const next = outerIterator.next()
-        if (next.done) {
-          return next
+      while (true) {
+        if (innerIterator === undefined) {
+          const next = outerIterator.next()
+          if (next.done) {
+            return next
+          }
+          innerIterator = next.value[Symbol.iterator]()
         }
-        innerIterator = next.value[Symbol.iterator]()
-      }
-      const result = innerIterator.next()
-      if (result.done) {
+        const result = innerIterator.next()
+        if (!result.done) {
+          return result
+        }
         innerIterator = undefined
-        return next()
       }
-      return result
     }
     return { next }
   }

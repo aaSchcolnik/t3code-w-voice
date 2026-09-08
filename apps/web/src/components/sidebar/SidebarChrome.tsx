@@ -1,7 +1,6 @@
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
-  GaugeIcon,
   GitPullRequestIcon,
   SettingsIcon,
 } from "lucide-react";
@@ -176,11 +175,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/usage" });
   }, [closeMobileSidebar, navigate]);
 
-  const handleLimitsClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/settings/limits" });
-  }, [closeMobileSidebar, navigate]);
-
   const handleBackClick = useCallback(() => {
     closeMobileSidebar();
     if (canGoBack) {
@@ -218,7 +212,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Usage"
             onClick={handleUsageClick}
           />
-          <SidebarUtilityItem icon={<GaugeIcon />} label="Limits" onClick={handleLimitsClick} />
         </>
       )}
       <SidebarUpdatePill />

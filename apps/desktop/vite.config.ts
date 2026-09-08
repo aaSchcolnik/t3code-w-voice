@@ -42,10 +42,17 @@ export default defineConfig({
     {
       format: "cjs",
       outDir: "dist-electron",
+      dts: false,
       sourcemap: true,
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
-      entry: ["src/main.ts"],
+      entry: [
+        "src/main.ts",
+        "src/electron/WindowsForegroundFocusWorker.ts",
+        "src/snapShot/GlobalShiftShortcutWorker.ts",
+        "src/snapShot/RegionSnapShotWorker.ts",
+        "src/snapShot/SnapShotAccessibilityWorker.ts",
+      ],
       clean: true,
       deps: {
         alwaysBundle: (id) => id.startsWith("@t3tools/"),
@@ -55,11 +62,11 @@ export default defineConfig({
     {
       format: "cjs",
       outDir: "dist-electron",
+      dts: false,
       sourcemap: true,
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
       entry: ["src/transcription/desktopTranscriptionHost.ts"],
-      dts: false,
       deps: {
         alwaysBundle: (id) => id.startsWith("@t3tools/"),
       },
@@ -81,6 +88,7 @@ export default defineConfig({
     {
       format: "cjs",
       outDir: "dist-electron",
+      dts: false,
       sourcemap: true,
       outExtensions: () => ({ js: ".cjs" }),
       entry: ["src/preview-pick-preload.ts"],
@@ -91,6 +99,7 @@ export default defineConfig({
     {
       format: "cjs",
       outDir: "dist-electron",
+      dts: false,
       sourcemap: true,
       outExtensions: () => ({ js: ".cjs" }),
       entry: ["src/preview-pip-preload.ts"],

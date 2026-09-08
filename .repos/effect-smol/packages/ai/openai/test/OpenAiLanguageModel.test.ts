@@ -2,7 +2,7 @@ import { type Generated, OpenAiClient, OpenAiLanguageModel, OpenAiSchema, OpenAi
 import { assert, describe, it } from "@effect/vitest"
 import { deepStrictEqual, strictEqual } from "@effect/vitest/utils"
 import { Array, Context, Effect, Layer, Redacted, Ref, Schema, Stream } from "effect"
-import { LanguageModel, Prompt, Tool, Toolkit } from "effect/unstable/ai"
+import { LanguageModel, Prompt, Response as AiResponse, Tool, Toolkit } from "effect/unstable/ai"
 import { HttpClient, type HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 
 describe("OpenAiLanguageModel", () => {
@@ -31,6 +31,69 @@ describe("OpenAiLanguageModel", () => {
 
   describe("generateText", () => {
     describe("message preparation", () => {
+      it.effect("forwards prompt cache configuration and text breakpoints", () =>
+        Effect.gen(function*() {
+          const breakpoint = { mode: "explicit" } as const
+          yield* LanguageModel.generateText({
+            prompt: Prompt.make([
+              Prompt.systemMessage({
+                content: "Stable instructions",
+                options: { openai: { promptCacheBreakpoint: breakpoint } }
+              }),
+              Prompt.userMessage({
+                content: [Prompt.textPart({
+                  text: "Stable context",
+                  options: { openai: { promptCacheBreakpoint: breakpoint } }
+                })]
+              })
+            ])
+          }).pipe(
+            Effect.provide(OpenAiLanguageModel.model("gpt-5.6", {
+              prompt_cache_key: "assistant:v1",
+              prompt_cache_options: { mode: "explicit", ttl: "30m" }
+            }))
+          )
+
+          const requests = yield* MockHttpClient.requests
+          const body = yield* getRequestBody(requests[0])
+
+          strictEqual(body.prompt_cache_key, "assistant:v1")
+          deepStrictEqual(body.prompt_cache_options, { mode: "explicit", ttl: "30m" })
+          deepStrictEqual(body.input, [{
+            role: "developer",
+            content: [{
+              type: "input_text",
+              text: "Stable instructions",
+              prompt_cache_breakpoint: breakpoint
+            }]
+          }, {
+            role: "user",
+            content: [{
+              type: "input_text",
+              text: "Stable context",
+              prompt_cache_breakpoint: breakpoint
+            }]
+          }])
+        }).pipe(Effect.provide(makeTestLayer({ body: { model: "gpt-5.6" as any } }))))
+
+      it.effect("forwards implicit prompt cache mode without text breakpoints", () =>
+        Effect.gen(function*() {
+          yield* LanguageModel.generateText({ prompt: "Stable context" }).pipe(
+            Effect.provide(OpenAiLanguageModel.model("gpt-5.6", {
+              prompt_cache_options: { mode: "implicit" }
+            }))
+          )
+
+          const requests = yield* MockHttpClient.requests
+          const body = yield* getRequestBody(requests[0])
+
+          deepStrictEqual(body.prompt_cache_options, { mode: "implicit" })
+          deepStrictEqual(body.input, [{
+            role: "user",
+            content: [{ type: "input_text", text: "Stable context" }]
+          }])
+        }).pipe(Effect.provide(makeTestLayer({ body: { model: "gpt-5.6" as any } }))))
+
       describe("system messages", () => {
         it.effect("uses system role for standard models", () =>
           Effect.gen(function*() {
@@ -319,6 +382,45 @@ describe("OpenAiLanguageModel", () => {
             strictEqual(reasoningItem.id, "reasoning_123")
           }).pipe(Effect.provide(makeTestLayer({ body: { model: "o1" } }))))
 
+        it.effect("replays encrypted reasoning from response parts", () =>
+          Effect.gen(function*() {
+            const history = Prompt.fromResponseParts([
+              AiResponse.makePart("reasoning-start", {
+                id: "reasoning_123:0",
+                metadata: { openai: { itemId: "reasoning_123" } }
+              }),
+              AiResponse.makePart("reasoning-delta", {
+                id: "reasoning_123:0",
+                delta: "Let me think..."
+              }),
+              AiResponse.makePart("reasoning-end", {
+                id: "reasoning_123:0",
+                metadata: {
+                  openai: {
+                    itemId: "reasoning_123",
+                    encryptedContent: "encrypted-reasoning"
+                  }
+                }
+              })
+            ])
+
+            yield* LanguageModel.generateText({
+              prompt: Prompt.concat(history, Prompt.make("Continue"))
+            }).pipe(Effect.provide(OpenAiLanguageModel.model("o1")))
+
+            const requests = yield* MockHttpClient.requests
+            const body = yield* getRequestBody(requests[0])
+            const reasoningItem = body.input.find((item: any) => item.type === "reasoning")
+
+            assert.isDefined(reasoningItem)
+            deepStrictEqual(reasoningItem, {
+              type: "reasoning",
+              id: "reasoning_123",
+              summary: [{ type: "summary_text", text: "Let me think..." }],
+              encrypted_content: "encrypted-reasoning"
+            })
+          }).pipe(Effect.provide(makeTestLayer({ body: { model: "o1" } }))))
+
         it.effect("converts tool call parts to function_call", () =>
           Effect.gen(function*() {
             yield* LanguageModel.generateText({
@@ -342,7 +444,8 @@ describe("OpenAiLanguageModel", () => {
                       id: "call_abc",
                       name: "TestTool",
                       isFailure: false,
-                      result: { output: "result" }
+                      result: { output: "result" },
+                      providerExecuted: false
                     })
                   ]
                 }
@@ -384,7 +487,8 @@ describe("OpenAiLanguageModel", () => {
                       id: "call_abc",
                       name: "TestTool",
                       isFailure: false,
-                      result: { output: "result" }
+                      result: { output: "result" },
+                      providerExecuted: false
                     })
                   ]
                 }
@@ -425,7 +529,8 @@ describe("OpenAiLanguageModel", () => {
                     id: "call_apply_patch",
                     name: "OpenAiApplyPatch",
                     isFailure: false,
-                    result: { status: "completed", output: "deleted" }
+                    result: { status: "completed", output: "deleted" },
+                    providerExecuted: false
                   })]
                 }
               ]),
@@ -475,7 +580,8 @@ describe("OpenAiLanguageModel", () => {
                         stderr: "",
                         outcome: { type: "exit", exit_code: 0 }
                       }]
-                    }
+                    },
+                    providerExecuted: false
                   })]
                 }
               ]),
@@ -519,7 +625,8 @@ describe("OpenAiLanguageModel", () => {
                     id: "call_local_shell",
                     name: "OpenAiLocalShell",
                     isFailure: false,
-                    result: { output: "hello\n" }
+                    result: { output: "hello\n" },
+                    providerExecuted: false
                   })]
                 }
               ]),

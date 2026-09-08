@@ -195,7 +195,7 @@ export const DelegatedRunCapabilities = Schema.Struct({
 });
 export type DelegatedRunCapabilities = typeof DelegatedRunCapabilities.Type;
 
-export class DelegatedRunError extends Schema.TaggedErrorClass<DelegatedRunError>()(
+export class DelegatedRunError extends Schema.TaggedError<DelegatedRunError>()(
   "DelegatedRunError",
   {
     operation: Schema.Literals(["start", "status", "result", "cancel", "respond"]),

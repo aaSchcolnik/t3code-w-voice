@@ -92,6 +92,47 @@ describe("DesktopIpc", () => {
     }),
   );
 
+  it.effect("forwards the invoke sender to the method", () =>
+    Effect.gen(function* () {
+      let listener: DesktopIpc.DesktopIpcHandleListener | undefined;
+      const ipc = DesktopIpc.make(
+        makeIpcMain({
+          handle: (_channel, registered) => {
+            listener = registered;
+          },
+        }),
+      );
+      const sender = {
+        sender: {
+          id: 7,
+          isDestroyed: () => false,
+          once() {
+            return this;
+          },
+          off() {
+            return this;
+          },
+        },
+      };
+      let received: DesktopIpc.DesktopIpcInvokeEvent | undefined;
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* ipc.handle({
+            channel: "desktop.test.sender",
+            handler: (_raw, event) =>
+              Effect.sync(() => {
+                received = event;
+              }),
+          });
+          yield* Effect.promise(async () => listener!(sender, undefined));
+        }),
+      );
+
+      assert.strictEqual(received, sender);
+    }),
+  );
+
   it.effect("preserves sync unregistration context and cause in the finalizer defect", () =>
     Effect.gen(function* () {
       const cause = new Error("sync unregistration failed");

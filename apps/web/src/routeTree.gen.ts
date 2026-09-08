@@ -18,10 +18,11 @@ import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsVoiceRouteImport } from './routes/settings.voice'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
+import { Route as SettingsSnapShotRouteImport } from './routes/settings.snap-shot'
 import { Route as SettingsSkillsRouteImport } from './routes/settings.skills'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
+import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
 import { Route as SettingsMcpRouteImport } from './routes/settings.mcp'
-import { Route as SettingsLimitsRouteImport } from './routes/settings.limits'
 import { Route as SettingsKnowledgeRouteImport } from './routes/settings.knowledge'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
 import { Route as SettingsIntegrationsRouteImport } from './routes/settings.integrations'
@@ -80,6 +81,11 @@ const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
   path: '/source-control',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsSnapShotRoute = SettingsSnapShotRouteImport.update({
+  id: '/snap-shot',
+  path: '/snap-shot',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSkillsRoute = SettingsSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
@@ -90,14 +96,14 @@ const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
   path: '/providers',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsProjectsRoute = SettingsProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsMcpRoute = SettingsMcpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
-  getParentRoute: () => SettingsRoute,
-} as any)
-const SettingsLimitsRoute = SettingsLimitsRouteImport.update({
-  id: '/limits',
-  path: '/limits',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsKnowledgeRoute = SettingsKnowledgeRouteImport.update({
@@ -185,10 +191,11 @@ export interface FileRoutesByFullPath {
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/knowledge': typeof SettingsKnowledgeRoute
-  '/settings/limits': typeof SettingsLimitsRoute
   '/settings/mcp': typeof SettingsMcpRoute
+  '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -211,10 +218,11 @@ export interface FileRoutesByTo {
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/knowledge': typeof SettingsKnowledgeRoute
-  '/settings/limits': typeof SettingsLimitsRoute
   '/settings/mcp': typeof SettingsMcpRoute
+  '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/': typeof ChatIndexRoute
@@ -240,10 +248,11 @@ export interface FileRoutesById {
   '/settings/integrations': typeof SettingsIntegrationsRoute
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/knowledge': typeof SettingsKnowledgeRoute
-  '/settings/limits': typeof SettingsLimitsRoute
   '/settings/mcp': typeof SettingsMcpRoute
+  '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/skills': typeof SettingsSkillsRoute
+  '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/_chat/': typeof ChatIndexRoute
@@ -270,10 +279,11 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/knowledge'
-    | '/settings/limits'
     | '/settings/mcp'
+    | '/settings/projects'
     | '/settings/providers'
     | '/settings/skills'
+    | '/settings/snap-shot'
     | '/settings/source-control'
     | '/settings/voice'
     | '/$environmentId/$threadId'
@@ -296,10 +306,11 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/knowledge'
-    | '/settings/limits'
     | '/settings/mcp'
+    | '/settings/projects'
     | '/settings/providers'
     | '/settings/skills'
+    | '/settings/snap-shot'
     | '/settings/source-control'
     | '/settings/voice'
     | '/'
@@ -324,10 +335,11 @@ export interface FileRouteTypes {
     | '/settings/integrations'
     | '/settings/keybindings'
     | '/settings/knowledge'
-    | '/settings/limits'
     | '/settings/mcp'
+    | '/settings/projects'
     | '/settings/providers'
     | '/settings/skills'
+    | '/settings/snap-shot'
     | '/settings/source-control'
     | '/settings/voice'
     | '/_chat/'
@@ -411,6 +423,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSourceControlRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/snap-shot': {
+      id: '/settings/snap-shot'
+      path: '/snap-shot'
+      fullPath: '/settings/snap-shot'
+      preLoaderRoute: typeof SettingsSnapShotRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/skills': {
       id: '/settings/skills'
       path: '/skills'
@@ -425,18 +444,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsProvidersRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/projects': {
+      id: '/settings/projects'
+      path: '/projects'
+      fullPath: '/settings/projects'
+      preLoaderRoute: typeof SettingsProjectsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/mcp': {
       id: '/settings/mcp'
       path: '/mcp'
       fullPath: '/settings/mcp'
       preLoaderRoute: typeof SettingsMcpRouteImport
-      parentRoute: typeof SettingsRoute
-    }
-    '/settings/limits': {
-      id: '/settings/limits'
-      path: '/limits'
-      fullPath: '/settings/limits'
-      preLoaderRoute: typeof SettingsLimitsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/knowledge': {
@@ -558,10 +577,11 @@ interface SettingsRouteChildren {
   SettingsIntegrationsRoute: typeof SettingsIntegrationsRoute
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsKnowledgeRoute: typeof SettingsKnowledgeRoute
-  SettingsLimitsRoute: typeof SettingsLimitsRoute
   SettingsMcpRoute: typeof SettingsMcpRoute
+  SettingsProjectsRoute: typeof SettingsProjectsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
   SettingsSkillsRoute: typeof SettingsSkillsRoute
+  SettingsSnapShotRoute: typeof SettingsSnapShotRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
   SettingsVoiceRoute: typeof SettingsVoiceRoute
 }
@@ -575,10 +595,11 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsIntegrationsRoute: SettingsIntegrationsRoute,
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsKnowledgeRoute: SettingsKnowledgeRoute,
-  SettingsLimitsRoute: SettingsLimitsRoute,
   SettingsMcpRoute: SettingsMcpRoute,
+  SettingsProjectsRoute: SettingsProjectsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
   SettingsSkillsRoute: SettingsSkillsRoute,
+  SettingsSnapShotRoute: SettingsSnapShotRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
   SettingsVoiceRoute: SettingsVoiceRoute,
 }

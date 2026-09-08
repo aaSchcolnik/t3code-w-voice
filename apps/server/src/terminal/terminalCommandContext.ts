@@ -39,7 +39,7 @@ function boundedOutput(value: string): { readonly text: string; readonly omitted
 }
 
 export function formatPendingTerminalCommandContext(
-  messages: ReadonlyArray<OrchestrationMessage>,
+  messages: ReadonlyArray<Pick<OrchestrationMessage, "id" | "terminalCommand">>,
 ): PendingTerminalCommandContext {
   const records = messages.flatMap((message) => {
     const record = message.terminalCommand;

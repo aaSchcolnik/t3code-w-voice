@@ -176,7 +176,7 @@ export type SkillDeleteInput = typeof SkillDeleteInput.Type;
 export const SkillGetInput = Schema.Struct({ skillId: SkillId });
 export type SkillGetInput = typeof SkillGetInput.Type;
 
-export class SkillError extends Schema.TaggedErrorClass<SkillError>()("SkillError", {
+export class SkillError extends Schema.TaggedError<SkillError>()("SkillError", {
   reason: Schema.Literals([
     "not_found",
     "already_exists",

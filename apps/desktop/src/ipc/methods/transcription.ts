@@ -16,7 +16,7 @@ import * as DesktopTranscriptionService from "../../transcription/DesktopTranscr
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 
-class DesktopVoiceOperationError extends Schema.TaggedErrorClass<DesktopVoiceOperationError>()(
+class DesktopVoiceOperationError extends Schema.TaggedError<DesktopVoiceOperationError>()(
   "DesktopVoiceOperationError",
   { cause: Schema.Defect() },
 ) {}

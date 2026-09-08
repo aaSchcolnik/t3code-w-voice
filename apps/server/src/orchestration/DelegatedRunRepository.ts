@@ -106,7 +106,7 @@ export type DelegatedRunRepositoryHealth =
   | { readonly status: "healthy"; readonly source: "empty" | "primary" | "recovery" | "legacy" }
   | { readonly status: "degraded"; readonly message: string };
 
-export class DelegatedRunRepositoryError extends Schema.TaggedErrorClass<DelegatedRunRepositoryError>()(
+export class DelegatedRunRepositoryError extends Schema.TaggedError<DelegatedRunRepositoryError>()(
   "DelegatedRunRepositoryError",
   {
     operation: Schema.Literals([
@@ -130,7 +130,7 @@ export class DelegatedRunRepositoryError extends Schema.TaggedErrorClass<Delegat
   },
 ) {}
 
-export class DelegatedRunRepositoryFault extends Schema.TaggedErrorClass<DelegatedRunRepositoryFault>()(
+export class DelegatedRunRepositoryFault extends Schema.TaggedError<DelegatedRunRepositoryFault>()(
   "DelegatedRunRepositoryFault",
   { point: Schema.String },
 ) {}

@@ -56,7 +56,7 @@ import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteSc
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsLegalRouteScreen } from "./features/settings/SettingsLegalRouteScreen";
 import { SettingsProjectGroupingRouteScreen } from "./features/settings/SettingsProjectGroupingRouteScreen";
-import { SettingsLimitsRouteScreen } from "./features/settings/limits/SettingsLimitsRouteScreen";
+import { UsageLimitAccountScreen } from "./features/usage/UsageLimitsPooled";
 import { UsageRouteScreen } from "./features/usage/UsageRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
 import { SettingsVoiceRouteScreen } from "./features/settings/SettingsVoiceRouteScreen";
@@ -196,18 +196,15 @@ const SettingsContentStack = createNativeStackNavigator({
         title: "Client Storage",
       },
     }),
+    SettingsUsageAccount: createNativeStackScreen({
+      screen: UsageLimitAccountScreen,
+      options: { title: "Account" },
+    }),
     SettingsUsage: createNativeStackScreen({
       screen: UsageRouteScreen,
       linking: "usage",
       options: {
         title: "Usage",
-      },
-    }),
-    SettingsLimits: createNativeStackScreen({
-      screen: SettingsLimitsRouteScreen,
-      linking: "limits",
-      options: {
-        title: "Limits",
       },
     }),
     SettingsVoice: createNativeStackScreen({

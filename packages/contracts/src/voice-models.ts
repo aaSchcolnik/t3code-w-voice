@@ -18,7 +18,7 @@ export const ServerVoiceModelStateEvent = Schema.Struct({
 });
 export type ServerVoiceModelStateEvent = typeof ServerVoiceModelStateEvent.Type;
 
-export class ServerVoiceModelError extends Schema.TaggedErrorClass<ServerVoiceModelError>()(
+export class ServerVoiceModelError extends Schema.TaggedError<ServerVoiceModelError>()(
   "ServerVoiceModelError",
   {
     reason: Schema.Literals([

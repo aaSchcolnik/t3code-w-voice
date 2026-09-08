@@ -17,7 +17,7 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopClientSettings from "./DesktopClientSettings.ts";
 
 const clientSettings: ClientSettings = {
-  autoOpenSubagentsPanel: true,
+  ...DEFAULT_CLIENT_SETTINGS,
   appearanceContrast: 100,
   browserDefaultViewport: { _tag: "preset", width: 1024, height: 600, presetId: "nest-hub" },
   browserDefaultZoomFactor: 1.25,
@@ -32,7 +32,6 @@ const clientSettings: ClientSettings = {
   confirmThreadDelete: false,
   confirmThreadUnpin: false,
   contextWindowMeterEnabled: false,
-  composerCollapseOnBlur: false,
   composerCollapseOnScroll: true,
   dismissedProviderUpdateNotificationKeys: [],
   diffIgnoreWhitespace: true,
@@ -64,6 +63,9 @@ const clientSettings: ClientSettings = {
   sidebarThreadSortOrder: "created_at",
   sidebarThreadPreviewCount: 6,
   legacySidebarEnabled: false,
+  loadBalancingEnabled: false,
+  loadBalancingWeights: { "environment-1": 75, "environment-2": 0 },
+  pullRequestMergeMethodOverrides: {},
   timestampFormat: "24-hour",
   voiceInferenceMode: "local",
   voiceModelId: "whisper-tiny",

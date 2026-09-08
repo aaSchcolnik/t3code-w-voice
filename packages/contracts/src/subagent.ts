@@ -218,15 +218,12 @@ export const SubagentTranscriptStreamEvent = Schema.Union([
 ]);
 export type SubagentTranscriptStreamEvent = typeof SubagentTranscriptStreamEvent.Type;
 
-export class SubagentRunError extends Schema.TaggedErrorClass<SubagentRunError>()(
-  "SubagentRunError",
-  {
-    reason: Schema.Literals(["not_found", "forbidden", "conflict", "unsupported"]),
-    message: TrimmedNonEmptyString,
-  },
-) {}
+export class SubagentRunError extends Schema.TaggedError<SubagentRunError>()("SubagentRunError", {
+  reason: Schema.Literals(["not_found", "forbidden", "conflict", "unsupported"]),
+  message: TrimmedNonEmptyString,
+}) {}
 
-export class SubagentTranscriptError extends Schema.TaggedErrorClass<SubagentTranscriptError>()(
+export class SubagentTranscriptError extends Schema.TaggedError<SubagentTranscriptError>()(
   "SubagentTranscriptError",
   {
     reason: Schema.Literals(["not_found", "forbidden"]),

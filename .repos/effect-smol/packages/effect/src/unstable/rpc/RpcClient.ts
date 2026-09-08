@@ -23,6 +23,7 @@ import * as Latch from "../../Latch.ts"
 import * as Layer from "../../Layer.ts"
 import * as Option from "../../Option.ts"
 import * as Pool from "../../Pool.ts"
+import * as Predicate from "../../Predicate.ts"
 import * as Queue from "../../Queue.ts"
 import * as Result from "../../Result.ts"
 import * as Schedule from "../../Schedule.ts"
@@ -50,6 +51,8 @@ import * as RpcSchema from "./RpcSchema.ts"
 import * as RpcSerialization from "./RpcSerialization.ts"
 import * as RpcWorker from "./RpcWorker.ts"
 import { withRunClient } from "./Utils.ts"
+
+const isRpcClientError = (u: unknown): u is RpcClientError => Predicate.isTagged(u, "RpcClientError")
 
 /**
  * The object-shaped client generated from a union of RPC definitions, with one
@@ -507,7 +510,7 @@ export const makeNoSerialization: <Rpcs extends Rpc.Any, E, const Flatten extend
   ) => Effect.Effect<any, E> => {
     const middlewares: Array<RpcMiddleware.RpcMiddlewareClient<any, any, any>> = []
     for (const tag of rpc.middlewares.values()) {
-      const middleware = services.mapUnsafe.get(`${tag.key}/Client`)
+      const middleware = Context.getOrUndefinedUnsafe(services, `${tag.key}/Client`) as any
       if (!middleware) continue
       middlewares.push(middleware)
     }
@@ -649,7 +652,9 @@ export const make: <Rpcs extends Rpc.Any, const Flatten extends boolean = false>
   } | undefined
 ) {
   const clientId = clientIdCounter++
-  const { run, send, supportsAck, supportsTransferables } = yield* Protocol
+  const { codecFor, run, send, supportsAck, supportsTransferables } = yield* Protocol
+  const rpcSchemas = makeRpcSchemas(codecFor)
+  const decodeDefect = Schema.decodeSync(codecFor(Schema.Defect()))
 
   type ClientEntry = {
     readonly rpc: Rpc.AnyWithProps
@@ -779,23 +784,27 @@ interface RpcSchemas {
   readonly encodePayload: (payload: any) => Effect.Effect<any, Schema.SchemaError, unknown>
   readonly decodeExit: (encoded: unknown) => Effect.Effect<Exit.Exit<any, any>, Schema.SchemaError, unknown>
 }
-const rpcSchemasCache = new WeakMap<Rpc.AnyWithProps, RpcSchemas>()
-const rpcSchemas = (rpc: Rpc.AnyWithProps) => {
-  let entry = rpcSchemasCache.get(rpc)
-  if (entry !== undefined) {
+// Codecs are compiled per client, because two protocols can fill the message
+// holes with different codecs.
+const makeRpcSchemas = (codecFor: RpcSerialization.CodecFor) => {
+  const cache = new WeakMap<Rpc.AnyWithProps, RpcSchemas>()
+  return (rpc: Rpc.AnyWithProps): RpcSchemas => {
+    let entry = cache.get(rpc)
+    if (entry !== undefined) {
+      return entry
+    }
+    const streamSchemas = RpcSchema.getStreamSchemas(rpc.successSchema)
+    entry = {
+      decodeChunk: Option.map(
+        streamSchemas,
+        (streamSchemas) => Schema.decodeUnknownEffect(codecFor(Schema.NonEmptyArray(streamSchemas.success)))
+      ),
+      encodePayload: Schema.encodeEffect(codecFor(rpc.payloadSchema)),
+      decodeExit: Schema.decodeUnknownEffect(codecFor(Rpc.exitSchema(rpc as any)))
+    }
+    cache.set(rpc, entry)
     return entry
   }
-  const streamSchemas = RpcSchema.getStreamSchemas(rpc.successSchema)
-  entry = {
-    decodeChunk: Option.map(
-      streamSchemas,
-      (streamSchemas) => Schema.decodeUnknownEffect(Schema.toCodecJson(Schema.NonEmptyArray(streamSchemas.success)))
-    ),
-    encodePayload: Schema.encodeEffect(Schema.toCodecJson(rpc.payloadSchema)),
-    decodeExit: Schema.decodeUnknownEffect(Schema.toCodecJson(Rpc.exitSchema(rpc as any)))
-  }
-  rpcSchemasCache.set(rpc, entry)
-  return entry
 }
 
 /**
@@ -854,6 +863,11 @@ export class Protocol extends Context.Service<Protocol, {
   ) => Effect.Effect<void, RpcClientError>
   readonly supportsAck: boolean
   readonly supportsTransferables: boolean
+  /**
+   * Builds the codec that fills the `unknown` holes of the protocol messages,
+   * re-passed from the `RpcSerialization` backing this transport.
+   */
+  readonly codecFor: RpcSerialization.CodecFor
 }>()("effect/rpc/RpcClient/Protocol") {
   /**
    * Creates a client protocol service from the supplied RPC request runner.
@@ -960,7 +974,7 @@ export const makeProtocolHttp = (client: HttpClient.HttpClient): Effect.Effect<
             })
           })
         )).pipe(
-          Effect.mapError((cause) => cause instanceof RpcClientError ? cause : httpClientError(cause))
+          Effect.mapError((cause) => isRpcClientError(cause) ? cause : httpClientError(cause))
         )
       if (!hasResponse) {
         return yield* emptyResponseError(request)
@@ -972,7 +986,8 @@ export const makeProtocolHttp = (client: HttpClient.HttpClient): Effect.Effect<
     return {
       send,
       supportsAck: false,
-      supportsTransferables: false
+      supportsTransferables: false,
+      codecFor: serialization.codecFor
     }
   }))
 
@@ -1008,6 +1023,13 @@ export const layerProtocolHttp = (options: {
 export const makeProtocolSocket = (options?: {
   readonly retryTransientErrors?: boolean | undefined
   readonly retryPolicy?: Schedule.Schedule<any, Socket.SocketError> | undefined
+  /**
+   * Runs for each retried `SocketOpenError` when `retryTransientErrors` is enabled.
+   * Ping timeouts are also reported because the protocol classifies them as
+   * `SocketOpenError`. The returned `Effect<void>` cannot fail with a typed error
+   * or require services; defects are logged and ignored so retries can continue.
+   */
+  readonly onTransientError?: ((error: RpcClientError) => Effect.Effect<void>) | undefined
 }): Effect.Effect<
   Protocol["Service"],
   never,
@@ -1023,7 +1045,10 @@ export const makeProtocolSocket = (options?: {
 
     let parser = serialization.makeUnsafe()
 
-    const pinger = yield* makePinger(write(parser.encode(constPing)!))
+    // `parser` is replaced on every connect, and a stateful serialization
+    // encodes against the connection it is writing to, so the ping is encoded
+    // when it is sent rather than once up front.
+    const pinger = yield* makePinger(Effect.suspend(() => write(parser.encode(constPing)!)))
     let currentError: RpcClientError | undefined
     const onOpen = Effect.suspend(() => {
       currentError = undefined
@@ -1032,6 +1057,13 @@ export const makeProtocolSocket = (options?: {
 
     const broadcast = (response: FromServerEncoded) =>
       Effect.forEach(clientIds, (clientId) => writeResponse(clientId, response))
+    const broadcastError = (error: RpcClientError) => {
+      currentError = error
+      return broadcast({
+        _tag: "ClientProtocolError",
+        error
+      })
+    }
 
     yield* Effect.suspend(() => {
       parser = serialization.makeUnsafe()
@@ -1096,24 +1128,29 @@ export const makeProtocolSocket = (options?: {
       Effect.tapCause((cause) => {
         const error = Cause.findError(cause)
         const hasError = Result.isSuccess(error)
-        if (
-          options?.retryTransientErrors && hasError &&
-          error.success.reason._tag === "SocketOpenError"
-        ) {
-          return Effect.void
-        }
-        currentError = new RpcClientError({
+        const rpcError = new RpcClientError({
           reason: hasError ? error.success.reason : new RpcClientDefect({
             message: "Unknown socket error",
             cause: Cause.squash(cause)
           })
         })
-        return broadcast({
-          _tag: "ClientProtocolError",
-          error: currentError
-        })
+        if (
+          options?.retryTransientErrors && hasError &&
+          error.success.reason._tag === "SocketOpenError"
+        ) {
+          return (options.onTransientError?.(rpcError) ?? Effect.void).pipe(
+            Effect.ignoreCause({
+              log: true,
+              message: "RpcClient onTransientError hook failed"
+            })
+          )
+        }
+        return broadcastError(rpcError)
       }),
-      Effect.retry(options?.retryPolicy ?? defaultRetryPolicy),
+      Effect.retryOrElse(
+        options?.retryPolicy ?? defaultRetryPolicy,
+        (error) => broadcastError(new RpcClientError({ reason: error.reason }))
+      ),
       Effect.annotateLogs({
         module: "RpcClient",
         method: "makeProtocolSocket"
@@ -1134,7 +1171,8 @@ export const makeProtocolSocket = (options?: {
         return Effect.orDie(write(encoded))
       },
       supportsAck: true,
-      supportsTransferables: false
+      supportsTransferables: false,
+      codecFor: serialization.codecFor
     }
   }))
 
@@ -1176,6 +1214,13 @@ const makePinger = Effect.fnUntraced(function*<A, E, R>(writePing: Effect.Effect
  */
 export const layerProtocolSocket = (options?: {
   readonly retryTransientErrors?: boolean | undefined
+  /**
+   * Runs for each retried `SocketOpenError` when `retryTransientErrors` is enabled.
+   * Ping timeouts are also reported because the protocol classifies them as
+   * `SocketOpenError`. The returned `Effect<void>` cannot fail with a typed error
+   * or require services; defects are logged and ignored so retries can continue.
+   */
+  readonly onTransientError?: ((error: RpcClientError) => Effect.Effect<void>) | undefined
 }): Layer.Layer<
   Protocol,
   never,
@@ -1256,6 +1301,11 @@ export const makeProtocolWorker = (
           undefined
       }).pipe(
         Effect.tapCause((cause) => {
+          for (const [requestId, entry] of entries) {
+            if (entry.worker !== backing) continue
+            entries.delete(requestId)
+            entry.latch.openUnsafe()
+          }
           const error = Cause.findError(cause)
           return broadcast({
             _tag: "ClientProtocolError",
@@ -1344,7 +1394,10 @@ export const makeProtocolWorker = (
     return {
       send,
       supportsAck: true,
-      supportsTransferables: true
+      supportsTransferables: true,
+      // Worker protocols use structured clone, so they do not depend on
+      // `RpcSerialization`. A binary worker protocol is a separate protocol.
+      codecFor: Schema.toCodecJson as RpcSerialization.CodecFor
     }
   }))
 
@@ -1389,7 +1442,3 @@ export class ConnectionHooks extends Context.Service<ConnectionHooks, {
   readonly onConnect: Effect.Effect<void>
   readonly onDisconnect: Effect.Effect<void>
 }>()("effect/rpc/RpcClient/ConnectionHooks") {}
-
-// internal
-
-const decodeDefect = Schema.decodeSync(Schema.Defect())

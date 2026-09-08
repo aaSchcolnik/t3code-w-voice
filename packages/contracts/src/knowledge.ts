@@ -77,7 +77,7 @@ export const ArtifactKind = Schema.Literals([
 ]);
 export type ArtifactKind = typeof ArtifactKind.Type;
 
-export class KnowledgeError extends Schema.TaggedErrorClass<KnowledgeError>()("KnowledgeError", {
+export class KnowledgeError extends Schema.TaggedError<KnowledgeError>()("KnowledgeError", {
   operation: Schema.String,
   message: Schema.String,
 }) {}

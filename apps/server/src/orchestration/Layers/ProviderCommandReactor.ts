@@ -459,7 +459,7 @@ const make = Effect.gen(function* () {
     readonly detail: string;
     readonly createdAt: string;
   }) {
-    const thread = yield* resolveThreadDetail(input.threadId);
+    const thread = yield* resolveThreadShell(input.threadId);
     if (!thread) {
       return;
     }
@@ -880,7 +880,7 @@ const make = Effect.gen(function* () {
     readonly interactionMode?: "default" | "plan";
     readonly createdAt: string;
   }) {
-    const thread = yield* resolveThreadDetail(input.threadId);
+    const thread = yield* resolveThreadShell(input.threadId);
     if (!thread) {
       return yield* Effect.die(
         new Error(`Thread '${input.threadId}' was not found in read model.`),
@@ -893,7 +893,9 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const terminalContext = formatPendingTerminalCommandContext(thread.messages);
+    const terminalContext = formatPendingTerminalCommandContext(
+      yield* projectionSnapshotQuery.getPendingTerminalCommandMessages(input.threadId),
+    );
     const providerText =
       terminalContext.text.length > 0
         ? `${terminalContext.text}\n\n${input.messageText}`
@@ -1256,7 +1258,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const thread = yield* resolveThreadDetail(event.payload.threadId);
+    const thread = yield* resolveThreadShell(event.payload.threadId);
     if (!thread) {
       // Emit a failure activity so DelegatedRunService can restore an
       // un-acknowledged wake instead of wedging parentTurnRunning.
@@ -1272,8 +1274,14 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const message = thread.messages.find((entry) => entry.id === event.payload.messageId);
-    if (!message || (message.role !== "user" && message.role !== "system")) {
+    const turnStart = yield* projectionSnapshotQuery.getTurnStartMessage({
+      threadId: thread.id,
+      messageId: event.payload.messageId,
+    });
+    if (
+      Option.isNone(turnStart) ||
+      (turnStart.value.message.role !== "user" && turnStart.value.message.role !== "system")
+    ) {
       yield* appendProviderFailureActivity({
         threadId: event.payload.threadId,
         kind: "provider.turn.start.failed",
@@ -1285,6 +1293,7 @@ const make = Effect.gen(function* () {
       });
       return;
     }
+    const { message, hasOtherUserMessages } = turnStart.value;
     const appendTurnStartFailure = (summary: string, detail: string) =>
       appendProviderFailureActivity({
         threadId: event.payload.threadId,
@@ -1377,10 +1386,7 @@ const make = Effect.gen(function* () {
     yield* ensureThreadWorktree(thread);
 
     const isCompactCommand = isCompactCommandMessage(message);
-    const nonCompactUserMessageCount = thread.messages.filter(
-      (entry) => entry.role === "user" && !isCompactCommandMessage(entry),
-    ).length;
-    if (nonCompactUserMessageCount === 1 && !isCompactCommand) {
+    if (!hasOtherUserMessages && !isCompactCommand) {
       const project = yield* resolveProject(thread.projectId);
       const generationCwd =
         resolveThreadWorkspaceCwd({
@@ -1451,7 +1457,7 @@ const make = Effect.gen(function* () {
         ),
       );
     if (isCompactCommand) {
-      if (nonCompactUserMessageCount === 0) {
+      if (!hasOtherUserMessages) {
         return yield* appendTurnStartFailure(
           "Context compaction failed",
           "Context compaction requires an existing conversation.",
@@ -1710,6 +1716,9 @@ const make = Effect.gen(function* () {
           threadId: event.payload.threadId,
           requestId: event.payload.requestId,
           answers: event.payload.answers,
+          ...(event.payload.attachmentsByQuestionId
+            ? { attachmentsByQuestionId: event.payload.attachmentsByQuestionId }
+            : {}),
         })
         .pipe(
           Effect.catchCause((cause) =>

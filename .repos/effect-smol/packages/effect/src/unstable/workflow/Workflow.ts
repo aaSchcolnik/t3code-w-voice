@@ -557,16 +557,13 @@ export class Complete<A, E> extends Data.TaggedClass("Complete")<{
       [Schema.Exit(options.success, options.error, Schema.Defect())],
       ([exit]) => (input, ast, options) => {
         if (!(isResult(input) && input._tag === "Complete")) {
-          return Effect.fail(new SchemaIssue.InvalidType(ast))
+          return Effect.fail(new SchemaIssue.InvalidType(ast, input, options))
         }
         return Effect.mapBothEager(
           SchemaParser.decodeEffect(exit)(input.exit, options),
           {
             onSuccess: (exit) => new Complete({ exit }),
-            onFailure: (issue) =>
-              new SchemaIssue.Composite(ast, [
-                new SchemaIssue.Pointer(["exit"], issue)
-              ])
+            onFailure: (issue) => SchemaIssue.makeCompositeAtKey(ast, "exit", issue, input, options)
           }
         )
       },
@@ -791,6 +788,9 @@ export const provideScope = <A, E, R>(
 /**
  * Adds an exit finalizer to the current workflow scope, preserving the
  * services available when the finalizer is registered.
+ *
+ * Body-level `Effect.onExit` finalizers cannot observe a deposited workflow
+ * interrupt. Use this function for terminal-state work that must observe it.
  *
  * @category resource management
  * @since 4.0.0
