@@ -2,6 +2,7 @@ import {
   type EnvironmentId,
   type ProjectId,
   type McpCapability,
+  McpCapabilityUnavailableError,
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
   type ProviderDriverKind,
@@ -25,6 +26,7 @@ export interface McpInvocationScope {
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
   readonly capabilities: ReadonlySet<McpCapability>;
+  readonly requestedCapabilities?: ReadonlySet<McpCapability>;
   readonly effectiveMcp?: McpSettings;
   readonly providerDriver?: ProviderDriverKind;
   readonly issuedAt: number;
@@ -41,21 +43,33 @@ export const mcpSessionKind = (scope: McpInvocationScope): "parent" | "delegated
 export const mcpOwnerThreadId = (scope: McpInvocationScope): ThreadId =>
   scope.ownerThreadId ?? scope.threadId;
 
-export const requireMcpCapability = Effect.fn("mcp.requireCapability")(function* (
+/** The error a missing capability surfaces as; preview keeps its own so the broker can route it. */
+export type McpCapabilityError<C extends McpCapability> = C extends "preview"
+  ? PreviewAutomationUnavailableError
+  : McpCapabilityUnavailableError;
+
+const missingCapability = (
+  invocation: McpInvocationScope,
   capability: McpCapability,
-) {
-  const invocation = yield* McpInvocationContext;
-  if (
-    !invocation.capabilities.has(capability) ||
-    (mcpSessionKind(invocation) === "delegated" && capability !== "preview")
-  ) {
-    return yield* new PreviewAutomationUnavailableError({
-      capability,
-      environmentId: invocation.environmentId,
-      threadId: invocation.threadId,
-      providerSessionId: invocation.providerSessionId,
-      providerInstanceId: invocation.providerInstanceId,
-    });
-  }
-  return invocation;
-});
+): PreviewAutomationUnavailableError | McpCapabilityUnavailableError => {
+  const fields = {
+    environmentId: invocation.environmentId,
+    threadId: invocation.threadId,
+    providerSessionId: invocation.providerSessionId,
+    providerInstanceId: invocation.providerInstanceId,
+  };
+  return capability === "preview"
+    ? new PreviewAutomationUnavailableError({ capability, ...fields })
+    : new McpCapabilityUnavailableError({ capability, ...fields });
+};
+
+export const requireMcpCapability = <const C extends McpCapability>(
+  capability: C,
+): Effect.Effect<McpInvocationScope, McpCapabilityError<C>, McpInvocationContext> =>
+  Effect.flatMap(McpInvocationContext, (invocation) =>
+    invocation.capabilities.has(capability) &&
+    (mcpSessionKind(invocation) !== "delegated" || capability === "preview")
+      ? Effect.succeed(invocation)
+      : // The conditional type narrows what the literal argument decided at runtime.
+        Effect.fail(missingCapability(invocation, capability) as McpCapabilityError<C>),
+  ).pipe(Effect.withSpan("mcp.requireCapability"));

@@ -31,6 +31,7 @@ export interface McpCredentialRequest {
   readonly providerInstanceId: ProviderInstanceId;
   readonly sessionKind?: ProviderSessionKind;
   readonly ownerThreadId?: ThreadId;
+  readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
 }
 
 export interface McpIssuedCredential {
@@ -88,7 +89,7 @@ export interface McpSessionRegistryOptions {
  *
  * The bound matters because `/mcp` is mounted outside the environment auth
  * stack and is reachable on whatever host the server binds to, so this token is
- * the only thing guarding the preview toolkit on a remote-reachable server.
+ * the only thing guarding the `t3-code` toolkits on a remote-reachable server.
  */
 const DEFAULT_LIVENESS_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
@@ -157,6 +158,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     providers: ReadonlyArray<ServerProvider>,
     parentProviderDriver: ProviderDriverKind | undefined,
     sessionKind: "parent" | "delegated",
+    requestedCapabilities: ReadonlySet<McpInvocationContext.McpCapability> = new Set(),
   ) => {
     const providerAvailable = (driver: string) =>
       providers.some(
@@ -169,6 +171,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       );
     const capabilities = new Set<McpInvocationContext.McpCapability>();
     if (effectiveMcp.preview) capabilities.add("preview");
+    for (const capability of requestedCapabilities) {
+      if (sessionKind === "parent" || capability === "preview") capabilities.add(capability);
+    }
     if (sessionKind === "delegated") return capabilities;
 
     for (const [provider, spec] of Object.entries(DELEGATED_PROVIDERS) as ReadonlyArray<
@@ -265,6 +270,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         providers,
         parentProviderDriver,
         sessionKind,
+        request.capabilities,
       );
       const delegatedProviderInstances = providers
         .filter(
@@ -301,6 +307,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         providerSessionId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
         capabilities,
+        ...(request.capabilities === undefined
+          ? {}
+          : { requestedCapabilities: request.capabilities }),
         effectiveMcp,
         ...(parentProviderDriver === undefined ? {} : { providerDriver: parentProviderDriver }),
         issuedAt,
@@ -319,10 +328,10 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providerInstanceId: scope.providerInstanceId,
           ...(parentProviderDriver === undefined ? {} : { providerDriver: parentProviderDriver }),
           ...(parentNativeSubagentTracking ? { nativeSubagentTracking: true } : {}),
-          capabilities: scope.capabilities,
           protocolProfile: protocolProfileForProvider(parentProviderDriver),
           endpoint,
           authorizationHeader: `Bearer ${rawToken}`,
+          capabilities: scope.capabilities,
         },
       };
     },
@@ -360,6 +369,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providers,
           record.scope.providerDriver,
           McpInvocationContext.mcpSessionKind(record.scope),
+          record.scope.requestedCapabilities,
         ),
       };
       return yield* SynchronizedRef.modify(state, ({ records }) => {

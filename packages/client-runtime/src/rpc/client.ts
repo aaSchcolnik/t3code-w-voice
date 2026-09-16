@@ -51,6 +51,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeTerminalMetadata
   | typeof WS_METHODS.subscribePreviewEvents
   | typeof WS_METHODS.subscribeDiscoveredLocalServers
+  | typeof WS_METHODS.subscribeDeviceState
   | typeof WS_METHODS.subscribeResourceTelemetry
   | typeof WS_METHODS.pullRequestsSubscribeRefreshes
   | typeof WS_METHODS.previewAutomationConnect
@@ -62,7 +63,10 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeSubagentRuns
   | typeof WS_METHODS.subscribeSubagentTranscript
   | typeof WS_METHODS.remotePreviewOpen
-  | typeof WS_METHODS.remotePreviewHostConnect;
+  | typeof WS_METHODS.remotePreviewHostConnect
+  | typeof WS_METHODS.subscribeWorktreeSetup
+  | typeof WS_METHODS.subscribeProjectClones
+  | typeof WS_METHODS.terminalAttach;
 
 export type EnvironmentStreamCommandRpcTag =
   | typeof WS_METHODS.cloudInstallRelayClient

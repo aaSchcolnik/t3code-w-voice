@@ -358,6 +358,15 @@ precedence lives in one helper, `resolveEnvironmentMachineKind`, so web and mobi
 
 Clients treat the field like any other capability: absent means "use the fallback", never "wait".
 
+### Desktop without a local environment
+
+Desktop normally launches its own primary server, but the desktop setting `localEnvironmentEnabled`
+turns that off. Changing it relaunches the app without deleting local state. On the next start, the
+main process skips port selection, server exposure, and the primary and WSL backends. The renderer's
+`readPrimaryEnvironmentTarget` then returns null, so only saved pairing, relay, and SSH environments
+connect. The bundled renderer remains available through the `t3code://` scheme because it is not
+served by the local backend.
+
 ## Future work
 
 These remain unbuilt and are listed to keep the model honest:

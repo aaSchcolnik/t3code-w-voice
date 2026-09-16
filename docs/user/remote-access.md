@@ -187,6 +187,15 @@ Include the diagnostic message and trace ID when reporting a persistent failure.
 For a connection that still fails after linking, check the date and time on both
 devices. For server version warnings, follow [Updating T3 Code](./updating.md).
 
+## Use Desktop only for remote environments
+
+To drive work that runs elsewhere, open **Settings → Connections** and turn off **Local
+environment**. T3 Code restarts without a local server. Local agents, terminals, WSL backends, and
+incoming connections to this computer stay off. Projects, history, and saved connections remain
+available through pairing, T3 Connect, or SSH.
+
+Turn **Local environment** back on to restore the previous local settings.
+
 ## Remote preview streaming
 
 Use **Stream options → Audio** to play a preview tab's sound on **Computer**, **This device**, or **Both**. Listening requires control of the preview. Sound returns to the computer when the controlling device disconnects, releases control, or backgrounds the app. Both may echo because of network delay. Stop an active recording before switching to This device or Both; returning to Computer is always available. Recordings remain video-only. Tab mute applies to every output.

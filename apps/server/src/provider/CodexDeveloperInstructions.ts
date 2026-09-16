@@ -12,9 +12,36 @@ For browser work, first call \`preview_status\`. If no automation-capable previe
 Do not switch to global browser skills, Chrome, Node REPL browser automation, standalone Playwright, or agent-browser merely because the preview is initially closed or a first call fails. Use an alternative browser system only when the T3 preview tools are absent, the user explicitly requests another browser, or \`preview_open\` returns an explicit unsupported/unavailable error. A failed T3 preview tool call should be inspected and retried with corrected arguments when the error is actionable.
 `;
 
-/** Omit browser guidance whenever the preview MCP tools are not attached. */
-const browserToolInstructions = (browserToolsAvailable: boolean): string =>
-  browserToolsAvailable ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : "";
+const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `
+
+## T3 Code devices
+
+The \`t3-code\` MCP server also exposes \`device_*\` tools for iOS Simulators and Android Emulators on this environment. For mobile verification, call \`device_list\`, then \`device_open\` so the user can watch the device in their Device panel; its result explains how to drive the device. Driving happens through the \`agent-device\` CLI, which is on PATH. Keep the host config and session flags returned by \`device_open\` on every command so concurrent devices stay independent: prefer \`agent-device snapshot -i\` refs over coordinates, and use \`device_screenshot\` when you need to see the screen. Do not call simctl, adb, xcrun, or serve-sim directly while these tools are present. If \`device_list\` reports a platform as unavailable, say so instead of trying another route.
+`;
+
+export interface T3CodeToolAvailability {
+  readonly browser: boolean;
+  readonly device: boolean;
+}
+
+const normalizeAvailability = (
+  availability: boolean | T3CodeToolAvailability,
+): T3CodeToolAvailability =>
+  typeof availability === "boolean" ? { browser: availability, device: false } : availability;
+
+/**
+ * Each block is omitted entirely when its tools aren't attached. Describing
+ * `preview_*` or `device_*` tools that aren't in the turn's tool list would be
+ * worse than saying nothing: the instructions actively steer the model away
+ * from Playwright, agent-browser, and raw simctl/adb, so leaving them in would
+ * talk it out of the only automation it still has.
+ */
+const browserToolInstructions = (availability: boolean | T3CodeToolAvailability): string => {
+  const tools = normalizeAvailability(availability);
+  return `${tools.browser ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : ""}${
+    tools.device ? T3_CODE_DEVICE_TOOL_INSTRUCTIONS : ""
+  }`;
+};
 
 const CODEX_PLAN_MODE_BODY = `# Plan Mode (Conversational)
 
@@ -168,8 +195,12 @@ export function buildCodexDeveloperInstructions(
   interactionMode: ProviderInteractionMode,
   runtime: CodexRuntimeInfo,
   extraInstructions?: string,
-  /** Whether the `t3-code` MCP server is attached to this turn. */
-  browserToolsAvailable = true,
+  /**
+   * Whether the `t3-code` MCP server is attached to this turn. Callers derive
+   * it from the session's actual MCP configuration rather than re-reading the
+   * setting, so the prompt cannot claim tools the turn doesn't have.
+   */
+  browserToolsAvailable: boolean | T3CodeToolAvailability = true,
 ): string {
   const runtimeInfo = buildRuntimeInstructions({ harness: "Codex", ...runtime });
   const supplementalInstructions = extraInstructions
@@ -182,20 +213,20 @@ export function buildCodexDeveloperInstructions(
 
 const wrapCollaborationMode = (
   body: string,
-  browserToolsAvailable: boolean,
+  browserToolsAvailable: boolean | T3CodeToolAvailability,
   extraInstructions?: string,
 ): string =>
   `<collaboration_mode>${body}${browserToolInstructions(browserToolsAvailable)}${extraInstructions ? `\n\n${extraInstructions}` : ""}\n</collaboration_mode>`;
 
 export function codexPlanModeDeveloperInstructions(
-  browserToolsAvailable = true,
+  browserToolsAvailable: boolean | T3CodeToolAvailability = true,
   extraInstructions?: string,
 ): string {
   return wrapCollaborationMode(CODEX_PLAN_MODE_BODY, browserToolsAvailable, extraInstructions);
 }
 
 export function codexDefaultModeDeveloperInstructions(
-  browserToolsAvailable = true,
+  browserToolsAvailable: boolean | T3CodeToolAvailability = true,
   extraInstructions?: string,
 ): string {
   return wrapCollaborationMode(CODEX_DEFAULT_MODE_BODY, browserToolsAvailable, extraInstructions);

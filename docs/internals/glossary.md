@@ -237,6 +237,21 @@ The broker session's counter for one remote preview session. It stamps the offer
 candidates, host state, and agent pointer, and advances on ICE restart or host reconnect. Source
 metadata never advances it.
 
+### Pull requests
+
+- **Pull request link**: A persisted thread association identified by host, repository, and number. Links can cross projects within an environment and carry a server-maintained snapshot.
+- **Pull request sync**: The reactor that refreshes each distinct linked review once per cadence and discovers native stack layers. Explicit refreshes and failed stack reads trigger another read.
+- **Current pull request**: The link used by single-review controls and older clients. Open work takes precedence; a completed single chain points at its top layer. Unrelated terminal links use the latest update.
+
+### Composer context
+
+- **Context record**: The typed payload behind a composer chip, keyed by `contextId` in `message.context.records`. It never holds bytes.
+- **Context reference**: One occurrence of a record in message text, written as `[label](t3-context://v1/<kind>/<contextId>)`. Several references can share one record.
+- **Attachment binding**: The link from an image or file record to its server-owned attachment. Its attachment ID can change without changing `contextId`.
+- **Attachment inventory**: The ordered image records shown as thumbnails above the prose, including images with no inline references.
+
+See [composer context references](./composer-context-references.md) for the contract and lifecycle.
+
 ## Practical Shortcuts
 
 - If you see `requested`, think "intent recorded".

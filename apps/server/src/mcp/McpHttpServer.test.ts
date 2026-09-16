@@ -25,6 +25,9 @@ import * as Stream from "effect/Stream";
 import { McpProtocol, McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
+import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as DeviceService from "../device/DeviceService.ts";
 import * as ServerConfig from "../config.ts";
 import { staticAndDevRouteLayer } from "../http.ts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - the manual-redirect test server needs Node's createServer directly.
@@ -118,6 +121,18 @@ const TestLayer = McpHttpServer.PreviewToolkitRegistrationLive.pipe(
   Layer.provideMerge(PreviewAutomationBroker.layer),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-http-server-test-" })),
   Layer.provideMerge(NodeServices.layer),
+);
+const PullRequestsTestLayer = McpHttpServer.PullRequestsToolkitRegistrationLive.pipe(
+  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.mock(ProjectionSnapshotQuery)({
+        getThreadShellById: () => Effect.succeed(Option.none()),
+      }),
+      Layer.mock(OrchestrationEngineService)({}),
+      NodeServices.layer,
+    ),
+  ),
 );
 
 const snapshotResult = {
@@ -979,7 +994,10 @@ it.effect.each([
         const { accessibilityTree: _tree, ...boundedMetadata } = metadata;
         expect(snapshot.isError).toBe(false);
         expect(snapshot.structuredContent).toEqual(metadata);
-        const [text, ...rest] = snapshot.content;
+        const [identity, text, ...rest] = snapshot.content;
+        expect(identity?.type === "text" ? decodeJsonText(identity.text) : null).toEqual({
+          url: page.url,
+        });
         expect(text?.type === "text" ? decodeJsonText(text.text) : null).toEqual(boundedMetadata);
         expect(rest).toEqual([
           {
@@ -1008,7 +1026,12 @@ it.effect.each([
           Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
           Effect.provideService(McpSchema.McpServerClient, client),
         );
-      expect(nextDefault.content.map((content) => content.type)).toEqual(["text", "text", "image"]);
+      expect(nextDefault.content.map((content) => content.type)).toEqual([
+        "text",
+        "text",
+        "text",
+        "image",
+      ]);
       expect(nextDefault.structuredContent).toEqual({ ...page, title: "Snapshot 7", screenshot });
       expect(requests).toBe(7);
     }),
@@ -1058,7 +1081,7 @@ it.effect("saves the snapshot PNG on request and reports its path", () =>
         /^browser-screenshot-example-test-[0-9a-z]+-[0-9a-f]{8}\.png$/,
       );
       expect(Buffer.from(yield* fileSystem.readFile(screenshotPath!)).toString()).toBe("png");
-      const text = snapshot.content.find((content) => content.type === "text");
+      const [, text] = snapshot.content;
       expect(text?.type === "text" ? text.text : "").toContain(screenshotPath);
 
       const unsaved = yield* callSnapshot({});
@@ -1087,6 +1110,38 @@ it.effect("reports a tagged error when the screenshot cannot be saved", () =>
       });
     }),
   ).pipe(Effect.provide(TestLayer)),
+);
+
+it.effect(
+  "registers the pull request toolkit and surfaces a missing capability as a tool error",
+  () =>
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const names = server.tools.map(({ tool }) => tool.name);
+      expect(names).toEqual(
+        expect.arrayContaining([
+          "link_pull_request",
+          "unlink_pull_request",
+          "list_thread_pull_requests",
+        ]),
+      );
+      const linkTool = server.tools.find(({ tool }) => tool.name === "link_pull_request");
+      expect(linkTool?.tool.annotations?.idempotentHint).toBe(true);
+      expect(linkTool?.tool.annotations?.openWorldHint).toBe(false);
+      expect(linkTool?.tool.description).toContain("Register every pull request you open");
+
+      const denied = yield* server
+        .callTool({ name: "list_thread_pull_requests", arguments: {} })
+        .pipe(
+          // A preview-only credential: the token predates the toolkit or was minted elsewhere.
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+      expect(denied.isError).toBe(true);
+      expect(denied.content).toEqual([
+        { type: "text", text: "MCP credential does not grant the pull-requests capability." },
+      ]);
+    }).pipe(Effect.provide(PullRequestsTestLayer)),
 );
 
 it.effect("keeps the snapshot text under the agent's output ceiling", () =>
@@ -1126,7 +1181,10 @@ it.effect("keeps the snapshot text under the agent's output ceiling", () =>
       const snapshot = yield* callSnapshot({ includeImage: false });
 
       expect(snapshot.isError).toBe(false);
-      const [text, notice] = snapshot.content;
+      const [identity, text, notice] = snapshot.content;
+      expect(identity?.type === "text" ? decodeJsonText(identity.text) : null).toEqual({
+        url: oversized.url,
+      });
       expect(text?.type).toBe("text");
       const body = text?.type === "text" ? text.text : "";
       expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(
@@ -1168,7 +1226,7 @@ it.effect("bounds the snapshot text even when nothing but logs and the title are
 
       const snapshot = yield* callSnapshot({ includeImage: false });
 
-      const [text] = snapshot.content;
+      const [, text] = snapshot.content;
       const body = text?.type === "text" ? text.text : "";
       expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(
         McpHttpServer.MAX_SNAPSHOT_TEXT_BYTES,
@@ -1179,7 +1237,7 @@ it.effect("bounds the snapshot text even when nothing but logs and the title are
       };
       expect(parsed.title.length).toBe(2_049);
       expect(parsed.consoleEntries[0]?.text.length).toBe(501);
-      const notice = snapshot.content[1];
+      const notice = snapshot.content[2];
       const noticeText = notice?.type === "text" ? notice.text : "";
       expect(noticeText).toContain("url or title after 2048 characters");
       expect(noticeText).toContain("console entries text after 500 characters");
@@ -1230,7 +1288,7 @@ it.effect("sheds log entries before locators when every list is full", () =>
 
       const snapshot = yield* callSnapshot({ includeImage: false });
 
-      const [text, notice] = snapshot.content;
+      const [, text, notice] = snapshot.content;
       const body = text?.type === "text" ? text.text : "";
       expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(
         McpHttpServer.MAX_SNAPSHOT_TEXT_BYTES,
@@ -1373,6 +1431,15 @@ const TransportRoutesLive = Layer.mergeAll(
   McpHttpServer.layer.pipe(
     Layer.provide(RegistryStubLive),
     Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+    Layer.provide(
+      Layer.mergeAll(
+        Layer.mock(OrchestrationEngineService)({}),
+        Layer.mock(ProjectionSnapshotQuery)({
+          getThreadShellById: () => Effect.succeed(Option.none()),
+        }),
+        Layer.mock(DeviceService.DeviceService)({}),
+      ),
+    ),
   ),
   staticAndDevRouteLayer,
 );
@@ -1705,6 +1772,10 @@ it.effect("registers annotated tools and preserves authenticated request context
     Effect.gen(function* () {
       const server = yield* McpServer.McpServer;
       const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
+      const toolIcon = {
+        _tag: "website" as const,
+        pageUrl: "http://example.test/",
+      };
       const routedRequests: Array<{
         readonly operation: string;
         readonly tabId?: string | undefined;
@@ -1754,7 +1825,7 @@ it.effect("registers annotated tools and preserves authenticated request context
       expect(clickTool?.tool.annotations?.readOnlyHint).toBe(false);
       expect(clickTool?.tool.annotations?.destructiveHint).toBe(true);
       expect(clickTool?.tool.annotations?.openWorldHint).toBe(true);
-      expect(clickTool?.tool.outputSchema).toEqual({
+      expect(clickTool?.tool.outputSchema).toMatchObject({
         type: "object",
         additionalProperties: false,
         description: "The preview action completed successfully.",
@@ -1811,10 +1882,12 @@ it.effect("registers annotated tools and preserves authenticated request context
           Effect.provideService(McpSchema.McpServerClient, client),
         );
       expect(evaluated.isError).toBe(false);
-      expect(evaluated.structuredContent).toEqual({ value: ["Connect", "Continue"] });
-      expect(evaluated.content).toEqual([
-        { type: "text", text: '{"value":["Connect","Continue"]}' },
-      ]);
+      expect(evaluated.structuredContent).toEqual({ value: ["Connect", "Continue"], toolIcon });
+      const evaluatedText = evaluated.content[0];
+      expect(evaluatedText?.type === "text" ? decodeJsonText(evaluatedText.text) : null).toEqual({
+        toolIcon,
+        value: ["Connect", "Continue"],
+      });
 
       const actionRequests = [
         { name: "preview_click", arguments: { x: 10, y: 10 } },
@@ -1831,8 +1904,10 @@ it.effect("registers annotated tools and preserves authenticated request context
             Effect.provideService(McpSchema.McpServerClient, client),
           );
         expect(result.isError).toBe(false);
-        expect(result.structuredContent).toEqual({});
-        expect(result.content).toEqual([{ type: "text", text: "{}" }]);
+        expect(result.structuredContent).toEqual({ toolIcon });
+        expect(routedRequests.at(-1)?.operation).toBe("status");
+        const text = result.content[0];
+        expect(text?.type === "text" ? decodeJsonText(text.text) : null).toEqual({ toolIcon });
       }
     }),
   ).pipe(Effect.provide(TestLayer)),
