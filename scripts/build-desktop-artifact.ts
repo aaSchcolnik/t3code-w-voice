@@ -1506,6 +1506,16 @@ export function resolveKoffiNativePackages(
   return architectures.map((architecture) => `@koromix/koffi-${os}-${architecture}`);
 }
 
+export function resolveDesktopVoiceRuntimeDependencies(
+  desktopDependencies: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const transcribeCppVersion = desktopDependencies["transcribe-cpp"];
+  if (transcribeCppVersion === undefined) {
+    throw new Error("apps/desktop must declare transcribe-cpp for desktop Voice packaging.");
+  }
+  return { "transcribe-cpp": transcribeCppVersion };
+}
+
 // macOS and Linux run both processes from one app.asar, so the stage installs
 // the union of what each bundle leaves external and nothing else.
 export function resolveMergedStageDependencies(input: {
@@ -3831,6 +3841,15 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         cause,
       }),
   });
+  const resolvedDesktopVoiceRuntimeDependencies = yield* Effect.try({
+    try: () => resolveDesktopVoiceRuntimeDependencies(desktopPackageJson.dependencies),
+    catch: (cause) =>
+      new DesktopBuildDependencyResolutionError({
+        kind: "desktop-runtime",
+        manifestPath: "apps/desktop/package.json",
+        cause,
+      }),
+  });
 
   const appVersion = options.version ?? serverPackageJson.version;
   yield* Effect.try({
@@ -4063,11 +4082,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // Linux merge both sets into one app.asar.
   const stageDependencies =
     options.platform === "win"
-      ? { ...resolvedDesktopRuntimeDependencies }
+      ? {
+          ...resolvedDesktopRuntimeDependencies,
+          ...resolvedDesktopVoiceRuntimeDependencies,
+        }
       : resolveMergedStageDependencies({
           platform: options.platform,
           serverDependencies: resolvedServerDependencies,
-          desktopDependencies: resolvedDesktopRuntimeDependencies,
+          desktopDependencies: {
+            ...resolvedDesktopRuntimeDependencies,
+            ...resolvedDesktopVoiceRuntimeDependencies,
+          },
           arch: options.arch,
           fffNodeVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
         });

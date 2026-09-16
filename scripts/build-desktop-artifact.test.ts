@@ -54,6 +54,7 @@ import {
   resolveMacPasskeySigningConfiguration,
   resolveDesktopRuntimeDependencies,
   resolveMergedStageDependencies,
+  resolveDesktopVoiceRuntimeDependencies,
   resolveFffNativeDependencies,
   resolveKoffiNativePackages,
   resolveTranscribeCppNativeArtifacts,
@@ -902,6 +903,20 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         "@ff-labs/fff-bin-linux-x64-gnu": "0.9.4",
         "@ff-labs/fff-bin-linux-x64-musl": "0.9.4",
       },
+    );
+  });
+
+  it("always stages the Voice runtime even though it runs in a separate desktop worker", () => {
+    assert.deepStrictEqual(
+      resolveDesktopVoiceRuntimeDependencies({
+        electron: "catalog:",
+        "transcribe-cpp": "0.1.3",
+      }),
+      { "transcribe-cpp": "0.1.3" },
+    );
+    assert.throws(
+      () => resolveDesktopVoiceRuntimeDependencies({ electron: "catalog:" }),
+      /must declare transcribe-cpp/,
     );
   });
 
