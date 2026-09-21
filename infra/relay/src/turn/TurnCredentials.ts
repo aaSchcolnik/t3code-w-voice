@@ -18,7 +18,7 @@ export interface CloudflareTurnConfiguration {
   readonly apiToken: Redacted.Redacted<string>;
 }
 
-export class TurnCredentialGenerationError extends Schema.TaggedErrorClass<TurnCredentialGenerationError>()(
+export class TurnCredentialGenerationError extends Schema.TaggedError<TurnCredentialGenerationError>()(
   "TurnCredentialGenerationError",
   {
     sessionId: Schema.String,

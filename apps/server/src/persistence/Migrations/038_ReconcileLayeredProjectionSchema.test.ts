@@ -8,8 +8,8 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import ProjectionThreadsSettled from "./033_ProjectionThreadsSettled.ts";
 import ProjectionThreadsSnoozed from "./034_ProjectionThreadsSnoozed.ts";
 
-const subagentsHistory = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
-const mainHistory = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const subagentsHistory = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
+const mainHistory = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 const readColumnNames = Effect.fn("readColumnNames")(function* (
   table: "projection_projects" | "projection_threads",

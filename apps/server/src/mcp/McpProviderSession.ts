@@ -21,8 +21,6 @@ export interface McpProviderSessionConfig {
   readonly protocolProfile: McpProtocolProfile;
   readonly endpoint: string;
   readonly authorizationHeader: string;
-  /** Capabilities the credential grants ("preview", "device"). */
-  readonly capabilities: ReadonlySet<string>;
   /**
    * Set when the session may drive devices. Adapters spread this into the
    * provider subprocess environment so the `agent-device` CLI is on PATH and

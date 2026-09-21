@@ -82,7 +82,7 @@ const LegacyProviderOptionSelectionsObject = Schema.Record(Schema.String, Schema
 const ProviderOptionSelectionsFromLegacyObject = LegacyProviderOptionSelectionsObject.pipe(
   Schema.decodeTo(
     Schema.Array(ProviderOptionSelection),
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (record) => Effect.succeed(coerceLegacyOptionsObjectToArray(record)),
       encode: (selections) => Effect.succeed(canonicalSelectionsToLegacyObject(selections)),
     }),
@@ -123,7 +123,7 @@ const ModelSelectionSource = Schema.Struct({
 export const ModelSelection = ModelSelectionSource.pipe(
   Schema.decodeTo(
     ModelSelectionWire,
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (raw) => {
         const instanceIdSource =
           raw.instanceId !== undefined

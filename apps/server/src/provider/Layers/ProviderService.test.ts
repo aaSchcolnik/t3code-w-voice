@@ -5102,6 +5102,7 @@ describe("agent browser access", () => {
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),
+        getDeletedWorktreeThreads: () => Effect.die("unused"),
         getArchivedShellSnapshot: () => Effect.die("unused"),
         getSnapshotSequence: () => Effect.die("unused"),
         getCounts: () => Effect.die("unused"),
@@ -5145,7 +5146,7 @@ describe("agent browser access", () => {
           Effect.sync(() => {
             issued.push({
               threadId: request.threadId,
-              capabilities: [...request.capabilities].toSorted(),
+              capabilities: [...(request.capabilities ?? [])].toSorted(),
             });
             return undefined;
           }),

@@ -15,15 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetPanel,
-  SheetTitle,
-} from "../ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
 import { Switch } from "../ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { toastManager } from "../ui/toast";
@@ -355,17 +347,17 @@ export function VoiceDictionarySection(props: {
               Spoken forms are matched longest-first after a transcription segment is finalized.
             </SheetDescription>
           </SheetHeader>
-          <SheetPanel>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
             <DictionaryFields draft={editDraft} onChange={setEditDraft} disabled={false} />
-          </SheetPanel>
-          <SheetFooter>
+          </div>
+          <div className="flex justify-end gap-2 border-t p-6">
             <Button type="button" variant="ghost" onClick={() => setEditing(null)}>
               Cancel
             </Button>
             <Button type="button" onClick={saveEdit}>
               Save
             </Button>
-          </SheetFooter>
+          </div>
         </SheetContent>
       </Sheet>
     </div>

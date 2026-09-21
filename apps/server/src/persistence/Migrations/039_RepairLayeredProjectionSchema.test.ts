@@ -7,7 +7,7 @@ import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import ProjectionThreadsSettled from "./033_ProjectionThreadsSettled.ts";
 
-const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 const readColumnNames = Effect.fn("readColumnNames")(function* (
   table: "projection_projects" | "projection_threads",

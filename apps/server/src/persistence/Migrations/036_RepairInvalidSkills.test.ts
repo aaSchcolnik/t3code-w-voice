@@ -9,8 +9,8 @@ import ProjectionThreadsSettled from "./033_ProjectionThreadsSettled.ts";
 import ProjectionThreadsSnoozed from "./034_ProjectionThreadsSnoozed.ts";
 import ProjectionThreadTitleRegeneration from "./035_ProjectionThreadTitleRegeneration.ts";
 
-const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
-const upstreamLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
+const upstreamLayer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
 layer("036_RepairInvalidSkills", (it) => {
   it.effect("removes versionless skills and repairs invalid active versions", () =>

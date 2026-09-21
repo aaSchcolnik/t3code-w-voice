@@ -12,6 +12,8 @@ import { previewBridge } from "~/components/preview/previewBridge";
 import { ensureClientSettingsHydrated, getClientSettings } from "~/hooks/useSettings";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 
+import { createRecordingCompositor } from "./recordingCompositor";
+
 import { acquireBrowserSurfaceActivity } from "./browserSurfaceStore";
 
 export class BrowserRecordingUnavailableError extends Schema.TaggedError<BrowserRecordingUnavailableError>()(
@@ -128,6 +130,7 @@ interface ActiveRecording {
   captureLease: TabMediaCaptureLease | null;
   stream: MediaStream | null;
   recorder: MediaRecorder | null;
+  compositor: Awaited<ReturnType<typeof createRecordingCompositor>>;
   savedBlob?: Blob;
   uploadPromise?: Promise<string>;
   lifecycle: BrowserRecordingLifecycle;
@@ -633,6 +636,8 @@ function replaceCapture(
 }
 
 const clearActiveRecording = (recording: ActiveRecording): void => {
+  recording.compositor?.dispose();
+  recording.compositor = null;
   recording.releaseSurfaceActivity?.();
   recording.releaseSurfaceActivity = null;
   if (activeRecordings.get(recording.tabId) !== recording) return;
@@ -770,6 +775,7 @@ export async function startBrowserRecording(
     captureLease: null,
     stream: null,
     recorder: null,
+    compositor: null,
     lifecycle: startingLifecycle,
   };
   activeRecordings.set(tabId, recording);
@@ -779,7 +785,8 @@ export async function startBrowserRecording(
       clearActiveRecording(recording);
       throw cause;
     });
-    const frameRate = getClientSettings().browserRecordingFrameRate;
+    const settings = getClientSettings();
+    const frameRate = settings.browserRecordingFrameRate;
     await waitForBrowserRecordingPaint();
     const throwIfStartupCancelled = async (): Promise<void> => {
       // Once a grant starts, a stop lets startup finish so the caller receives an artifact.
@@ -846,7 +853,19 @@ export async function startBrowserRecording(
 
     let recorder: MediaRecorder;
     try {
-      recorder = createMediaRecorder(stream);
+      recording.compositor = await createRecordingCompositor(
+        stream,
+        {
+          showKeyPresses: settings.browserRecordingShowKeyPresses,
+          showMousePresses: settings.browserRecordingShowMousePresses,
+          frameRate,
+        },
+        (listener) =>
+          bridge.recording.onInput((event) => {
+            if (event.tabId === tabId) listener(event.input);
+          }),
+      );
+      recorder = createMediaRecorder(recording.compositor?.stream ?? stream);
       recording.recorder = recorder;
       recorder.addEventListener("dataavailable", (event) => {
         if (event.data.size > 0) chunks.push(event.data);
@@ -923,6 +942,8 @@ const finalizeBrowserRecording = async (
       } catch (cause) {
         throw new BrowserRecordingOperationError({ operation: "stop-screencast", tabId, cause });
       }
+      recording.compositor?.dispose();
+      recording.compositor = null;
       recording.stream = null;
       const mimeType =
         recording.recorder.mimeType ||

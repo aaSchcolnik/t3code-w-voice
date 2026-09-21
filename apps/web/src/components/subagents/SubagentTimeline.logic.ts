@@ -109,10 +109,10 @@ function presentationFoldEntries(
         id: entry.id,
         createdAt: entry.createdAt,
         turnId:
-          entry.message.role === "assistant"
+          entry.message.role === "assistant" || entry.message.role === "reasoning"
             ? (entry.message.turnId ?? fallbackTurnId)
             : entry.message.turnId,
-        role: entry.message.role,
+        role: entry.message.role === "reasoning" ? "other" : entry.message.role,
         updatedAt: entry.message.updatedAt,
         streaming: entry.message.streaming,
         messageId: entry.message.id,
@@ -198,23 +198,19 @@ export function deriveSubagentTimelineRows(input: {
     activities.filter((activity) => !isStructuralActivity(activity)),
   );
   const presentationEntries: PresentationEntry[] = [
-    ...dedupeById(input.transcript.messages).map(
-      (message): PresentationEntry => ({
-        kind: "message",
-        id: message.id,
-        createdAt: message.createdAt,
-        message,
-      }),
-    ),
-    ...workEntries.map(
-      (entry): PresentationEntry => ({
-        kind: "work",
-        id: entry.id,
-        createdAt: entry.createdAt,
-        entry,
-        turnSettled: true,
-      }),
-    ),
+    ...dedupeById(input.transcript.messages).map((message): PresentationEntry => ({
+      kind: "message",
+      id: message.id,
+      createdAt: message.createdAt,
+      message,
+    })),
+    ...workEntries.map((entry): PresentationEntry => ({
+      kind: "work",
+      id: entry.id,
+      createdAt: entry.createdAt,
+      entry,
+      turnSettled: true,
+    })),
   ].toSorted(comparePresentationEntries);
   const foldEntries = presentationFoldEntries(input.transcript.id, presentationEntries);
   const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(foldEntries);

@@ -6,6 +6,7 @@
  *
  * @module TerminalManager
  */
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import {
   DEFAULT_TERMINAL_ID,
   TerminalCwdError,
@@ -2298,7 +2299,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }).pipe(Effect.ignoreCause({ log: true })),
   );
 
-  const openLocked = Effect.fn("terminal.openLocked")(function* (input: TerminalOpenInput) {
+  const openWithWorkspaceLease = Effect.fn("terminal.openLocked")(function* (
+    input: TerminalOpenInput,
+  ) {
     const terminalId = input.terminalId;
     yield* assertValidCwd(input.cwd);
 
@@ -2420,6 +2423,12 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
     return snapshot(liveSession);
   });
+
+  const openLocked = (input: TerminalOpenInput) =>
+    withWorkspaceLease(
+      path.resolve(input.worktreePath ?? input.cwd),
+      openWithWorkspaceLease(input),
+    );
 
   const open: TerminalManager["Service"]["open"] = (input) =>
     withThreadLock(
@@ -2792,7 +2801,14 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const restart: TerminalManager["Service"]["restart"] = (input) =>
     withThreadLock(
       input.threadId,
-      resolveLaunchInputEnvironment(input).pipe(Effect.flatMap(restartResolved)),
+      resolveLaunchInputEnvironment(input).pipe(
+        Effect.flatMap((resolved) =>
+          withWorkspaceLease(
+            path.resolve(resolved.worktreePath ?? resolved.cwd),
+            restartResolved(resolved),
+          ),
+        ),
+      ),
     );
 
   const close: TerminalManager["Service"]["close"] = (input) =>

@@ -968,7 +968,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       return credential;
     });
   const clearMcpSession = (threadId: ThreadId) =>
-    revokeMcpCredential(threadId).pipe(
+    McpSessionRegistry.revokeActiveMcpThread(threadId).pipe(
       Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
     );
 

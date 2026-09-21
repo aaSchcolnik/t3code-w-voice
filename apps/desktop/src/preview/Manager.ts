@@ -7,6 +7,7 @@
  */
 import * as NodeCrypto from "node:crypto";
 import {
+  DesktopPreviewRecordingInputSchema,
   DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER,
   RemotePreviewGeneration,
 } from "@t3tools/contracts";
@@ -21,6 +22,7 @@ import type {
   PreviewAnnotationSubmissionResult,
   DesktopPreviewRecordingArtifact,
   DesktopPreviewRecordingFrame,
+  DesktopPreviewRecordingInputEvent,
   DesktopPreviewScreenshotArtifact,
   DesktopPreviewTabDefaults,
   PreviewAutomationClickInput,
@@ -80,6 +82,11 @@ import {
   ELEMENT_PICKED_CHANNEL,
   HUMAN_INPUT_CHANNEL,
   MOUSE_NAVIGATE_CHANNEL,
+  RECORDING_CURSOR_CHANNEL,
+  RECORDING_POINTER_CHANNEL,
+  RECORDING_KEY_CHANNEL,
+  RECORDING_INPUT_CHANNEL,
+  RECORDING_CONTROLLER_CHANNEL,
   START_PICK_CHANNEL,
 } from "./GuestProtocol.ts";
 import { isPreviewAnnotationPayload } from "./PickedElementPayload.ts";
@@ -91,6 +98,7 @@ import {
 } from "./PreviewKeyboard.ts";
 import { captureFavicon, safeHttpOrigin, selectFaviconCandidates } from "./FaviconCapture.ts";
 import { HumanInputDispatcher } from "./HumanInputDispatcher.ts";
+import { DEFAULT_RECORDING_INPUT_OPTIONS, type RecordingInputOptions } from "./RecordingInput.ts";
 
 export type PreviewNavStatus =
   | { kind: "Idle" }
@@ -450,6 +458,7 @@ interface ManagedListeners {
 type FrameCaptureConsumer = "picture-in-picture" | "recording" | "remote-view";
 
 interface FrameCaptureSession {
+  readonly recordingInputOptions?: RecordingInputOptions;
   readonly scope: Scope.Closeable | null;
   readonly consumers: ReadonlySet<FrameCaptureConsumer>;
   readonly unthrottledWebContentsIds: ReadonlySet<number>;
@@ -499,6 +508,10 @@ interface BrowserDiagnostics {
   readonly networkEntries: ReadonlyArray<PreviewAutomationNetworkEntry>;
   readonly requests: ReadonlyMap<string, { url: string; method: string }>;
 }
+
+const isRecordingInput = Schema.is(DesktopPreviewRecordingInputSchema);
+
+type RecordingInputListener = (event: DesktopPreviewRecordingInputEvent) => Effect.Effect<void>;
 
 type PointerEventListener = (event: DesktopPreviewPointerEvent) => Effect.Effect<void>;
 type RemoteSourceMetadataListener = (
@@ -664,6 +677,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     ReadonlySet<RemoteSourceMetadataListener>
   >(new Set());
   const remoteHostStateListenersRef = yield* Ref.make<ReadonlySet<RemoteHostStateListener>>(
+    new Set(),
+  );
+  const recordingInputListenersRef = yield* Ref.make<ReadonlySet<RecordingInputListener>>(
     new Set(),
   );
   const recordingFrameListenersRef = yield* Ref.make<ReadonlySet<RecordingFrameListener>>(
@@ -865,6 +881,20 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         return Effect.succeed([undefined, sessions] as const);
       }
       return setFrameCaptureWebContentsBackgroundThrottling(wc, false).pipe(
+        Effect.tap(() =>
+          Effect.gen(function* () {
+            if (!current.consumers.has("recording")) return;
+            const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+            yield* attempt({ operation: "recording.cursor", tabId, webContentsId: wc.id }, () =>
+              wc.send(
+                RECORDING_CURSOR_CHANNEL,
+                true,
+                current.recordingInputOptions,
+                tab?.controller,
+              ),
+            );
+          }),
+        ),
         Effect.map(
           () =>
             [
@@ -910,6 +940,15 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         const current = sessions.get(tabId);
         if (!current || !current.consumers.has(consumer)) {
           return [undefined, sessions] as const;
+        }
+        if (consumer === "recording") {
+          yield* Effect.forEach(current.unthrottledWebContentsIds, (id) =>
+            attempt({ operation: "recording.cursor", tabId, webContentsId: id }, () => {
+              const contents = webContents.fromId(id);
+              if (contents && !contents.isDestroyed())
+                contents.send(RECORDING_CURSOR_CHANNEL, false);
+            }).pipe(Effect.ignore),
+          );
         }
         const consumers = new Set(current.consumers);
         consumers.delete(consumer);
@@ -976,7 +1015,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   });
 
   const deliverEvent = (
-    eventKind: "state-change" | "recording-frame" | "pointer-event",
+    eventKind: "state-change" | "recording-frame" | "recording-input" | "pointer-event",
     tabId: string,
     delivery: () => Effect.Effect<void>,
   ) =>
@@ -1013,6 +1052,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const update = Effect.fn("PreviewManager.update")(function* (
     tabId: string,
     patch: Partial<PreviewTabState>,
+    humanPoint?: { readonly x: number; readonly y: number },
   ) {
     const updatedAt = yield* currentIso;
     const next = yield* SynchronizedRef.modify(tabsRef, (tabs) => {
@@ -1030,7 +1070,20 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     // can commit between the modify above and here, and republishing this
     // snapshot would roll the UI back to a value that writer will not send
     // again because it suppresses unchanged audibility.
-    if (Option.isSome(next)) yield* emitIfCurrent(tabId, next.value);
+    if (Option.isSome(next)) {
+      if (patch.controller !== undefined && next.value.webContentsId != null) {
+        const capture = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+        const webContentsId = next.value.webContentsId;
+        if (capture?.consumers.has("recording")) {
+          yield* attempt({ operation: "recording.controller", tabId }, () => {
+            const contents = webContents.fromId(webContentsId);
+            if (contents && !contents.isDestroyed())
+              contents.send(RECORDING_CONTROLLER_CHANNEL, patch.controller, humanPoint);
+          }).pipe(Effect.ignore);
+        }
+      }
+      yield* emitIfCurrent(tabId, next.value);
+    }
   });
 
   /**
@@ -1915,6 +1968,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const markHumanInput = Effect.fn("PreviewManager.markHumanInput")(function* (
     tabId: string,
     source: "local" | "remote",
+    signal?: PreviewInputSignal,
   ) {
     if (source === "local") {
       const now = yield* currentMillis;
@@ -1939,7 +1993,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         copy.set(tabId, (epochs.get(tabId) ?? 0) + 1);
       }),
     );
-    yield* update(tabId, { controller: "human" });
+    yield* update(
+      tabId,
+      { controller: "human" },
+      signal?.kind === "pointer" ? { x: signal.x, y: signal.y } : undefined,
+    );
     yield* Effect.forkIn(
       Effect.sleep(750).pipe(
         Effect.andThen(
@@ -2025,6 +2083,21 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const sync = () => runFork(syncState(true));
     const syncNavigation = () => runFork(syncState(false, true));
     const syncInPageNavigation = () => runFork(syncState(false));
+    const restoreRecordingCursor = () =>
+      runFork(
+        Effect.gen(function* () {
+          const session = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+          if (!wc.isDestroyed()) {
+            const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+            wc.send(
+              RECORDING_CURSOR_CHANNEL,
+              session?.consumers.has("recording") ?? false,
+              session?.recordingInputOptions,
+              tab?.controller,
+            );
+          }
+        }),
+      );
     const navigationStarted = (
       event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>,
     ) => {
@@ -2152,8 +2225,30 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       if (isPreviewInputSignal(rawSignal) && (yield* consumeExpectedAgentInput(tabId, rawSignal))) {
         return;
       }
-      yield* markHumanInput(tabId, "local");
+      yield* markHumanInput(
+        tabId,
+        "local",
+        isPreviewInputSignal(rawSignal) ? rawSignal : undefined,
+      );
     });
+    const recordingInput = (_event: unknown, input: unknown) => {
+      if (!isRecordingInput(input)) return;
+      return runFork(
+        Effect.gen(function* () {
+          const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+          const capture = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+          if (tab?.webContentsId !== wc.id || !capture?.consumers.has("recording")) return;
+          if (input.type === "key" && !capture.recordingInputOptions?.showKeyPresses) return;
+          if (input.type === "pointer" && !capture.recordingInputOptions?.showMousePresses) return;
+          const listeners = yield* Ref.get(recordingInputListenersRef);
+          yield* Effect.forEach(
+            listeners,
+            (listener) => deliverEvent("recording-input", tabId, () => listener({ tabId, input })),
+            { discard: true },
+          );
+        }),
+      );
+    };
     const humanInput = (_event: unknown, rawSignal?: unknown): void => {
       runFork(handleHumanInput(rawSignal));
     };
@@ -2260,6 +2355,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.off("page-favicon-updated", faviconUpdated as never);
         wc.off("did-start-loading", sync);
         wc.off("did-stop-loading", sync);
+        wc.off("dom-ready", restoreRecordingCursor);
         wc.off("did-fail-load", failed as never);
         wc.off("audio-state-changed", audioStateChanged);
         wc.off("did-create-window", windowCreated);
@@ -2268,6 +2364,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.off("render-process-gone", renderProcessGone);
         wc.off("before-input-event", beforeInput);
         wc.ipc.off(HUMAN_INPUT_CHANNEL, humanInput);
+        wc.ipc.off(RECORDING_INPUT_CHANNEL, recordingInput);
         wc.ipc.off(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
       }).pipe(Effect.ignore),
     );
@@ -2283,12 +2380,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.on("page-favicon-updated", faviconUpdated as never);
         wc.on("did-start-loading", sync);
         wc.on("did-stop-loading", sync);
+        wc.on("dom-ready", restoreRecordingCursor);
         wc.on("did-fail-load", failed as never);
         wc.on("audio-state-changed", audioStateChanged);
         wc.on("devtools-opened", devtoolsOpened);
         wc.on("devtools-closed", devtoolsClosed);
         wc.on("render-process-gone", renderProcessGone);
         wc.ipc.on(HUMAN_INPUT_CHANNEL, humanInput);
+        wc.ipc.on(RECORDING_INPUT_CHANNEL, recordingInput);
         wc.ipc.on(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
         wc.setWindowOpenHandler((details) => {
           if (previewWindowOpenAction(details) === "popup") {
@@ -3021,12 +3120,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         };
         const onDestroyed = () => settle(null);
         const onNavigated = (
-          _event: Electron.Event,
-          _url: string,
-          _isInPlace: boolean,
-          isMainFrame: boolean,
+          event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>,
         ) => {
-          if (isMainFrame) settle(null);
+          if (event.isMainFrame) settle(null);
         };
         const registerPickElement = Effect.fn("PreviewManager.registerPickElement")(function* () {
           // Two picks on one tab can overlap. Swap this session in and cancel
@@ -3047,7 +3143,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           yield* attempt({ operation: "pickElement.register", tabId, webContentsId: wc.id }, () => {
             wc.ipc.on(ELEMENT_PICKED_CHANNEL, onMessage);
             wc.once("destroyed", onDestroyed);
-            wc.once("did-start-navigation", onNavigated);
+            wc.on("did-start-navigation", onNavigated);
             if (!wc.isFocused()) wc.focus();
             wc.send(START_PICK_CHANNEL, annotationTheme);
           });
@@ -3913,7 +4009,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const startMediaCapture = Effect.fn("PreviewManager.startMediaCapture")(function* (
     tabId: string,
     consumer: "recording" | "remote-view",
-    options?: { audio: RemotePreviewAudioOutput },
+    options?: {
+      readonly audio?: RemotePreviewAudioOutput;
+      readonly recordingInput?: RecordingInputOptions;
+    },
   ) {
     if ((yield* Ref.get(closingTabIdsRef)).has(tabId)) {
       return yield* new PreviewTabNotFoundError({ tabId });
@@ -3925,8 +4024,32 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         const existingSession = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
         consumerAlreadyActive = existingSession?.consumers.has(consumer) ?? false;
         const needsMediaGrant = yield* startFrameCapture(tabId, consumer);
-        if (needsMediaGrant !== true && options === undefined) return;
+        if (consumer === "recording") {
+          yield* SynchronizedRef.update(frameCaptureSessionsRef, (sessions) =>
+            replaceMap(sessions, (copy) => {
+              const current = copy.get(tabId);
+              if (current) {
+                copy.set(tabId, {
+                  ...current,
+                  recordingInputOptions: options?.recordingInput ?? DEFAULT_RECORDING_INPUT_OPTIONS,
+                });
+              }
+            }),
+          );
+        }
         const wc = yield* requireWebContents(tabId);
+        if (consumer === "recording") {
+          const tab = (yield* SynchronizedRef.get(tabsRef)).get(tabId);
+          yield* attempt({ operation: "recording.cursor", tabId, webContentsId: wc.id }, () =>
+            wc.send(
+              RECORDING_CURSOR_CHANNEL,
+              true,
+              options?.recordingInput ?? DEFAULT_RECORDING_INPUT_OPTIONS,
+              tab?.controller,
+            ),
+          );
+        }
+        if (needsMediaGrant !== true && options?.audio === undefined) return;
         const requestWebContents = wc.hostWebContents;
         if (requestWebContents === null) {
           return yield* new PreviewMainWindowClosedError({ tabId });
@@ -3989,8 +4112,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
-  const startRecording = Effect.fn("PreviewManager.startRecording")((tabId: string) =>
-    startMediaCapture(tabId, "recording"),
+  const startRecording = Effect.fn("PreviewManager.startRecording")(
+    (tabId: string, options: RecordingInputOptions = DEFAULT_RECORDING_INPUT_OPTIONS) =>
+      startMediaCapture(tabId, "recording", { recordingInput: options }),
   );
 
   const startRemoteCapture = Effect.fn("PreviewManager.startRemoteCapture")(function* (
@@ -4277,6 +4401,15 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const emitPointerEvent = Effect.fn("PreviewManager.emitPointerEvent")(function* (
     event: DesktopPreviewPointerEvent,
   ) {
+    const recording = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(event.tabId);
+    const tab = (yield* SynchronizedRef.get(tabsRef)).get(event.tabId);
+    const webContentsId = tab?.webContentsId;
+    if (recording?.consumers.has("recording") && webContentsId != null) {
+      yield* attempt({ operation: "recording.pointer", tabId: event.tabId }, () => {
+        const contents = webContents.fromId(webContentsId);
+        if (contents && !contents.isDestroyed()) contents.send(RECORDING_POINTER_CHANNEL, event);
+      });
+    }
     const listeners = yield* Ref.get(pointerEventListenersRef);
     yield* Effect.forEach(
       listeners,
@@ -4774,6 +4907,18 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const keySequence = makePreviewAutomationNativeKeySequence(input, {
       isMac: hostPlatform === "darwin",
     });
+    const recording = (yield* SynchronizedRef.get(frameCaptureSessionsRef)).get(tabId);
+    if (recording?.consumers.has("recording") && recording.recordingInputOptions?.showKeyPresses) {
+      yield* attempt({ operation: "recording.key", tabId, webContentsId: wc.id }, () =>
+        wc.send(RECORDING_KEY_CHANNEL, {
+          key: keySequence.signal.key || input.key,
+          metaKey: input.modifiers?.includes("Meta") ?? false,
+          ctrlKey: input.modifiers?.includes("Control") ?? false,
+          altKey: input.modifiers?.includes("Alt") ?? false,
+          shiftKey: input.modifiers?.includes("Shift") ?? false,
+        }),
+      );
+    }
     // CDP keyboard dispatch follows the embedder's focused renderer, and
     // WebContents.focus() is a no-op for webview guests. Native input targets
     // this guest's widget directly, so Enter cannot submit the host composer.
@@ -5136,6 +5281,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         Ref.set(remoteSourceMetadataListenersRef, new Set()),
         Ref.set(remoteHostStateListenersRef, new Set()),
         Ref.set(recordingFrameListenersRef, new Set()),
+        Ref.set(recordingInputListenersRef, new Set()),
       ],
       { discard: true },
     );
@@ -5186,6 +5332,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     stopRemoteCapture,
     subscribePointerEvents: (listener: PointerEventListener) =>
       subscribe(pointerEventListenersRef, listener),
+    subscribeRecordingInputs: (listener: RecordingInputListener) =>
+      subscribe(recordingInputListenersRef, listener),
     subscribeRecordingFrames: (listener: RecordingFrameListener) =>
       subscribe(recordingFrameListenersRef, listener),
     subscribeRemoteSourceMetadata: (listener: RemoteSourceMetadataListener) =>
@@ -5554,7 +5702,10 @@ export class PreviewManager extends Context.Service<
     readonly copyArtifactToClipboard: (path: string) => Effect.Effect<void, PreviewManagerError>;
     readonly openPictureInPicture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly closePictureInPicture: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
-    readonly startRecording: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
+    readonly startRecording: (
+      tabId: string,
+      options?: RecordingInputOptions,
+    ) => Effect.Effect<void, PreviewManagerError>;
     readonly stopRecording: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly startRemoteCapture: (
       tabId: string,
@@ -5616,6 +5767,9 @@ export class PreviewManager extends Context.Service<
     readonly subscribeStateChanges: (listener: Listener) => Effect.Effect<void, never, Scope.Scope>;
     readonly subscribePointerEvents: (
       listener: PointerEventListener,
+    ) => Effect.Effect<void, never, Scope.Scope>;
+    readonly subscribeRecordingInputs: (
+      listener: RecordingInputListener,
     ) => Effect.Effect<void, never, Scope.Scope>;
     readonly subscribeRecordingFrames: (
       listener: RecordingFrameListener,
@@ -5725,6 +5879,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     subscribeRecordingFrames: operations.subscribeRecordingFrames,
     subscribeRemoteSourceMetadata: operations.subscribeRemoteSourceMetadata,
     subscribeRemoteHostState: operations.subscribeRemoteHostState,
+    subscribeRecordingInputs: operations.subscribeRecordingInputs,
   });
 }).pipe(Effect.withSpan("PreviewManager.make"));
 
