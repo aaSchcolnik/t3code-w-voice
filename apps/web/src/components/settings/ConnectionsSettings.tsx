@@ -3447,7 +3447,7 @@ export function ConnectionsSettings() {
                     pendingDesktopServerExposureMode === null || isUpdatingDesktopServerExposure
                   }
                 >
-                  {isUpdatingDesktopServerExposure && <Spinner className="size-3.5" />}
+                  {isUpdatingDesktopServerExposure && <Spinner size="sm" />}
                   <span className="[text-box:trim-both_cap_alphabetic]">
                     {isUpdatingDesktopServerExposure
                       ? "Restarting…"
@@ -3511,7 +3511,7 @@ export function ConnectionsSettings() {
                     >
                       {isUpdatingWslBackend ? (
                         <>
-                          <Spinner className="size-3.5" />
+                          <Spinner size="sm" />
                           Applying…
                         </>
                       ) : (
@@ -3525,7 +3525,7 @@ export function ConnectionsSettings() {
                     >
                       {isUpdatingWslBackend ? (
                         <>
-                          <Spinner className="size-3.5" />
+                          <Spinner size="sm" />
                           Applying…
                         </>
                       ) : (
@@ -3546,7 +3546,7 @@ export function ConnectionsSettings() {
                   >
                     {isUpdatingWslBackend ? (
                       <>
-                        <Spinner className="size-3.5" />
+                        <Spinner size="sm" />
                         Applying…
                       </>
                     ) : pendingWslChange?.kind === "disable" ? (
@@ -3595,7 +3595,7 @@ export function ConnectionsSettings() {
                 >
                   {isUpdatingTailscaleServe ? (
                     <>
-                      <Spinner className="size-3.5" />
+                      <Spinner size="sm" />
                       Restarting…
                     </>
                   ) : (
@@ -3669,7 +3669,7 @@ export function ConnectionsSettings() {
                 >
                   {isUpdatingTailscaleServe ? (
                     <>
-                      <Spinner className="size-3.5" />
+                      <Spinner size="sm" />
                       Restarting…
                     </>
                   ) : (

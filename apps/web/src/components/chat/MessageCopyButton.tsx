@@ -58,7 +58,7 @@ export const MessageCopyButton = memo(function MessageCopyButton({
       <TooltipTrigger
         render={
           <Button
-            aria-label="Copy"
+            aria-label="Copy message"
             disabled={isCopied || isResolving}
             onFocus={onPrepare}
             onClick={copy}
@@ -80,7 +80,7 @@ export const MessageCopyButton = memo(function MessageCopyButton({
         )}
       </TooltipTrigger>
       <TooltipPopup>
-        <p>Copy to clipboard</p>
+        <p>Copy message</p>
       </TooltipPopup>
     </Tooltip>
   );

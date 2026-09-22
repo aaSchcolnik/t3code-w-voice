@@ -1920,7 +1920,8 @@ export const ThreadMessageSentPayload = Schema.Struct({
   systemEvent: Schema.optional(OrchestrationSystemEvent),
   terminalCommand: Schema.optional(TerminalCommandRecord),
   context: Schema.optional(OrchestrationMessageContext),
-  turnId: Schema.NullOr(TurnId),
+  // Events persisted before the field existed carry no key at all.
+  turnId: Schema.NullOr(TurnId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

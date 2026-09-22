@@ -865,7 +865,7 @@ function TokenStreamingWarningDialog({
 }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogPopup className="max-w-lg">
+      <AlertDialogPopup>
         <AlertDialogHeader>
           <AlertDialogTitle>Token by token is a worse experience</AlertDialogTitle>
           <AlertDialogDescription>
@@ -3500,7 +3500,7 @@ export function ArchivedThreadsPanel() {
             title={
               <span className="inline-flex items-center gap-2">
                 {isLoadingArchive ? (
-                  <Spinner className="size-3.5 text-muted-foreground" />
+                  <Spinner size="sm" tone="muted" />
                 ) : (
                   <ArchiveIcon className="size-3.5 text-muted-foreground" />
                 )}
