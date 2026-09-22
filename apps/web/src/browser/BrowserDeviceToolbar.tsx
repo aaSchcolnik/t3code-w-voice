@@ -204,7 +204,7 @@ export function BrowserDeviceToolbar({
         >
           <SelectValue />
         </SelectTrigger>
-        <SelectPopup align="start" alignItemWithTrigger={false} className="min-w-64">
+        <SelectPopup align="start" alignItemWithTrigger={false}>
           <SelectGroup>
             <SelectItem value={RESPONSIVE_VALUE}>Responsive</SelectItem>
           </SelectGroup>

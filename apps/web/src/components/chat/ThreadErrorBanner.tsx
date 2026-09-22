@@ -42,12 +42,7 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   if (!error) return null;
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[min(48rem,calc(100%-2rem))] pt-3">
-      <Alert
-        variant="error"
-        controlAlignment="first-line"
-        className="alert-glass"
-        data-variant="error"
-      >
+      <Alert variant="error" surface="glass" controlAlignment="first-line">
         <CircleAlertIcon />
         <AlertDescription className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words pr-1">
           {error}

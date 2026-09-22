@@ -133,7 +133,7 @@ export function PreviewMoreMenu({
         </TooltipTrigger>
         <TooltipPopup>More</TooltipPopup>
       </Tooltip>
-      <MenuPopup align="end" sideOffset={6} className="min-w-56">
+      <MenuPopup align="end" sideOffset={6}>
         {readRemoteStats ? (
           <MenuItem
             closeOnClick={false}
