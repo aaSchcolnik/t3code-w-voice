@@ -16,6 +16,20 @@ const RESTRICTED_IMPORT_PATHS = [
   },
 ];
 
+/**
+ * The cva functions behind components/ui exports. They style a foreign element to look
+ * like a Button or Toggle, which bypasses the component's variants; render the component
+ * instead (`render={<Button …/>}`, or `SelectButton` for a picker trigger).
+ */
+const RESTRICTED_UI_VARIANT_PATTERNS = [
+  {
+    group: ["**/components/ui/*", "**/ui/*", "./ui/*"],
+    importNames: ["buttonVariants", "toggleVariants", "badgeVariants", "selectTriggerVariants"],
+    message:
+      "Render the components/ui export instead of borrowing its class recipe (render={<Button …/>}, SelectButton, ToggleGroup).",
+  },
+];
+
 /** Lucide's pull-request glyphs, which only `pullRequestIcons.tsx` may name. */
 const RESTRICTED_PULL_REQUEST_GLYPH_IMPORTS = {
   name: "lucide-react",
@@ -161,6 +175,19 @@ export default defineConfig({
         rules: { "t3code/no-global-process-runtime": "off" },
       },
       {
+        files: ["apps/web/src/**"],
+        excludeFiles: ["apps/web/src/components/ui/**"],
+        rules: {
+          "eslint/no-restricted-imports": [
+            "error",
+            {
+              paths: [...RESTRICTED_IMPORT_PATHS, RESTRICTED_PULL_REQUEST_GLYPH_IMPORTS],
+              patterns: RESTRICTED_UI_VARIANT_PATTERNS,
+            },
+          ],
+        },
+      },
+      {
         // The one module allowed to name lucide's pull-request glyphs; everything else picks
         // from its vocabulary. The other import restrictions still apply here.
         files: ["apps/web/src/components/pullRequest/pullRequestIcons.tsx"],
@@ -171,13 +198,149 @@ export default defineConfig({
         rules: { "t3code/no-mobile-uniwind-theme-escape-hatches": "error" },
       },
       {
+        // Every class in web code must be one Tailwind generates: a typo or a class nothing
+        // declares ships silently unstyled. JS hooks use data attributes, not class names.
+        files: ["apps/web/src/**"],
+        rules: { "shadcn/no-unknown-classes": "error" },
+      },
+      {
+        // Colors come from theme tokens so status tones follow custom themes. components/ui
+        // has no findings and stays covered too.
+        files: ["apps/web/src/**"],
+        rules: { "shadcn/no-raw-colors": "error" },
+      },
+      {
+        // Third-party marks (brand logos, the macOS permission panes, Codex's Computer Use
+        // mark) must keep their exact colors, so the files that hold them are exempt.
+        files: ["apps/web/src/components/Icons.tsx", "apps/web/src/components/JetBrainsIcons.tsx"],
+        rules: { "shadcn/no-raw-colors": "off" },
+      },
+      {
         // components/ui exports own their look. App code picks a variant or size instead
         // of restyling with className; layout classes (width, flex, margin, position) stay
-        // allowed because placement belongs to the parent. Warn-only until the existing
-        // overrides are migrated to variants; the ceiling below stops the count growing.
+        // allowed because placement belongs to the parent. components/ui is for generic
+        // primitives: a look that belongs to one feature stays in that feature's component.
         files: ["apps/web/src/**"],
         excludeFiles: ["apps/web/src/components/ui/**"],
         rules: {
+          // A className built at runtime on a ui component is one no-restyle cannot read.
+          "shadcn/require-static-classes": "error",
+          // Appearance values come from the theme and Tailwind's scales. Layout stays free
+          // (placement belongs to the parent); the other entries are values no scale can hold.
+          "shadcn/no-arbitrary-values": [
+            "error",
+            {
+              allow: [
+                "layout",
+                // Which properties an element animates is per-element behaviour, like layout,
+                // not a design value; timing curves and durations still come from the theme.
+                "transition",
+                // Overlays that follow their frame's corner, which is set at runtime
+                // (floating preview) or by the element they decorate (composer outline).
+                "rounded-[inherit]",
+                // Inline chips size in em so they scale with the text they sit in
+                // (the composer honours the prompt font-size preference).
+                "gap-[0.33em]",
+                "px-[0.5em]",
+                "rounded-[0.5em]",
+                "text-[0.86em]",
+                // Project icons render from 14px to 48px and keep one proportional corner.
+                "rounded-[25%]",
+                // An emoji project icon fills its container, whatever size the parent gives it.
+                "text-[length:80cqh]",
+                // The platform's own selection colour on a selected composer chip.
+                "bg-[Highlight]",
+                // Brand marks keep their brand colours (Cursor, Grok, Claude).
+                "fill-[#26251E]",
+                "fill-[#EDECEC]",
+                "fill-[#0F0F0F]",
+                "fill-[#F5F5F5]",
+                "fill-[#d97757]",
+                "text-[#d97757]",
+              ],
+            },
+          ],
+          "shadcn/no-restyle": [
+            "error",
+            {
+              allow: ["layout"],
+              contracts: [
+                {
+                  // CollapsibleTrigger is a bare button with no styled counterpart
+                  // (a disclosure row is not a Button), so its className is the API.
+                  // Every other trigger has one: style them with render={<Button …/>}.
+                  pattern: "^CollapsibleTrigger$",
+                  allow: ["layout", "color", "typography", "spacing", "shape", "effects", "motion"],
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        // The sign-in masthead is T3 brand artwork: fixed gradients, not theme surfaces.
+        files: ["apps/web/src/components/auth/AuthSurfaceShell.tsx"],
+        rules: { "shadcn/no-arbitrary-values": "off" },
+      },
+      {
+        // Existing fork UI keeps its measured style debt while upstream rules remain errors
+        // everywhere else. The CI ceiling below prevents this exception from growing.
+        files: [
+          "apps/web/src/browser/RemoteBrowserHost.tsx",
+          "apps/web/src/components/SubagentsPanel.tsx",
+          "apps/web/src/components/chat/MicButton.tsx",
+          "apps/web/src/components/chat/TerminalCommandRow.tsx",
+          "apps/web/src/components/chat/ThreadErrorBanner.tsx",
+          "apps/web/src/components/chat/VoiceRecordingOverlay.tsx",
+          "apps/web/src/components/chat/WorkLogEntryRow.tsx",
+          "apps/web/src/components/chat/WorkLogGroupToggle.tsx",
+          "apps/web/src/components/preview/PreviewChromeRow.tsx",
+          "apps/web/src/components/settings/EngineDelegationSettings.tsx",
+          "apps/web/src/components/settings/FirstRunVoiceConsentDialog.tsx",
+          "apps/web/src/components/settings/ImportSkillsDialog.tsx",
+          "apps/web/src/components/settings/KnowledgeSettings.tsx",
+          "apps/web/src/components/settings/SkillsSettings.tsx",
+          "apps/web/src/components/settings/VoiceDictionarySection.tsx",
+          "apps/web/src/components/settings/VoiceSettingsPanel.tsx",
+          "apps/web/src/components/subagents/SubagentHeader.tsx",
+          "apps/web/src/components/subagents/SubagentMetadataLine.tsx",
+          "apps/web/src/components/subagents/SubagentTimeline.tsx",
+          "apps/web/src/components/subagents/SubagentTranscriptPanel.tsx",
+        ],
+        rules: {
+          "shadcn/no-arbitrary-values": [
+            "warn",
+            {
+              allow: [
+                "layout",
+                // Which properties an element animates is per-element behaviour, like layout,
+                // not a design value; timing curves and durations still come from the theme.
+                "transition",
+                // Overlays that follow their frame's corner, which is set at runtime
+                // (floating preview) or by the element they decorate (composer outline).
+                "rounded-[inherit]",
+                // Inline chips size in em so they scale with the text they sit in
+                // (the composer honours the prompt font-size preference).
+                "gap-[0.33em]",
+                "px-[0.5em]",
+                "rounded-[0.5em]",
+                "text-[0.86em]",
+                // Project icons render from 14px to 48px and keep one proportional corner.
+                "rounded-[25%]",
+                // An emoji project icon fills its container, whatever size the parent gives it.
+                "text-[length:80cqh]",
+                // The platform's own selection colour on a selected composer chip.
+                "bg-[Highlight]",
+                // Brand marks keep their brand colours (Cursor, Grok, Claude).
+                "fill-[#26251E]",
+                "fill-[#EDECEC]",
+                "fill-[#0F0F0F]",
+                "fill-[#F5F5F5]",
+                "fill-[#d97757]",
+                "text-[#d97757]",
+              ],
+            },
+          ],
           "shadcn/no-restyle": [
             "warn",
             {
@@ -193,6 +356,8 @@ export default defineConfig({
               ],
             },
           ],
+          "shadcn/no-raw-colors": "warn",
+          "shadcn/no-unknown-classes": "warn",
         },
       },
       {
@@ -215,7 +380,6 @@ export default defineConfig({
           "apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx",
           "apps/mobile/src/features/files/FileMarkdownPreview.tsx",
           "apps/mobile/src/features/files/SourceFileSurface.tsx",
-          "apps/mobile/src/features/terminal/ThreadTerminalRouteScreen.tsx",
           "apps/mobile/src/features/files/AttachmentFileScreen.tsx",
           "apps/mobile/src/features/files/ThreadFilesRouteScreen.tsx",
           "apps/mobile/src/features/files/thread-file-navigator-pane.tsx",
@@ -223,7 +387,6 @@ export default defineConfig({
           "apps/mobile/src/features/review/ReviewSheet.tsx",
           "apps/mobile/src/features/review/useNativeReviewDiffBridge.ts",
           "apps/mobile/src/features/settings/SettingsEnvironmentsRouteScreen.tsx",
-          "apps/mobile/src/features/settings/appearance/components/AppearancePreviews.tsx",
           "apps/mobile/src/features/threads/GitActionProgressOverlay.tsx",
           "apps/mobile/src/features/threads/NewTaskDraftScreen.tsx",
           "apps/mobile/src/features/threads/ThreadComposer.tsx",

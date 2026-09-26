@@ -141,6 +141,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "checkmark.circle.fill": IconCircleCheck,
   circle: IconCircle,
   clock: IconClock,
+  timer: IconClock,
   ticket: IconTicket,
   cloud: IconCloud,
   cube: IconBox,

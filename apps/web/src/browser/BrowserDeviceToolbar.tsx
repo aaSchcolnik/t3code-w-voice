@@ -182,7 +182,7 @@ export function BrowserDeviceToolbar({
       }}
     >
       {!panel && width >= 560 ? (
-        <span className="mr-0.5 shrink-0 text-[11px] font-medium text-muted-foreground">
+        <span className="mr-0.5 shrink-0 text-2xs font-medium text-muted-foreground">
           Dimensions
         </span>
       ) : null}
@@ -197,8 +197,8 @@ export function BrowserDeviceToolbar({
           variant={panel ? "default" : "ghost"}
           size={panel ? "default" : "xs"}
           className={cn(
-            panel ? "w-full justify-between" : "shrink-0 justify-between px-1.5 font-medium",
-            !panel && (width >= 440 ? "w-36" : "w-24"),
+            "shrink-0 justify-between",
+            panel ? "w-full" : width >= 440 ? "w-36" : "w-24",
           )}
           aria-label="Browser device preset"
         >
@@ -236,7 +236,8 @@ export function BrowserDeviceToolbar({
           nativeInput
           type="number"
           inputMode="numeric"
-          size={panel ? "default" : "sm"}
+          size={panel ? "default" : "compact"}
+          font="mono"
           min={PREVIEW_VIEWPORT_MIN_DIMENSION}
           max={PREVIEW_VIEWPORT_MAX_DIMENSION}
           value={presentedSize.width}
@@ -253,18 +254,15 @@ export function BrowserDeviceToolbar({
           onChange={(event) => updateCustomDimension("width", event.target.value)}
           aria-label="Viewport width"
           aria-invalid={!customValid}
-          className={cn(
-            !panel &&
-              "h-6 rounded-md text-center tabular-nums [&_[data-slot=input]]:h-full [&_[data-slot=input]]:px-1 [&_[data-slot=input]]:text-xs [&_[data-slot=input]]:leading-none [&_[data-slot=input]::-webkit-inner-spin-button]:appearance-none [&_[data-slot=input]]:[appearance:textfield]",
-            panel ? "w-20" : width >= 360 ? "w-14" : "w-11",
-          )}
+          className={panel ? "w-20" : width >= 360 ? "w-14" : "w-13"}
         />
         <span className="text-xs text-muted-foreground">×</span>
         <Input
           nativeInput
           type="number"
           inputMode="numeric"
-          size={panel ? "default" : "sm"}
+          size={panel ? "default" : "compact"}
+          font="mono"
           min={PREVIEW_VIEWPORT_MIN_DIMENSION}
           max={PREVIEW_VIEWPORT_MAX_DIMENSION}
           value={presentedSize.height}
@@ -281,11 +279,7 @@ export function BrowserDeviceToolbar({
           onChange={(event) => updateCustomDimension("height", event.target.value)}
           aria-label="Viewport height"
           aria-invalid={!customValid}
-          className={cn(
-            !panel &&
-              "h-6 rounded-md text-center tabular-nums [&_[data-slot=input]]:h-full [&_[data-slot=input]]:px-1 [&_[data-slot=input]]:text-xs [&_[data-slot=input]]:leading-none [&_[data-slot=input]::-webkit-inner-spin-button]:appearance-none [&_[data-slot=input]]:[appearance:textfield]",
-            panel ? "w-20" : width >= 360 ? "w-14" : "w-11",
-          )}
+          className={panel ? "w-20" : width >= 360 ? "w-14" : "w-13"}
         />
       </form>
 
@@ -293,14 +287,13 @@ export function BrowserDeviceToolbar({
         <TooltipTrigger
           render={
             <Button
-              variant="ghost"
+              variant={aspectRatio === null ? "ghost" : "secondary"}
               size={panel ? "icon" : "icon-xs"}
               type="button"
               aria-label={
                 aspectRatio === null ? "Lock viewport aspect ratio" : "Unlock viewport aspect ratio"
               }
               aria-pressed={aspectRatio !== null}
-              className={cn(aspectRatio !== null && "bg-accent text-foreground")}
               disabled={pending || !customValid}
               onPointerDown={(event) => event.preventDefault()}
               onClick={toggleAspectRatio}
@@ -328,19 +321,20 @@ export function BrowserDeviceToolbar({
         <ScreenRotationIcon />
       </Button>
       {!panel && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          type="button"
-          aria-label="Close device toolbar"
-          className="sticky right-0 ml-auto bg-background/95"
-          disabled={pending}
-          onClick={() => {
-            apply({ _tag: "fill" }, null);
-          }}
-        >
-          <X />
-        </Button>
+        <span className="sticky right-0 ml-auto flex bg-background/95">
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            type="button"
+            aria-label="Close device toolbar"
+            disabled={pending}
+            onClick={() => {
+              apply({ _tag: "fill" }, null);
+            }}
+          >
+            <X />
+          </Button>
+        </span>
       )}
     </div>
   );

@@ -1,6 +1,8 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { View } from "react-native";
 
+import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
+
 export type ThreadInspectorMode = "route" | "git" | "files" | "browser";
 
 const INSPECTOR_PREWARM_DELAY_MS = 350;
@@ -8,6 +10,7 @@ const INSPECTOR_PREWARM_DELAY_MS = 350;
 function InspectorContentPane(props: {
   readonly children: ReactNode;
   readonly mounted: boolean;
+  readonly resetKeys: readonly [string | null, string | null];
   readonly visible: boolean;
 }) {
   if (!props.mounted) {
@@ -27,7 +30,14 @@ function InspectorContentPane(props: {
         zIndex: props.visible ? 1 : 0,
       }}
     >
-      {props.children}
+      <RenderErrorBoundary
+        resetKeys={props.resetKeys}
+        renderFallback={(fallback) => (
+          <RenderFailureView {...fallback} title="The inspector couldn't be displayed" />
+        )}
+      >
+        {props.children}
+      </RenderErrorBoundary>
     </View>
   );
 }
@@ -37,6 +47,7 @@ export function ThreadInspectorContentStack(props: {
   readonly Files: ComponentType;
   readonly Git: ComponentType;
   readonly mode: ThreadInspectorMode;
+  readonly resetKeys: readonly [string | null, string | null];
   readonly Route?: ComponentType;
 }) {
   const [mountedModes, setMountedModes] = useState<ReadonlySet<ThreadInspectorMode>>(
@@ -80,18 +91,21 @@ export function ThreadInspectorContentStack(props: {
     <View className="flex-1">
       <InspectorContentPane
         mounted={mountedModes.has("browser") || props.mode === "browser"}
+        resetKeys={props.resetKeys}
         visible={props.mode === "browser"}
       >
         <Browser />
       </InspectorContentPane>
       <InspectorContentPane
         mounted={mountedModes.has("files") || props.mode === "files"}
+        resetKeys={props.resetKeys}
         visible={props.mode === "files"}
       >
         <Files />
       </InspectorContentPane>
       <InspectorContentPane
         mounted={mountedModes.has("git") || props.mode === "git"}
+        resetKeys={props.resetKeys}
         visible={props.mode === "git"}
       >
         <Git />
@@ -99,6 +113,7 @@ export function ThreadInspectorContentStack(props: {
       {Route ? (
         <InspectorContentPane
           mounted={mountedModes.has("route") || props.mode === "route"}
+          resetKeys={props.resetKeys}
           visible={props.mode === "route"}
         >
           <Route />

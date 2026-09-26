@@ -44,6 +44,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "../ui/field";
 import { Spinner } from "../ui/spinner";
 import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   hasDetailedSubagentTranscript,
   isActiveSubagentStatus,
@@ -114,12 +115,16 @@ export function SubagentRunDiagnostics({
                 {diagnostics.grouping.map((item) => (
                   <div key={item.label} className="min-w-0">
                     <dt className="text-muted-foreground">{item.label}</dt>
-                    <dd
-                      className="truncate font-mono text-[11px] text-foreground"
-                      title={item.value}
-                    >
-                      {item.value}
-                    </dd>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <dd className="truncate font-mono text-2xs text-foreground">
+                            {item.value}
+                          </dd>
+                        }
+                      />
+                      <TooltipPopup>{item.value}</TooltipPopup>
+                    </Tooltip>
                   </div>
                 ))}
               </dl>

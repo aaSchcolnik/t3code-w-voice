@@ -52,8 +52,8 @@ jobs:
       - name: Check
         run: vp check
 
-      - name: Check className overrides on components/ui do not grow
-        run: vp run lint:restyle-ceiling
+      - name: Check inherited fork UI style ceiling
+        run: vp run lint:fork-style-ceiling
 
       - name: Typecheck
         run: vpr typecheck
